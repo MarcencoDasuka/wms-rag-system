@@ -5,10 +5,13 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Value;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.function.Function;
 
@@ -16,16 +19,32 @@ import java.util.function.Function;
 @Slf4j
 public class JwtUtil {
 
+    public static final String DEFAULT_DEV_SECRET = "default_jwt_dev_secret_key_must_be_changed_in_production_32bytes_min";
+
     private final SecretKey SECRET_KEY;
     private final long JWT_EXPIRATION_TIME = 86400000; // 24 hours
 
-    public JwtUtil(@Value("${wms.jwt.secret}") String secretString) {
+    public JwtUtil(
+        @Value("${wms.jwt.secret}") String secretString,
+        Environment environment
+    ) {
         if (secretString == null || secretString.isBlank()) {
-            log.error("CRITICAL: JWT secret string from application.properties is empty or null!");
-        } else {
-            log.info("JwtUtil initialized. Secret key loaded successfully.");
+            throw new IllegalStateException("CRITICAL: JWT secret string is empty or null!");
         }
-        this.SECRET_KEY = Keys.hmacShaKeyFor(secretString.getBytes());
+
+        if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "production"))) {
+            if (DEFAULT_DEV_SECRET.equals(secretString)) {
+                throw new IllegalStateException(
+                    "Production startup aborted: default JWT secret key cannot be used in production profile. " +
+                    "Set a secure JWT_SECRET environment variable."
+                );
+            }
+        } else if (DEFAULT_DEV_SECRET.equals(secretString)) {
+            log.warn("WARNING: Using default development JWT secret key. Ensure JWT_SECRET is configured for production!");
+        }
+
+        this.SECRET_KEY = Keys.hmacShaKeyFor(secretString.getBytes(StandardCharsets.UTF_8));
+        log.info("JwtUtil initialized. Secret key loaded successfully.");
     }
 
     public String generateToken(String username, String role) {
