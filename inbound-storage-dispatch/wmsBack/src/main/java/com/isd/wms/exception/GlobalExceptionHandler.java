@@ -1,7 +1,9 @@
 package com.isd.wms.exception;
 
+import jakarta.persistence.OptimisticLockException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -41,6 +43,14 @@ public class GlobalExceptionHandler {
     })
     public ResponseEntity<ApiErrorResponse> handleConflict(RuntimeException exception) {
         return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler({
+        ObjectOptimisticLockingFailureException.class,
+        OptimisticLockException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleOptimisticLocking(Exception exception) {
+        return buildResponse(HttpStatus.CONFLICT, "Concurrent modification conflict. The resource was modified by another transaction, please retry.", Map.of());
     }
 
     @ExceptionHandler(InvalidRequestException.class)
