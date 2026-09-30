@@ -243,7 +243,7 @@ public class AllocationExecutionService {
         return allocation;
     }
 
-    private Allocation getAssignedAllocation(Long allocationId) {
+    public Allocation getAssignedAllocation(Long allocationId) {
         Allocation allocation = allocationRepository.findById(allocationId).orElseThrow(() -> new InvalidRequestException("Allocation not found"));
         if (allocation.getTask().getOperator().filter(securityFacade.getCurrentUser()::equals).isEmpty()) {
             throw new InvalidRequestException("Allocation is not assigned to current operator");

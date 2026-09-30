@@ -111,11 +111,58 @@ class AllocationControllerTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void scanTransportUnit_WhenOperatorAssigned_ShouldOccupyTUAndReturnSummary() throws Exception {
+        when(allocationExecutionService.getCurrentSummary()).thenReturn(Optional.of(mockSummary));
+
+        mockMvc.perform(post("/api/v1/allocations/10/scan-tu")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "barcode": "TU123456",
+                        "isOrder": true
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.taskId").value(100L));
+
+        org.mockito.Mockito.verify(allocationExecutionService).getAssignedAllocation(10L);
+        org.mockito.Mockito.verify(transportUnitService).occupyTransportUnit("TU123456", 10L, true);
+    }
+
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void scanTransportUnit_WhenOperatorNotAssigned_ShouldReturnBadRequestAndNotOccupyTU() throws Exception {
+        org.mockito.Mockito.doThrow(new com.isd.wms.exception.InvalidRequestException("Allocation is not assigned to current operator"))
+            .when(allocationExecutionService).getAssignedAllocation(10L);
+
+        mockMvc.perform(post("/api/v1/allocations/10/scan-tu")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "barcode": "TU123456",
+                        "isOrder": true
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+
+        org.mockito.Mockito.verify(transportUnitService, org.mockito.Mockito.never())
+            .occupyTransportUnit(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
     @Configuration
     @EnableWebMvc
     @EnableWebSecurity
     @EnableMethodSecurity
     static class TestConfig {
+
+        @Bean
+        public com.isd.wms.exception.GlobalExceptionHandler globalExceptionHandler() {
+            return new com.isd.wms.exception.GlobalExceptionHandler();
+        }
 
         @Bean
         public AllocationService allocationService() {

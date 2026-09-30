@@ -103,6 +103,7 @@ public class AllocationController {
 
         log.info("Received TU scan for Allocation ID: {}. Barcode: {}", id, request.barcode());
 
+        allocationExecutionService.getAssignedAllocation(id);
         tuService.occupyTransportUnit(request.barcode(), id, request.isOrder());
 
         OperatorTaskSummaryResponse updatedSummary = allocationExecutionService.getCurrentSummary()
