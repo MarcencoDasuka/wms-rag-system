@@ -24,7 +24,9 @@ import com.isd.wms.service.validation.SecurityFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -168,7 +170,7 @@ public class ReplenishmentService {
      * @param location    the picking location
      * @param locationQty the current available quantity at the location
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void checkAndTriggerAutoReplenishment(Product product, Location location, int locationQty) {
         if (!Boolean.TRUE.equals(product.getAutoReplenish())) return;
 
@@ -189,7 +191,12 @@ public class ReplenishmentService {
                 ReplenishmentCreateRequest req = new ReplenishmentCreateRequest(
                     product.getId(), replenishQty, location.getId()
                 );
-                createReplenishment(req);
+                try {
+                    createReplenishment(req);
+                } catch (DataIntegrityViolationException e) {
+                    log.info("Concurrent auto-replenishment already created for product {} at location {}: {}",
+                        product.getBarcode(), location.getBarcode(), e.getMessage());
+                }
             }
         }
     }

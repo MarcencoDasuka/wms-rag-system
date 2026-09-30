@@ -135,4 +135,40 @@ class ReplenishmentServiceTest {
         verify(replenishmentRepository).saveAndFlush(replenishment);
         assertThat(replenishment.getTask()).isPresent();
     }
+
+    @Test
+    void checkAndTriggerAutoReplenishment_whenBelowThresholdAndNoActive_createsReplenishment() {
+        product.setAutoReplenish(true);
+        product.setMinThreshold(10);
+        product.setReplenishQty(20);
+
+        when(replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(eq(1L), eq(3L), any()))
+            .thenReturn(false);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(locationRepository.findById(3L)).thenReturn(Optional.of(destinationLocation));
+        when(replenishmentRepository.save(any(Replenishment.class))).thenReturn(replenishment);
+        when(replenishmentMapper.toResponse(any())).thenReturn(response);
+
+        replenishmentService.checkAndTriggerAutoReplenishment(product, destinationLocation, 5);
+
+        verify(replenishmentRepository).save(any(Replenishment.class));
+    }
+
+    @Test
+    void checkAndTriggerAutoReplenishment_whenConcurrentConflict_catchesDataIntegrityViolationExceptionGracefully() {
+        product.setAutoReplenish(true);
+        product.setMinThreshold(10);
+        product.setReplenishQty(20);
+
+        when(replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(eq(1L), eq(3L), any()))
+            .thenReturn(false);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(locationRepository.findById(3L)).thenReturn(Optional.of(destinationLocation));
+        when(replenishmentRepository.save(any(Replenishment.class)))
+            .thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate key"));
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+            replenishmentService.checkAndTriggerAutoReplenishment(product, destinationLocation, 5)
+        );
+    }
 }
