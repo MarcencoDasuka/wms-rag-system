@@ -34,7 +34,12 @@ import java.util.Optional;
  * @see Allocation
  */
 @Entity
-@Table(name = "stocks")
+@Table(
+    name = "stocks",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_stocks_product_location", columnNames = {"product_id", "location_id"})
+    }
+)
 @Getter
 @Setter
 @NoArgsConstructor
