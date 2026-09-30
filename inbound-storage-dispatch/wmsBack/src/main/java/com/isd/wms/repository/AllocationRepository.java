@@ -279,13 +279,23 @@ public interface AllocationRepository extends JpaRepository<Allocation, Long> {
     List<AllocationSupervisorProjection> getAllAllocations();
 
     /**
-     * Deletes all allocations created before a given cutoff date.
+     * Deletes all terminal allocations created before a given cutoff date.
+     * Only completed, partially completed, and canceled allocations are deleted
+     * to prevent leaking active stock reservations.
      * Used for cleanup of historical data.
      *
      * @param cutoffDate the cutoff date
      * @return the number of deleted records
      */
     @Modifying
-    @Query("DELETE FROM Allocation a WHERE a.createdAt < :cutoffDate")
+    @Query("""
+        DELETE FROM Allocation a
+        WHERE a.createdAt < :cutoffDate
+          AND a.status IN (
+              com.isd.wms.enums.Status.COMPLETED,
+              com.isd.wms.enums.Status.PARTIALLY_COMPLETED,
+              com.isd.wms.enums.Status.CANCELED
+          )
+        """)
     int deleteAllocationsOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
 }
