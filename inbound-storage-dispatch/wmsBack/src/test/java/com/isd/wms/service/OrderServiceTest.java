@@ -81,7 +81,8 @@ class OrderServiceTest {
         when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
         when(orderLineRepository.findAllByOrderId(1L)).thenReturn(List.of());
 
-        TransportUnit tu = new TransportUnit("TU111111");
+        TransportUnit tu = new TransportUnit();
+        tu.setBarcode("TU111111");
         tu.setOrder(order);
         when(transportUnitRepository.findByOrder(order)).thenReturn(Optional.of(tu));
 

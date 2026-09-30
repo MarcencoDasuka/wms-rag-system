@@ -66,7 +66,7 @@ class ReplenishmentServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(replenishment, "id", 1L);
         replenishment.setStatus(Status.CREATED);
 
-        response = new ReplenishmentResponse(1L, 1L, 2L, 10, Status.CREATED, 3L, null, null, LocalDateTime.now());
+        response = new ReplenishmentResponse(1L, "REP-001", 1L, 2L, 10, Status.CREATED, 3L, null, null, LocalDateTime.now());
     }
 
     @Test
@@ -75,7 +75,6 @@ class ReplenishmentServiceTest {
 
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(locationRepository.findById(3L)).thenReturn(Optional.of(destinationLocation));
-        when(stockRepository.findByLocationId(3L)).thenReturn(Optional.empty());
         when(replenishmentRepository.save(any(Replenishment.class))).thenReturn(replenishment);
         when(replenishmentMapper.toResponse(replenishment)).thenReturn(response);
 
@@ -92,7 +91,6 @@ class ReplenishmentServiceTest {
         when(replenishmentRepository.findById(eq(1L))).thenReturn(Optional.of(replenishment));
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(locationRepository.findById(3L)).thenReturn(Optional.of(destinationLocation));
-        when(stockRepository.findByLocationId(3L)).thenReturn(Optional.empty());
         when(replenishmentRepository.save(replenishment)).thenReturn(replenishment);
         when(replenishmentMapper.toResponse(replenishment)).thenReturn(response);
 
@@ -106,7 +104,8 @@ class ReplenishmentServiceTest {
     @Test
     void cancelReplenishment_releasesTransportUnit() {
         when(replenishmentRepository.findById(1L)).thenReturn(Optional.of(replenishment));
-        TransportUnit tu = new TransportUnit("TU123456");
+        TransportUnit tu = new TransportUnit();
+        tu.setBarcode("TU123456");
         tu.setReplenishment(replenishment);
 
         when(transportUnitRepository.findAllByReplenishment(replenishment)).thenReturn(List.of(tu));
