@@ -57,9 +57,12 @@ public class ProductVectorIndexer {
             .map(this::createDocument)
             .toList();
 
-        vectorStore.add(documents);
-
-        log.info("Successfully indexed {} products into PGVector.", documents.size());
+        try {
+            vectorStore.add(documents);
+            log.info("Successfully indexed {} products into PGVector.", documents.size());
+        } catch (Exception e) {
+            log.warn("Failed to index products into PGVector on startup (OpenAI API key may not be configured): {}", e.getMessage());
+        }
     }
 
     /**
@@ -69,8 +72,12 @@ public class ProductVectorIndexer {
      */
     public void indexProduct(Product product) {
         log.info("Indexing new/updated product into PGVector: {}", product.getName());
-        Document doc = createDocument(product);
-        vectorStore.add(List.of(doc));
+        try {
+            Document doc = createDocument(product);
+            vectorStore.add(List.of(doc));
+        } catch (Exception e) {
+            log.warn("Failed to index product {} into PGVector: {}", product.getName(), e.getMessage());
+        }
     }
 
     /**
@@ -80,8 +87,12 @@ public class ProductVectorIndexer {
      */
     public void removeProduct(Long productId) {
         log.info("Removing product ID {} from PGVector...", productId);
-        String documentId = generateDocumentId(productId);
-        vectorStore.delete(List.of(documentId));
+        try {
+            String documentId = generateDocumentId(productId);
+            vectorStore.delete(List.of(documentId));
+        } catch (Exception e) {
+            log.warn("Failed to remove product ID {} from PGVector: {}", productId, e.getMessage());
+        }
     }
 
 

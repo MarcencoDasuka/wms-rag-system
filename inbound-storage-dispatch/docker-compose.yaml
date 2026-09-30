@@ -4,18 +4,72 @@ services:
     container_name: wms-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wms_db}
+      POSTGRES_USER: ${POSTGRES_USER:-wms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wms_password}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wms_user} -d ${POSTGRES_DB:-wms_db}"]
+      interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - wms-network
+
+  backend:
+    build:
+      context: ./wmsBack
+      dockerfile: Dockerfile
+    container_name: wms-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-wms_db}
+      - DB_USERNAME=${POSTGRES_USER:-wms_user}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-wms_password}
+      - JWT_SECRET=${JWT_SECRET:-f8gH9sK2mN5pQ8rV1vW4xZ7aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeF}
+      - WMS_APP_URL=${WMS_APP_URL:-http://localhost:8080}
+      - WMS_FRONTEND_URL=${WMS_FRONTEND_URL:-http://localhost:5173}
+      - MAIL_HOST=${MAIL_HOST:-smtp.gmail.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_FROM=${MAIL_FROM:-noreply@wms.local}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini-2024-07-18}
+    ports:
+      - "8080:8080"
+    networks:
+      wms-network:
+        aliases:
+          - backend
+          - wms-backend
+
+  frontend:
+    build:
+      context: ./wmsFront
+      dockerfile: Dockerfile
+    container_name: wms-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+      - "80:80"
+    networks:
+      wms-network:
+        aliases:
+          - frontend
+          - wms-frontend
 
 volumes:
   postgres_data:
+
+networks:
+  wms-network:
+    name: wms-network
