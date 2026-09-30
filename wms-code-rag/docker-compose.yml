@@ -1,0 +1,27 @@
+services:
+  wms-code-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wms-code-rag-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - WMS_CODEBASE_PATH=/workspace/wms
+      - CHROMA_PERSIST_DIR=/app/data/chroma
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+    volumes:
+      # Mount source code for live development/updates
+      - ./src:/app/src
+      # Mount WMS codebase as read-only for security and live indexing
+      - ../inbound-storage-dispatch:/workspace/wms:ro
+      # Persistent vector database storage on host
+      - ./data/chroma:/app/data/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

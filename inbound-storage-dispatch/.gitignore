@@ -1,0 +1,39 @@
+
+
+# Среды разработки (IDEs)
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# Секреты и переменные окружения
+.env
+.env.*
+!.env.example
+
+# Back (Java / Maven)
+target/
+wmsBack/target/
+wmsBack/.mvn/wrapper/maven-wrapper.jar
+wmsBack/local.properties
+wmsBack/*.log
+logs/
+
+# Front (Node.js / Vue / Vite)
+node_modules/
+wmsFront/node_modules/
+wmsFront/dist/
+wmsFront/.pnp/
+wmsFront/.pnp.js
+wmsFront/.env.local
+wmsFront/.env.*.local
+*.log
+
+# Локальные данные баз данных (из Docker)
+.postgres_data/
+postgres_data/

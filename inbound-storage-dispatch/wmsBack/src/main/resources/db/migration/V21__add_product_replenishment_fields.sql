@@ -1,0 +1,4 @@
+ALTER TABLE products
+ADD COLUMN auto_replenish BOOLEAN DEFAULT FALSE NOT NULL,
+ADD COLUMN min_threshold INTEGER,
+ADD COLUMN replenish_qty INTEGER;

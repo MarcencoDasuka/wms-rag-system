@@ -1,0 +1,16 @@
+# Vector Database local storage
+data/
+*.sqlite3
+
+# Python cache & environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Environment & local secrets
+.env
+*.log
