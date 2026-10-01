@@ -1,10 +1,13 @@
 """Model Context Protocol (MCP) Server for WMS Codebase Intelligence."""
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Optional
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 # Ensure package root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

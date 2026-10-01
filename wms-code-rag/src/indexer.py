@@ -13,7 +13,7 @@ from src.embedder import SentenceTransformerEmbedder
 from src.vector_store import CodeVectorStore
 
 logger = logging.getLogger("wms_indexer")
-console = Console()
+console = Console(stderr=True)
 
 
 class CodebaseIndexer:
