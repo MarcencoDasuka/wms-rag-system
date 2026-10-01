@@ -57,12 +57,21 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, Long> {
         @Param("status") Status status);
 
     /**
-     * Deletes all order lines whose order was created before the cutoff date.
+     * Deletes all order lines for terminal orders created before the cutoff date.
+     * Protects active orders from losing order lines during scheduled cleanup.
      *
      * @param cutoffDate the cutoff date
      * @return the number of deleted lines
      */
-    @Modifying
-    @Query("DELETE FROM OrderLine ol WHERE ol.order.createdAt < :cutoffDate")
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        DELETE FROM OrderLine ol
+        WHERE ol.order.createdAt < :cutoffDate
+          AND ol.order.status IN (
+              com.isd.wms.enums.OrderStatus.COMPLETED,
+              com.isd.wms.enums.OrderStatus.PARTIALLY_COMPLETED,
+              com.isd.wms.enums.OrderStatus.CANCELED
+          )
+        """)
     int deleteOrderLinesByOrderCreatedAtOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
 }

@@ -140,13 +140,26 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     );
 
     /**
-     * Deletes all orders created before the cutoff date.
+     * Deletes all terminal orders created before the cutoff date.
+     * Only completed, partially completed, and canceled orders without remaining lines
+     * are deleted to protect active orders and stock reservations.
      *
      * @param cutoffDate the cutoff date
      * @return the number of deleted orders
      */
-    @Modifying
-    @Query("DELETE FROM Order o WHERE o.createdAt < :cutoffDate")
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        DELETE FROM Order o
+        WHERE o.createdAt < :cutoffDate
+          AND o.status IN (
+              com.isd.wms.enums.OrderStatus.COMPLETED,
+              com.isd.wms.enums.OrderStatus.PARTIALLY_COMPLETED,
+              com.isd.wms.enums.OrderStatus.CANCELED
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM OrderLine ol WHERE ol.order = o
+          )
+        """)
     int deleteOrdersOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
 
     Optional<Order> findByLogicId(String logicId);

@@ -97,13 +97,22 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
     );
 
     /**
-     * Deletes all replenishments whose task was created before the cutoff date.
+     * Deletes all terminal replenishments whose task was created before the cutoff date.
+     * Only completed, partially completed, and canceled replenishments are deleted.
      *
      * @param cutoffDate the cutoff date
      * @return the number of deleted replenishments
      */
-    @Modifying
-    @Query("DELETE FROM Replenishment r WHERE r.task.createdAt < :cutoffDate")
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        DELETE FROM Replenishment r
+        WHERE r.task.createdAt < :cutoffDate
+          AND r.status IN (
+              com.isd.wms.enums.Status.COMPLETED,
+              com.isd.wms.enums.Status.PARTIALLY_COMPLETED,
+              com.isd.wms.enums.Status.CANCELED
+          )
+        """)
     int deleteReplenishmentsByTaskCreatedAtOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
 
     /**

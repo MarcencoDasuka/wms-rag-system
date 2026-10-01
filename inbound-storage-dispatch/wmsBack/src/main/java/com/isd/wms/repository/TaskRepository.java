@@ -66,12 +66,26 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     int markTaskAsCompleted(@Param("taskId") Long taskId);
 
     /**
-     * Deletes all tasks created before the cutoff date.
+     * Deletes all terminal tasks created before the cutoff date.
+     * Only completed and canceled tasks without remaining allocations or order lines are deleted.
      *
      * @param cutoffDate the cutoff date
      * @return the number of deleted tasks
      */
-    @Modifying
-    @Query("DELETE FROM Task t WHERE t.createdAt < :cutoffDate")
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        DELETE FROM Task t
+        WHERE t.createdAt < :cutoffDate
+          AND t.status IN (
+              com.isd.wms.enums.TaskStatus.COMPLETED,
+              com.isd.wms.enums.TaskStatus.CANCELED
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM Allocation a WHERE a.task = t
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM OrderLine ol WHERE ol.task = t
+          )
+        """)
     int deleteTasksOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
 }
