@@ -76,16 +76,28 @@ class CodebaseIndexer:
             ignore_dirs = set(self.config.codebase.ignore_dirs) | sensitive_dirs
 
             matched_files: List[Path] = []
+            resolved_target = target_path.resolve()
             for root, dirs, files in os.walk(str(target_path)):
                 # In-place directory pruning: do not recurse into ignored directories (e.g. node_modules, target)
-                dirs[:] = [d for d in dirs if d not in ignore_dirs and not d.startswith(".")]
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in ignore_dirs and not d.startswith(".") and not (Path(root) / d).is_symlink()
+                ]
                 for file in files:
                     # Exclude secret-bearing files by name/pattern
                     if any(p.match(file) for p in secret_file_patterns):
                         continue
                     ext = Path(file).suffix.lower()
                     if ext in extensions:
-                        matched_files.append(Path(root) / file)
+                        candidate_file = Path(root) / file
+                        # Filesystem boundary: prevent symlink escapes outside codebase root
+                        try:
+                            if not candidate_file.resolve().is_relative_to(resolved_target):
+                                console.print(f"[yellow]Skipping file escaping target directory: {candidate_file}[/yellow]")
+                                continue
+                        except (ValueError, RuntimeError):
+                            continue
+                        matched_files.append(candidate_file)
 
             console.print(f"[green]Discovered {len(matched_files)} source files to index.[/green]")
 

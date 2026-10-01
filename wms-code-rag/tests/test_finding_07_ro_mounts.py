@@ -29,3 +29,35 @@ def test_docker_compose_mounts_are_read_only():
                 source_mounts_checked += 1
 
     assert source_mounts_checked >= 2, f"Expected at least 2 source mounts (:ro), found {source_mounts_checked}"
+
+
+def test_indexer_skips_symlinks_escaping_codebase_root(tmp_path: Path):
+    """Verify that indexer rejects symlinks resolving outside the codebase target directory."""
+    from src.config import AppConfig
+    from src.indexer import CodebaseIndexer
+
+    external_dir = tmp_path / "external_host"
+    external_dir.mkdir()
+    external_secret = external_dir / "host_sensitive.properties"
+    external_secret.write_text("secret.info=HOST_DATA_LEAK\n", encoding="utf-8")
+
+    codebase_dir = tmp_path / "wms_codebase"
+    codebase_dir.mkdir()
+    (codebase_dir / "Legit.java").write_text("public class Legit {}", encoding="utf-8")
+
+    # Create symlink pointing outside codebase
+    symlink_file = codebase_dir / "external_link.properties"
+    try:
+        symlink_file.symlink_to(external_secret)
+    except (OSError, NotImplementedError):
+        # Skip if host environment does not allow symlink creation without admin privileges
+        return
+
+    config = AppConfig()
+    indexer = CodebaseIndexer(config)
+    files_scanned, chunks_indexed = indexer.scan_and_index(target_dir_override=str(codebase_dir), clear_first=True)
+
+    # Only Legit.java should be indexed; external_link.properties must be skipped!
+    assert files_scanned == 1
+    indexed_files = [c.file_name for c, _ in indexer.store.search(indexer.embedder.embed_query("HOST_DATA_LEAK"), top_k=5)]
+    assert "external_link.properties" not in indexed_files
