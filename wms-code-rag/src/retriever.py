@@ -92,9 +92,25 @@ class CodeRetriever:
         )
         body = []
         for i, (chunk, score) in enumerate(results, 1):
-            # 1. Neutralize closing tag injection attempts
-            safe_content = chunk.content.replace("</untrusted_code_snippet>", "<\\/untrusted_code_snippet>")
-            safe_content = safe_content.replace("</untrusted_wms_codebase_context>", "<\\/untrusted_wms_codebase_context>")
+            # 1. Neutralize closing tag and comment boundary injection attempts (case-insensitive & whitespace-tolerant)
+            safe_content = re.sub(
+                r"<\s*/\s*untrusted_code_snippet\s*>",
+                r"<\\/untrusted_code_snippet>",
+                chunk.content,
+                flags=re.IGNORECASE,
+            )
+            safe_content = re.sub(
+                r"<\s*/\s*untrusted_wms_codebase_context\s*>",
+                r"<\\/untrusted_wms_codebase_context>",
+                safe_content,
+                flags=re.IGNORECASE,
+            )
+            safe_content = re.sub(
+                r"<!--\s*END UNTRUSTED REPOSITORY CONTEXT\s*-->",
+                r"<!-- ESCAPED REPOSITORY CONTEXT END -->",
+                safe_content,
+                flags=re.IGNORECASE,
+            )
 
             # 2. Dynamic code fence calculation: strictly longer than any backtick run in content
             backtick_runs = re.findall(r"`{3,}", safe_content)
