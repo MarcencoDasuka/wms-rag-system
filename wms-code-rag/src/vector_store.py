@@ -1,7 +1,9 @@
 """ChromaDB vector store for WMS Code Chunks."""
 
+import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
+import uuid
 
 import chromadb
 from chromadb.config import Settings
@@ -29,11 +31,60 @@ class CodeVectorStore:
         )
         self._symbol_cache: Optional[dict[str, Any]] = None
         self._symbol_cache_count: Optional[int] = None
+        self._symbol_cache_rev: Optional[str] = None
+        self._rev_file = self.persist_dir / ".index_rev"
+
+    def _assert_safe_mutation(self) -> None:
+        """Prevent accidental destruction or mutation of default production index during test execution."""
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                default_path = Path("data/chroma").resolve()
+                if self.persist_dir.resolve() == default_path:
+                    raise RuntimeError(
+                        f"Blocked destructive vector store mutation on production index '{self.persist_dir}' "
+                        f"during test execution ({os.environ.get('PYTEST_CURRENT_TEST')}). "
+                        "Tests that mutate vector store state MUST configure an isolated temporary persist_dir."
+                    )
+            except (OSError, RuntimeError) as e:
+                if isinstance(e, RuntimeError):
+                    raise
+
+    def _bump_revision(self) -> str:
+        """Updates persistent revision marker and invalidates in-memory cache."""
+        new_rev = uuid.uuid4().hex
+        try:
+            self._rev_file.write_text(new_rev, encoding="utf-8")
+        except Exception:
+            pass
+        self._symbol_cache = None
+        self._symbol_cache_count = None
+        self._symbol_cache_rev = None
+        return new_rev
+
+    def _get_current_revision(self) -> str:
+        """Determines current storage revision combining persistent marker, sqlite mtime, and count."""
+        rev_marker = ""
+        try:
+            if self._rev_file.exists():
+                rev_marker = self._rev_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+
+        sqlite_path = self.persist_dir / "chroma.sqlite3"
+        sqlite_mtime = 0
+        try:
+            if sqlite_path.exists():
+                sqlite_mtime = sqlite_path.stat().st_mtime_ns
+        except Exception:
+            pass
+
+        return f"{self.count()}:{rev_marker}:{sqlite_mtime}"
 
     def invalidate_symbol_cache(self) -> None:
         """Explicitly invalidate the in-memory symbol cache."""
         self._symbol_cache = None
         self._symbol_cache_count = None
+        self._symbol_cache_rev = None
 
 
     @property
@@ -58,8 +109,10 @@ class CodeVectorStore:
         if not chunks:
             return
 
+        self._assert_safe_mutation()
         self._symbol_cache = None
         self._symbol_cache_count = None
+        self._symbol_cache_rev = None
 
         ids = [c.id for c in chunks]
         documents = [c.content for c in chunks]
@@ -87,6 +140,7 @@ class CodeVectorStore:
                 documents=documents[i:end_idx],
                 metadatas=metadatas[i:end_idx],
             )
+        self._bump_revision()
 
     def search(
         self,
@@ -143,11 +197,14 @@ class CodeVectorStore:
         """Delete specific chunks by ID."""
         if not ids:
             return
+        self._assert_safe_mutation()
         self._symbol_cache = None
         self._symbol_cache_count = None
+        self._symbol_cache_rev = None
         batch_size = 500
         for i in range(0, len(ids), batch_size):
             self.collection.delete(ids=ids[i:i + batch_size])
+        self._bump_revision()
 
     def get_all_ids(self) -> List[str]:
         """Fetch all indexed chunk IDs from collection."""
@@ -164,8 +221,10 @@ class CodeVectorStore:
 
     def clear(self) -> None:
         """Clear all indexed data from the collection."""
+        self._assert_safe_mutation()
         self._symbol_cache = None
         self._symbol_cache_count = None
+        self._symbol_cache_rev = None
         try:
             self.client.delete_collection(name=self.collection_name)
         except Exception:
@@ -177,9 +236,12 @@ class CodeVectorStore:
             name=self.collection_name,
             metadata=init_metadata,
         )
+        self._bump_revision()
 
-    def _rebuild_symbol_cache(self) -> None:
+    def _rebuild_symbol_cache(self, current_rev: Optional[str] = None) -> None:
         """Rebuilds deterministic in-memory lookup index from persistent collection metadata."""
+        if current_rev is None:
+            current_rev = self._get_current_revision()
         cache: dict[str, dict[str, List[CodeChunk]]] = {
             "exact": {},
             "qualified": {},
@@ -190,6 +252,7 @@ class CodeVectorStore:
         if current_count == 0:
             self._symbol_cache = cache
             self._symbol_cache_count = 0
+            self._symbol_cache_rev = current_rev
             return
 
         data = self.collection.get(include=["metadatas", "documents"])
@@ -264,6 +327,7 @@ class CodeVectorStore:
 
         self._symbol_cache = cache
         self._symbol_cache_count = current_count
+        self._symbol_cache_rev = current_rev
 
     def find_symbol_declarations(self, symbol_name: str) -> List[CodeChunk]:
         """Deterministic exact lookup for symbol declarations in indexed metadata."""
@@ -273,9 +337,9 @@ class CodeVectorStore:
         target = symbol_name.strip()
         target_lower = target.lower()
 
-        current_count = self.collection.count()
-        if self._symbol_cache is None or self._symbol_cache_count != current_count:
-            self._rebuild_symbol_cache()
+        current_rev = self._get_current_revision()
+        if self._symbol_cache is None or self._symbol_cache_rev != current_rev:
+            self._rebuild_symbol_cache(current_rev)
 
 
         results: List[CodeChunk] = []

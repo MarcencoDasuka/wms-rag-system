@@ -81,6 +81,7 @@ docker compose up -d
 
 ### Доступные MCP-инструменты агента
 * `search_wms_code(query, top_n)` — семантический поиск по Java и Vue коду.
+* `find_symbol_declaration(symbol_name)` — детерминированная проверка объявления точного символа в проиндексированном коде (классы, интерфейсы, методы, рекорды, вложенные типы).
 * `get_entity_and_schema(table_or_entity)` — получение структуры таблиц, DDL и JPA-сущностей.
 * `search_wms_security(topic)` — специализированный поиск по безопасности (JWT, PreAuthorize, роли).
 * `get_rag_status()` — метрики и статус векторного хранилища.

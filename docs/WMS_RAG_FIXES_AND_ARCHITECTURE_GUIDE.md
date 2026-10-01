@@ -236,7 +236,8 @@
 * **Где скрывалась:** `src/indexer.py`, `docker-compose.yml`.
 * **Как устранено:**
   Проверка `candidate_file.resolve().is_relative_to(resolved_target)` с пропуском любых внешних симлинков. Исходный код WMS монтируется в Docker с флагом `:ro` (read-only).
-* **Тест:** `tests/test_finding_07_ro_mounts.py`.
+  Все деструктивные тесты (`clear_first=True`, удаление, переиндексация) изолированы в индивидуальные временные каталоги `tmp_path / "chroma_..."`. В `CodeVectorStore._assert_safe_mutation()` встроен защитный барьер, предотвращающий случайную модификацию боевого индекса `data/chroma` во время прогона тестов с выбросом `RuntimeError`.
+* **Тест:** `tests/test_finding_07_ro_mounts.py` (`test_docker_compose_mounts_are_read_only`, `test_indexer_skips_symlinks_escaping_codebase_root`, `test_clear_first_operates_only_on_isolated_temporary_directory`, `test_production_chroma_mutation_guard_blocks_accidental_destruction`).
 
 ---
 
@@ -312,11 +313,19 @@
   Раздельные инстансы `CodeVectorStore` могли приводить к рассинхронизации кэша; требовалась корректная обработка перегрузок методов и одноименных классов в разных пакетах.
 * **Где скрывалась:** `src/vector_store.py`, `src/mcp_server.py`.
 * **Как устранено:**
-  1. `mcp_server.py` объединяет `indexer.store` и `retriever.store`.
-  2. `CodeVectorStore` автоматически инвалидирует кэш при `self._symbol_cache_count != self.collection.count()`.
-  3. Бакеты хранят списки `List[CodeChunk]`, возвращая все перегрузки (`FOUND (N declarations)`).
-  4. Поиск выполняется строго через хэш-словари Python, исключая подстроки (`Orde` не находит `Order`).
-* **Тест:** `tests/test_declaration_and_symbol_lookup.py` (`test_symbol_cache_edge_cases_and_invalidation`).
+  1. `mcp_server.py` объединяет `indexer.store` и `retriever.store` в один общий инстанс `CodeVectorStore`.
+  2. Внутрипроцессные мутации (`add_chunks`, `delete_chunks_by_ids`, `clear`, `invalidate_symbol_cache`) немедленно сбрасывают локальный кэш `_symbol_cache = None`.
+  3. Внешние и межпроцессные изменения отслеживаются через композитную ревизию хранилища:
+     - Персистентный маркер ревизии (`.index_rev` в директории `persist_dir`), обновляемый при каждой мутации любого инстанса.
+     - Отпечаток времени модификации файла базы данных SQLite (`chroma.sqlite3` mtime).
+     - Динамический счетчик коллекции (`collection.count()`).
+     При несовпадении сохраненной ревизии кэш автоматически и детерминированно перестраивается (`_rebuild_symbol_cache`), предотвращая возврат устаревших данных даже при совпадении общего количества чанков.
+  4. Бакеты хранят списки `List[CodeChunk]`, возвращая все перегрузки (`FOUND (N declarations)`).
+  5. Поиск выполняется строго через хэш-словари Python, исключая подстроки (`Orde` не находит `Order`).
+  6. **Границы согласованности (Consistency Boundary):**
+     - *Гарантируется:* Полная строгая согласованность в рамках единого FastMCP-процесса и согласованность между несколькими локальными процессами/инстансами на общей файловой системе хранилища ChromaDB.
+     - *НЕ гарантируется:* Распределенный сетевой консенсус между изолированными нодами без общей файловой системы, а также чтение незафиксированных транзакций SQLite до сброса на диск.
+* **Тест:** `tests/test_declaration_and_symbol_lookup.py` (`test_symbol_cache_edge_cases_and_invalidation`, `test_symbol_cache_normal_lifecycle`, `test_symbol_cache_incremental_reindex_pruning`, `test_symbol_cache_same_count_replacement_across_instances`, `test_production_mcp_shared_store_identity`, `test_symbol_cache_exactness_invariants`).
 
 ---
 

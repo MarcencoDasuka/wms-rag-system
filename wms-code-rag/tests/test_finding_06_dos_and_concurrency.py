@@ -2,7 +2,7 @@
 
 import threading
 from pathlib import Path
-from src.config import AppConfig
+from src.config import AppConfig, VectorDBConfig
 from src.indexer import CodebaseIndexer
 from src.mcp_server import clamp_top_n, search_wms_code, validate_query
 
@@ -32,7 +32,13 @@ def test_query_limits_and_top_n_clamping():
 
 def test_concurrent_reindexing_is_prevented_without_sleep(tmp_path: Path):
     """Verify that concurrent scan_and_index attempts are strictly blocked using synchronizers."""
-    config = AppConfig()
+    db_dir = tmp_path / "chroma_concurrency"
+    config = AppConfig(
+        vector_db=VectorDBConfig(
+            persist_dir=str(db_dir),
+            collection_name="test_concurrency",
+        ),
+    )
     indexer = CodebaseIndexer(config)
 
     start_event = threading.Event()

@@ -33,7 +33,7 @@ def test_docker_compose_mounts_are_read_only():
 
 def test_indexer_skips_symlinks_escaping_codebase_root(tmp_path: Path):
     """Verify that indexer rejects symlinks resolving outside the codebase target directory."""
-    from src.config import AppConfig
+    from src.config import AppConfig, VectorDBConfig
     from src.indexer import CodebaseIndexer
 
     external_dir = tmp_path / "external_host"
@@ -53,7 +53,13 @@ def test_indexer_skips_symlinks_escaping_codebase_root(tmp_path: Path):
         # Skip if host environment does not allow symlink creation without admin privileges
         return
 
-    config = AppConfig()
+    db_dir = tmp_path / "chroma_ro_mounts"
+    config = AppConfig(
+        vector_db=VectorDBConfig(
+            persist_dir=str(db_dir),
+            collection_name="test_ro_mounts",
+        ),
+    )
     indexer = CodebaseIndexer(config)
     files_scanned, chunks_indexed = indexer.scan_and_index(target_dir_override=str(codebase_dir), clear_first=True)
 
@@ -61,3 +67,76 @@ def test_indexer_skips_symlinks_escaping_codebase_root(tmp_path: Path):
     assert files_scanned == 1
     indexed_files = [c.file_name for c, _ in indexer.store.search(indexer.embedder.embed_query("HOST_DATA_LEAK"), top_k=5)]
     assert "external_link.properties" not in indexed_files
+
+
+def test_clear_first_operates_only_on_isolated_temporary_directory(tmp_path: Path):
+    """Verify that clear_first=True operates strictly on isolated temporary directory and never touches production data/chroma."""
+    from src.config import AppConfig, VectorDBConfig
+    from src.indexer import CodebaseIndexer
+    from src.vector_store import CodeVectorStore
+
+    # Inspect real data/chroma state prior to running test
+    prod_store = CodeVectorStore("data/chroma")
+    prod_count_before = prod_store.count()
+
+    # Create isolated test environment
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "TestSample.java").write_text("public class TestSample { void run() {} }", encoding="utf-8")
+
+    db_dir = tmp_path / "chroma_isolated"
+    config = AppConfig(
+        vector_db=VectorDBConfig(
+            persist_dir=str(db_dir),
+            collection_name="test_clear_first_isolation",
+        ),
+    )
+
+    indexer = CodebaseIndexer(config)
+    # Perform indexing with clear_first=True on isolated test store
+    files_scanned, chunks_indexed = indexer.scan_and_index(target_dir_override=str(src_dir), clear_first=True)
+
+    # Invariants:
+    # 1. Temporary directory was populated
+    assert files_scanned == 1
+    assert chunks_indexed > 0
+    assert indexer.store.count() == chunks_indexed
+    assert indexer.store.persist_dir.resolve() == db_dir.resolve()
+
+    # 2. Production store was NEVER modified
+    prod_store_after = CodeVectorStore("data/chroma")
+    assert prod_store_after.count() == prod_count_before, (
+        f"Production store chunk count changed from {prod_count_before} to {prod_store_after.count()}!"
+    )
+
+
+def test_production_chroma_mutation_guard_blocks_accidental_destruction():
+    """Verify that attempting to mutate production data/chroma during test execution raises RuntimeError."""
+    import pytest
+    from src.chunker import CodeChunk
+    from src.vector_store import CodeVectorStore
+
+    store = CodeVectorStore("data/chroma")
+
+    # 1. clear() on production store must fail loudly during pytest
+    with pytest.raises(RuntimeError, match="Blocked destructive vector store mutation on production index"):
+        store.clear()
+
+    # 2. add_chunks() on production store must fail loudly during pytest
+    dummy_chunk = CodeChunk(
+        id="canary_01",
+        file_path="Canary.java",
+        file_name="Canary.java",
+        language="java",
+        chunk_type="class_summary",
+        symbol_name="Canary",
+        content="public class Canary {}",
+        start_line=1,
+        end_line=1,
+    )
+    with pytest.raises(RuntimeError, match="Blocked destructive vector store mutation on production index"):
+        store.add_chunks([dummy_chunk], [[0.0] * 384])
+
+    # 3. delete_chunks_by_ids() on production store must fail loudly during pytest
+    with pytest.raises(RuntimeError, match="Blocked destructive vector store mutation on production index"):
+        store.delete_chunks_by_ids(["nonexistent_id"])
