@@ -63,7 +63,7 @@ class CodeRetriever:
         ]
 
         if not filtered:
-            filtered = candidates[:k]
+            return []
 
         # 4. Rerank using Cross-Encoder (if enabled)
         if self.reranker:
@@ -79,7 +79,7 @@ class CodeRetriever:
     def format_for_agent(self, results: List[Tuple[CodeChunk, float]]) -> str:
         """Formats retrieved chunks into secure, structurally isolated context for agent."""
         if not results:
-            return "No relevant code or documentation found in WMS codebase."
+            return "No relevant code or documentation found in WMS codebase (no matching chunks passed the relevance threshold)."
 
         header = (
             "<!-- BEGIN UNTRUSTED REPOSITORY CONTEXT -->\n"

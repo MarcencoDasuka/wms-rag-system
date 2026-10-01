@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class CodebaseConfig(BaseModel):
-    target_dir: str = "../inbound-storage-dispatch — копия"
+    target_dir: str = "../inbound-storage-dispatch"
     extensions: List[str] = [
         ".java", ".vue", ".js", ".sql", ".properties", ".yaml", ".yml", ".md"
     ]
@@ -27,7 +27,7 @@ class RerankingConfig(BaseModel):
     enabled: bool = True
     model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     top_n: int = 4
-    min_score: float = -3.0
+    min_score: float = -7.0
 
 
 class VectorDBConfig(BaseModel):

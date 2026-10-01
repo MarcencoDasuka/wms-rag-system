@@ -88,7 +88,10 @@ class CodeCrossEncoderReranker:
             content_lower = chunk.content.lower()
             term_matches = sum(1 for term in query_terms if term in content_lower)
             boost = (term_matches / max(1, len(query_terms))) * 0.15
-            boosted.append((chunk, sim + boost))
+            final_score = sim + boost
+            if min_score is not None and final_score < min_score:
+                continue
+            boosted.append((chunk, final_score))
 
         boosted.sort(key=lambda x: x[1], reverse=True)
         return boosted[:top_n]
