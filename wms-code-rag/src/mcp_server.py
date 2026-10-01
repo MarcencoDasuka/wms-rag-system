@@ -188,24 +188,22 @@ class AuthMiddleware:
 
             if self.auth_token:
                 import hmac
-                from urllib.parse import parse_qs
                 from starlette.responses import JSONResponse
 
                 headers = dict(scope.get("headers", []))
-                auth_header = headers.get(b"authorization", b"").decode("latin-1")
-                api_key_header = headers.get(b"x-api-key", b"").decode("latin-1")
-                query_string = scope.get("query_string", b"").decode("latin-1")
-                params = parse_qs(query_string)
-                query_token = params.get("token", [""])[0]
+                auth_header = headers.get(b"authorization", b"").decode("latin-1").strip()
+                api_key_header = headers.get(b"x-api-key", b"").decode("latin-1").strip()
 
                 bearer_token = ""
                 if auth_header.lower().startswith("bearer "):
                     bearer_token = auth_header[7:].strip()
 
-                provided_token = bearer_token or api_key_header or query_token
+                # Query parameters (?token=...) are intentionally NOT supported
+                # to prevent secret token leakage into HTTP access logs, proxy logs, and URI histories (CWE-598).
+                provided_token = bearer_token or api_key_header
                 if not provided_token or not hmac.compare_digest(provided_token, self.auth_token):
                     response = JSONResponse(
-                        {"error": "Unauthorized: valid authentication token required"},
+                        {"error": "Unauthorized: valid authentication token required in Authorization or X-API-Key header"},
                         status_code=401,
                         headers={"WWW-Authenticate": "Bearer"},
                     )
@@ -308,7 +306,8 @@ def reindex_wms_codebase(confirm: bool = False, auth_token: str | None = None) -
     expected_token = config.server.auth_token or os.environ.get("MCP_AUTH_TOKEN")
     if expected_token:
         import hmac
-        if not auth_token or not hmac.compare_digest(auth_token, expected_token):
+        clean_token = (auth_token or "").strip()
+        if not clean_token or not hmac.compare_digest(clean_token, expected_token):
             return "Error: Unauthorized. Valid auth_token required to execute destructive reindexing."
 
     if not confirm:

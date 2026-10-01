@@ -36,9 +36,9 @@ def test_auth_middleware_blocks_unauthenticated_mcp_access():
         resp_api_key = client.get("/sse", headers={"X-API-Key": "secret-token-123"})
         assert resp_api_key.status_code != 401
 
-        # 6. Valid query parameter passes auth middleware
+        # 6. Query parameter token is REJECTED with 401 to prevent log/URL exposure (CWE-598)
         resp_query_token = client.get("/sse?token=secret-token-123")
-        assert resp_query_token.status_code != 401
+        assert resp_query_token.status_code == 401
 
 
 def test_reindex_wms_codebase_requires_confirmation_and_auth(monkeypatch):
@@ -56,6 +56,10 @@ def test_reindex_wms_codebase_requires_confirmation_and_auth(monkeypatch):
     # Unauthenticated / wrong token call
     result_unauth = reindex_wms_codebase(confirm=True, auth_token="wrong-token")
     assert "Unauthorized" in result_unauth
+
+    # Empty token call
+    result_empty = reindex_wms_codebase(confirm=True, auth_token="")
+    assert "Unauthorized" in result_empty
 
     # Clean up
     mcp_server.config.server.auth_token = None
