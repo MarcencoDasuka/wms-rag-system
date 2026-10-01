@@ -14,8 +14,8 @@ services:
       - MCP_PORT=8000
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
     volumes:
-      # Mount source code for live development/updates
-      - ./src:/app/src
+      # Mount source code as read-only to prevent tampering
+      - ./src:/app/src:ro
       # Mount WMS codebase as read-only for security and live indexing
       - ../inbound-storage-dispatch:/workspace/wms:ro
       # Persistent vector database storage on host
