@@ -180,9 +180,38 @@ class AuthMiddleware:
         await self.inner_app(scope, receive, send)
 
 
-# Auto-heal expired session IDs instead of failing with 404
+def is_session_active(session_manager: Any, session_id: str) -> bool:
+    """Safely checks if an MCP session is active without hard private API coupling.
+
+    Inspects public methods if provided by current/future FastMCP versions,
+    with safe defensive inspection of container attributes if private.
+    """
+    if not session_manager:
+        return True
+
+    # 1. Prefer public session check APIs if provided by FastMCP version
+    for method_name in ("has_session", "is_active", "get_session"):
+        method = getattr(session_manager, method_name, None)
+        if callable(method):
+            try:
+                res = method(session_id)
+                return bool(res)
+            except Exception:
+                pass
+
+    # 2. Defensive fallback checking session container without crashing on attribute change
+    instances = getattr(session_manager, "_server_instances", None)
+    if isinstance(instances, (dict, set, list)):
+        return session_id in instances
+
+    # 3. Default to True so standard MCP protocol error handling applies
+    return True
+
+
 class SessionAutoHealMiddleware:
-    def __init__(self, inner_app, session_manager):
+    """Auto-heals stale session IDs to prevent 404 disconnections on client reconnects."""
+
+    def __init__(self, inner_app, session_manager: Any = None):
         self.inner_app = inner_app
         self.session_manager = session_manager
 
@@ -193,7 +222,7 @@ class SessionAutoHealMiddleware:
             if session_id:
                 sess_str = session_id.decode("ascii", errors="ignore")
                 # If session ID is not active, strip header to start fresh session seamlessly
-                if sess_str not in self.session_manager._server_instances:
+                if not is_session_active(self.session_manager, sess_str):
                     scope["headers"] = [
                         (k, v) for k, v in scope.get("headers", [])
                         if k.lower() != b"mcp-session-id"
@@ -223,7 +252,12 @@ def create_http_app(mcp_server: FastMCP, app_config) -> Any:
 
     app.routes.append(Route("/health", health_check, methods=["GET"]))
 
-    session_app = SessionAutoHealMiddleware(app, mcp_server.session_manager)
+    try:
+        session_mgr = getattr(mcp_server, "session_manager", None)
+    except Exception:
+        session_mgr = None
+
+    session_app = SessionAutoHealMiddleware(app, session_mgr)
     effective_token = app_config.server.auth_token or os.environ.get("MCP_AUTH_TOKEN")
     return AuthMiddleware(session_app, auth_token=effective_token)
 
