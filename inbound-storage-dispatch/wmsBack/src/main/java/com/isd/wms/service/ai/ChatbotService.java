@@ -42,7 +42,9 @@ public class ChatbotService {
         ChatModel chatModel,
         SecurityFacade securityFacade,
         InventoryAiTools inventoryAiTools,
+        InventoryMutatingAiTools inventoryMutatingAiTools,
         OrderAiTools orderAiTools,
+        OrderMutatingAiTools orderMutatingAiTools,
         ReplenishmentAiTools replenishmentAiTools,
         WarehouseAiTools warehouseAiTools
     ) {
@@ -79,7 +81,7 @@ public class ChatbotService {
                         Before answering complex questions, briefly think step-by-step about the warehouse logic, then provide the final clear answer.
                         """)
             .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
-            .defaultTools(inventoryAiTools, orderAiTools, replenishmentAiTools, warehouseAiTools)
+            .defaultTools(inventoryAiTools, inventoryMutatingAiTools, orderAiTools, orderMutatingAiTools, replenishmentAiTools, warehouseAiTools)
             .build();
     }
 

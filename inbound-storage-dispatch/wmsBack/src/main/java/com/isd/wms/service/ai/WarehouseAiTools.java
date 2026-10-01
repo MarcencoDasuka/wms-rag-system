@@ -44,6 +44,7 @@ public class WarehouseAiTools {
     private final ReplenishmentRepository replenishmentRepository;
     private final OrderService orderService;
     private final ReplenishmentService replenishmentService;
+    private final AiToolSecurityBoundary securityBoundary;
 
     /**
      * Lists all physical locations (shelves) in the warehouse with their zones.
@@ -78,8 +79,9 @@ public class WarehouseAiTools {
      *
      * @return a summary of the number of orders and replenishments assigned
      */
-    @Tool(description = "Automatically distributes ALL unassigned Orders and Replenishments among available operators (Least-Loaded balancing).")
+    @Tool(description = "Automatically distributes ALL unassigned Orders and Replenishments among available operators (Least-Loaded balancing). Requires SUPERVISOR or DEV role.")
     public String autoDistributeWorkload() {
+        securityBoundary.enforceSupervisorOrDev("autoDistributeWorkload");
         log.info("AI invoked autoDistributeWorkload");
         List<User> operators = userRepository.findAll().stream().filter(u -> u.getUserRole().name().equals("ROLE_OPERATOR")).toList();
         if (operators.isEmpty()) return "Error: No operators registered in the system.";
@@ -93,6 +95,8 @@ public class WarehouseAiTools {
 
         Map<User, Long> operatorLoadMap = calculateInitialWorkload(operators);
         int[] counts = executeDistribution(operators, operatorLoadMap, unassignedOrders, unassignedReplenishments);
+        securityBoundary.auditMutation("autoDistributeWorkload", "WAREHOUSE",
+            String.format("Assigned %d orders and %d replenishments among %d operators", counts[0], counts[1], operators.size()));
 
         return String.format("Workload distribution completed successfully! Assigned %d Orders and %d Replenishments among %d operators.", counts[0], counts[1], operators.size());
     }

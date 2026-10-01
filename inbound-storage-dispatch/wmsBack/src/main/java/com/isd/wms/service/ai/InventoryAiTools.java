@@ -1,19 +1,11 @@
 package com.isd.wms.service.ai;
 
-import com.isd.wms.dto.inventory.AddStockRequest;
-import com.isd.wms.dto.inventory.InventoryAdjustmentRequest;
 import com.isd.wms.entity.Location;
 import com.isd.wms.entity.Product;
 import com.isd.wms.entity.Stock;
-import com.isd.wms.entity.User;
-import com.isd.wms.enums.InventoryAdjustmentReason;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.ProductRepository;
 import com.isd.wms.repository.StockRepository;
-import com.isd.wms.repository.UserRepository;
-import com.isd.wms.service.InventoryAdjustmentService;
-import com.isd.wms.service.InventoryService;
-import com.isd.wms.service.validation.SecurityFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -26,6 +18,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+/**
+ * AI tools for read-only inventory queries, semantic product search, and stock inspection.
+ * Mutating operations have been separated into {@link InventoryMutatingAiTools}
+ * to establish strict authorization and confirmation boundaries.
+ */
 @Slf4j
 @Service("inventoryAiTools")
 @RequiredArgsConstructor
@@ -34,11 +31,8 @@ public class InventoryAiTools {
     private final ProductRepository productRepository;
     private final StockRepository stockRepository;
     private final LocationRepository locationRepository;
-    private final UserRepository userRepository;
-    private final InventoryService inventoryService;
-    private final InventoryAdjustmentService inventoryAdjustmentService;
-    private final SecurityFacade securityFacade;
     private final VectorStore vectorStore;
+    private final InventoryMutatingAiTools inventoryMutatingAiTools;
 
     @Tool(description = "Searches for products by their name, description, or semantic meaning. Use this when the user asks about a product without a barcode, or describes a product conceptually.")
     public String searchProductByName(@ToolParam(description = "The name, part of the name, or conceptual description of the product") String nameQuery) {
@@ -107,66 +101,25 @@ public class InventoryAiTools {
         return formatLowStockWarnings(productRepository.findAll());
     }
 
-    @Tool(description = "Receives new inbound stock from external suppliers directly into a specific warehouse location.")
-    public String receiveInboundStock(
-        @ToolParam(description = "Barcode of the product being received") String productBarcode,
-        @ToolParam(description = "Quantity of the product being received") Integer quantity,
-        @ToolParam(description = "Barcode of the destination location (usually a REPL zone)") String locationBarcode) {
-
-        log.info("AI invoked receiveInboundStock for product {}, qty: {}, loc: {}", productBarcode, quantity, locationBarcode);
-
-        Product product = findProductOrNull(productBarcode);
-        if (product == null) return "Error: Product with barcode " + productBarcode + " not found.";
-
-        Location loc = findLocationOrNull(locationBarcode);
-        if (loc == null) return "Error: Location with barcode " + locationBarcode + " not found.";
-
-        try {
-            User currentUser = userRepository.findByUsername(securityFacade.getCurrentUsername()).orElseThrow();
-            AddStockRequest req = new AddStockRequest(product.getId(), loc.getId(), quantity, 0, null, null, currentUser.getId());
-            inventoryService.addStock(req);
-            return "Success! " + quantity + " units of " + product.getName() + " were successfully received into location " + locationBarcode + ".";
-        } catch (Exception e) {
-            return "Failed to receive stock: " + e.getMessage();
-        }
+    /**
+     * Backward-compatible forwarding method to {@link InventoryMutatingAiTools}.
+     * Note: mutating tools are registered with Spring AI from {@link InventoryMutatingAiTools}.
+     */
+    public String receiveInboundStock(String productBarcode, Integer quantity, String locationBarcode) {
+        return inventoryMutatingAiTools.receiveInboundStock(productBarcode, quantity, locationBarcode);
     }
 
-    @Tool(description = "Adjusts or writes off inventory stock when items are damaged, lost, stolen, or have an inventory mismatch.")
-    public String adjustInventoryStock(
-        @ToolParam(description = "Barcode of the product") String productBarcode,
-        @ToolParam(description = "Barcode of the location") String locationBarcode,
-        @ToolParam(description = "The NEW absolute physical quantity that is actually on the shelf") Integer newQuantity,
-        @ToolParam(description = "Reason for adjustment. MUST be exactly one of: DAMAGED, LOST, STOLEN, INVENTORY_MISMATCH") String reason,
-        @ToolParam(description = "Optional comment explaining the adjustment") String comment) {
+    /**
+     * Backward-compatible forwarding method to {@link InventoryMutatingAiTools}.
+     */
+    public String adjustInventoryStock(String productBarcode, String locationBarcode, Integer newQuantity,
+                                      String reason, String comment, String confirmationToken) {
+        return inventoryMutatingAiTools.adjustInventoryStock(productBarcode, locationBarcode, newQuantity, reason, comment, confirmationToken);
+    }
 
-        log.info("AI invoked adjustInventoryStock for product {}, loc: {}", productBarcode, locationBarcode);
-        Product product = findProductOrNull(productBarcode);
-        if (product == null) return "Error: Product not found.";
-
-        Location loc = findLocationOrNull(locationBarcode);
-        if (loc == null) return "Error: Location not found.";
-
-        Stock stock = stockRepository.findAllByAvailableIsTrue().stream()
-            .filter(s -> s.getProduct().isPresent() && s.getProduct().get().getId().equals(product.getId()) && s.getLocation().getId().equals(loc.getId()))
-            .findFirst()
-            .orElse(null);
-
-        if (stock == null) return "Error: No existing stock record found for this product at this location.";
-
-        try {
-            User currentUser = userRepository.findByUsername(securityFacade.getCurrentUsername()).orElseThrow();
-            InventoryAdjustmentReason adjReason = InventoryAdjustmentReason.valueOf(reason.toUpperCase());
-
-            InventoryAdjustmentRequest req = new InventoryAdjustmentRequest(
-                newQuantity, currentUser.getId(), adjReason, comment, null, null);
-
-            inventoryAdjustmentService.adjustStock(stock.getId(), req);
-            return String.format("Success! Stock adjusted to %d. Reason: %s.", newQuantity, adjReason.name());
-        } catch (IllegalArgumentException e) {
-            return "Error: Invalid reason. Allowed reasons are exactly: DAMAGED, LOST, STOLEN, INVENTORY_MISMATCH.";
-        } catch (Exception e) {
-            return "Failed to adjust stock: " + e.getMessage();
-        }
+    public String adjustInventoryStock(String productBarcode, String locationBarcode, Integer newQuantity,
+                                      String reason, String comment) {
+        return inventoryMutatingAiTools.adjustInventoryStock(productBarcode, locationBarcode, newQuantity, reason, comment);
     }
 
     private Product findProductOrNull(String barcode) {

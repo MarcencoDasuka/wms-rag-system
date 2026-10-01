@@ -1,25 +1,22 @@
 package com.isd.wms.service.ai;
 
-import com.isd.wms.dto.order.ExtendedOrderCreateRequest;
-import com.isd.wms.dto.order.OrderCreateRequest;
 import com.isd.wms.dto.order.shortage.ShortageOrderResponse;
-import com.isd.wms.dto.order_line.OrderLineCreateRequest;
 import com.isd.wms.entity.*;
 import com.isd.wms.enums.OrderStatus;
-import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.OrderRepository;
-import com.isd.wms.repository.ProductRepository;
-import com.isd.wms.repository.UserRepository;
 import com.isd.wms.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * AI tools for read-only order queries and shortage analysis.
+ * Mutating operations have been separated into {@link OrderMutatingAiTools}
+ * to establish strict authorization and confirmation boundaries.
+ */
 @Slf4j
 @Service("orderAiTools")
 @RequiredArgsConstructor
@@ -30,9 +27,7 @@ public class OrderAiTools {
 
     private final OrderService orderService;
     private final OrderRepository orderRepository;
-    private final LocationRepository locationRepository;
-    private final ProductRepository productRepository;
-    private final UserRepository userRepository;
+    private final OrderMutatingAiTools orderMutatingAiTools;
 
     @Tool(description = "Returns a summary of all active customer orders. Use this when the user asks about current orders, tasks in orders, or unassigned orders.")
     public String getActiveOrdersInfo() {
@@ -82,78 +77,29 @@ public class OrderAiTools {
         return sb.toString();
     }
 
-    @Tool(description = "Creates a new Customer Order WITH order lines (products). Requires a destination DISPATCH location, and a list of items to pick.")
-    public String createOrder(
-        @ToolParam(description = "Optional. Logical order ID. If the user doesn't provide one, leave this empty.") String logicId,
-        @ToolParam(description = "Barcode of the destination location (Dispatch zone)") String destinationLocationBarcode,
-        @ToolParam(description = "List of products and quantities to include in the order") List<AiOrderItem> items) {
-
-        log.info("AI invoked createOrder");
-        Location dest = findLocationOrNull(destinationLocationBarcode);
-        if (dest == null) return "Error: Destination location barcode not found.";
-
-        String finalLogicId = (logicId == null || logicId.trim().isEmpty())
-            ? "ORD-AI-" + (System.currentTimeMillis() % 100000)
-            : logicId.trim();
-
-        List<OrderLineCreateRequest> lineRequests = new ArrayList<>();
-        for (AiOrderItem item : items) {
-            Product p = findProductOrNull(item.productBarcode());
-            if (p == null) return "Error: Product with barcode " + item.productBarcode() + " not found.";
-            lineRequests.add(new OrderLineCreateRequest(null, p.getId(), item.quantity()));
-        }
-
-        try {
-            orderService.addExtendedOrder(new ExtendedOrderCreateRequest(new OrderCreateRequest(finalLogicId, dest.getId()), lineRequests));
-            return "Success! Order '" + finalLogicId + "' created and picking tasks generated. Tell the user the generated Order ID.";
-        } catch (Exception e) {
-            return "Failed to create order: " + e.getMessage();
-        }
+    /**
+     * Backward-compatible forwarding method to {@link OrderMutatingAiTools}.
+     * Note: mutating tools are registered with Spring AI from {@link OrderMutatingAiTools}.
+     */
+    public String createOrder(String logicId, String destinationLocationBarcode, List<AiOrderItem> items) {
+        return orderMutatingAiTools.createOrder(logicId, destinationLocationBarcode, items);
     }
 
-    @Tool(description = "Assigns an existing Order to a specific Operator.")
-    public String assignOrderToOperator(
-        @ToolParam(description = "Logical order ID (e.g. 'ORD-123')") String logicId,
-        @ToolParam(description = "Exact username of the operator") String operatorUsername) {
-
-        log.info("AI invoked assignOrderToOperator");
-        Order order = orderRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
-        if (order == null) return "Error: Order with logical ID " + logicId + " not found.";
-
-        User operator = findOperatorOrNull(operatorUsername);
-        if (operator == null) return "Error: Operator '" + operatorUsername + "' not found.";
-
-        try {
-            orderService.assignOrder(order.getId(), operator.getId());
-            return "Success! Order " + logicId + " has been assigned to operator " + operatorUsername;
-        } catch (Exception e) {
-            return "Failed to assign order: " + e.getMessage();
-        }
+    /**
+     * Backward-compatible forwarding method to {@link OrderMutatingAiTools}.
+     */
+    public String assignOrderToOperator(String logicId, String operatorUsername) {
+        return orderMutatingAiTools.assignOrderToOperator(logicId, operatorUsername);
     }
 
-    @Tool(description = "Deletes an existing order by its logical ID.")
-    public String deleteOrder(@ToolParam(description = "Logical order ID to delete (e.g. 'ORD-123')") String logicId) {
-        log.info("AI invoked deleteOrder");
-        Order order = orderRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
-        if (order == null) return "Error: Order with logical ID " + logicId + " not found.";
-
-        try {
-            orderService.deleteOrderById(order.getId());
-            return "Success! Order " + logicId + " has been deleted.";
-        } catch (Exception e) {
-            return "Failed to delete order: " + e.getMessage();
-        }
+    /**
+     * Backward-compatible forwarding method to {@link OrderMutatingAiTools}.
+     */
+    public String deleteOrder(String logicId, String confirmationToken) {
+        return orderMutatingAiTools.deleteOrder(logicId, confirmationToken);
     }
 
-    private Product findProductOrNull(String barcode) {
-        return productRepository.findByBarcode(barcode).orElse(null);
-    }
-
-    private Location findLocationOrNull(String barcode) {
-        return locationRepository.findAll().stream().filter(l -> l.getBarcode().equalsIgnoreCase(barcode)).findFirst().orElse(null);
-    }
-
-    private User findOperatorOrNull(String username) {
-        return userRepository.findAll().stream().filter(u -> u.getUsername().equalsIgnoreCase(username)).findFirst().orElse(null);
+    public String deleteOrder(String logicId) {
+        return orderMutatingAiTools.deleteOrder(logicId);
     }
 }

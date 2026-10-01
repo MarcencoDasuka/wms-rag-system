@@ -30,13 +30,15 @@ public class ReplenishmentAiTools {
     private final ProductRepository productRepository;
     private final LocationRepository locationRepository;
     private final UserRepository userRepository;
+    private final AiToolSecurityBoundary securityBoundary;
 
-    @Tool(description = "Creates a new Replenishment Task to move existing stock from a REPL zone to a PICK zone.")
+    @Tool(description = "Creates a new Replenishment Task to move existing stock from a REPL zone to a PICK zone. Requires SUPERVISOR or DEV role.")
     public String createReplenishmentTask(
         @ToolParam(description = "Barcode of the product to replenish") String productBarcode,
         @ToolParam(description = "Quantity to replenish") Integer quantity,
         @ToolParam(description = "Barcode of the destination location (MUST be a valid location barcode)") String destinationLocationBarcode) {
 
+        securityBoundary.enforceSupervisorOrDev("createReplenishmentTask");
         log.info("AI invoked createReplenishmentTask");
         Product product = findProductOrNull(productBarcode);
         if (product == null) return "Error: Product not found.";
@@ -46,17 +48,19 @@ public class ReplenishmentAiTools {
 
         try {
             replenishmentService.createReplenishment(new ReplenishmentCreateRequest(product.getId(), quantity, dest.getId()));
+            securityBoundary.auditMutation("createReplenishmentTask", productBarcode + "->" + destinationLocationBarcode, "Qty: " + quantity);
             return "Success! Replenishment task has been created successfully.";
         } catch (Exception e) {
             return "Failed to create replenishment task: " + e.getMessage();
         }
     }
 
-    @Tool(description = "Assigns a specific Replenishment Task to an Operator using the Replenishment Logic ID.")
+    @Tool(description = "Assigns a specific Replenishment Task to an Operator using the Replenishment Logic ID. Requires SUPERVISOR or DEV role.")
     public String assignReplenishmentToOperator(
         @ToolParam(description = "The Replenishment Logic ID (e.g. 'REPL-123')") String logicId,
         @ToolParam(description = "Exact username of the operator") String operatorUsername) {
 
+        securityBoundary.enforceSupervisorOrDev("assignReplenishmentToOperator");
         log.info("AI invoked assignReplenishmentToOperator");
         Replenishment repl = replenishmentRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
         if (repl == null) return "Error: Replenishment with logical ID " + logicId + " not found.";
@@ -66,20 +70,23 @@ public class ReplenishmentAiTools {
 
         try {
             replenishmentService.assignReplenishment(repl.getId(), operator.getId());
+            securityBoundary.auditMutation("assignReplenishmentToOperator", logicId, "Assigned to " + operatorUsername);
             return "Success! Replenishment task " + logicId + " has been assigned to " + operatorUsername;
         } catch (Exception e) {
             return "Failed to assign replenishment: " + e.getMessage();
         }
     }
 
-    @Tool(description = "Cancels an existing active Replenishment Task using its Replenishment Logic ID.")
+    @Tool(description = "Cancels an existing active Replenishment Task using its Replenishment Logic ID. Requires SUPERVISOR or DEV role.")
     public String cancelReplenishmentTask(@ToolParam(description = "The Replenishment Logic ID (e.g. 'REPL-123') to cancel") String logicId) {
+        securityBoundary.enforceSupervisorOrDev("cancelReplenishmentTask");
         log.info("AI invoked cancelReplenishmentTask for Logic ID {}", logicId);
         Replenishment repl = replenishmentRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
         if (repl == null) return "Error: Replenishment with logical ID " + logicId + " not found.";
 
         try {
             replenishmentService.cancelReplenishment(repl.getId());
+            securityBoundary.auditMutation("cancelReplenishmentTask", logicId, "Canceled replenishment task");
             return "Success! Replenishment " + logicId + " has been canceled and stock is released.";
         } catch (Exception e) {
             return "Failed to cancel replenishment: " + e.getMessage();
