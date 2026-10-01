@@ -39,7 +39,7 @@ class CategoryServiceTest {
 
     @Test
     void createsCategorySuccessfully() {
-        when(categoryRepository.findByNameIgnoreCase("Dairy")).thenReturn(Optional.empty());
+        when(categoryRepository.existsByNameIgnoreCase("Dairy")).thenReturn(false);
         when(categoryRepository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryResponse response = categoryService.createCategory(new CategoryCreateRequest("Dairy"));
@@ -49,7 +49,7 @@ class CategoryServiceTest {
 
     @Test
     void rejectsDuplicateCategory() {
-        when(categoryRepository.findByNameIgnoreCase("Dairy")).thenReturn(Optional.of(category(1L, "Dairy")));
+        when(categoryRepository.existsByNameIgnoreCase("Dairy")).thenReturn(true);
 
         assertThatThrownBy(() -> categoryService.createCategory(new CategoryCreateRequest("Dairy")))
             .isInstanceOf(DuplicateCategoryNameException.class);
@@ -59,7 +59,7 @@ class CategoryServiceTest {
     void updatesCategorySuccessfully() {
         Category category = category(1L, "Dairy");
         when(categoryRepository.findById(1L)).thenReturn(Optional.of(category));
-        when(categoryRepository.findByNameIgnoreCase("Drinks")).thenReturn(Optional.empty());
+        when(categoryRepository.existsByNameIgnoreCase("Drinks")).thenReturn(false);
         when(categoryRepository.save(category)).thenReturn(category);
 
         CategoryResponse response = categoryService.updateCategory(1L, new CategoryUpdateRequest("Drinks"));

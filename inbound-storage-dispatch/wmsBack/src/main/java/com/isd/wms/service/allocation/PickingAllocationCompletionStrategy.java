@@ -61,7 +61,7 @@ public class PickingAllocationCompletionStrategy implements AllocationCompletion
         OrderStatus finalStatus = computeFinalStatus(orderLines);
         order.setStatus(finalStatus);
         orderRepository.save(order);
-        return false;
+        return true;
     }
 
     @Override

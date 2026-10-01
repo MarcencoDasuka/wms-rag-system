@@ -79,7 +79,6 @@ class ProductServiceTest {
         Category drinks = category(2L, "Drinks");
         when(productRepository.findById(10L)).thenReturn(Optional.of(product));
         when(categoryRepository.findById(2L)).thenReturn(Optional.of(drinks));
-        when(productRepository.save(product)).thenReturn(product);
 
         ProductResponse response = productService.updateProduct(10L, new ProductUpdateRequest("Juice", "JUICE-1", null, 2L, false, null, null));
 

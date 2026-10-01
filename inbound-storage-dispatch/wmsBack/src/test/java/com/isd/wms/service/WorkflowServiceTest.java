@@ -88,7 +88,7 @@ class WorkflowServiceTest {
     }
 
     @Test
-    void executeAllocationCompletion_partialPick_skipsQuantityRemoval() {
+    void executeAllocationCompletion_partialPick_reducesStockByPickedQuantity() {
         Stock stock = new Stock();
         stock.setQuantity(100);
         stock.setReservedQuantity(10);
@@ -97,8 +97,9 @@ class WorkflowServiceTest {
 
         workflowService.executeAllocationCompletion(allocation);
 
-        assertThat(stock.getQuantity()).isEqualTo(100);
-        verify(stockRepository, never()).save(stock);
+        assertThat(stock.getQuantity()).isEqualTo(95);
+        assertThat(stock.getReservedQuantity()).isEqualTo(5);
+        verify(stockRepository).save(stock);
         verify(mockCompletionStrategy).handle(allocation);
     }
 }

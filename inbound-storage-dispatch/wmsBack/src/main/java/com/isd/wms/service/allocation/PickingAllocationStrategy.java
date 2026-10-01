@@ -39,7 +39,7 @@ public class PickingAllocationStrategy implements StockAllocationStrategy {
     @Override
     public void sortStocks(List<Stock> availableStocks) {
         availableStocks.sort(
-            Comparator.comparingInt(Stock::getAvailableQuantity)
+            Comparator.comparingInt(Stock::getAvailableQuantity).reversed()
                 .thenComparing(
                     Stock::getId,
                     Comparator.nullsLast(Comparator.naturalOrder())

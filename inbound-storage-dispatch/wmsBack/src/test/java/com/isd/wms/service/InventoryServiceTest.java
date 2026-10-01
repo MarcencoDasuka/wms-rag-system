@@ -74,7 +74,8 @@ class InventoryServiceTest {
         when(locationRepository.findById(2L)).thenReturn(Optional.of(location));
         when(userRepository.findById(3L)).thenReturn(Optional.of(user));
 
-        when(stockRepository.findByLocationId(2L)).thenReturn(Optional.empty());
+        when(stockRepository.existsByLocationAndAvailableIsTrueAndProductIsNot(location, product)).thenReturn(false);
+        when(stockRepository.findByProductIdAndLocationId(1L, 2L)).thenReturn(Optional.empty());
         when(stockRepository.save(any(Stock.class))).thenAnswer(invocation -> {
             Stock savedStock = invocation.getArgument(0);
             ReflectionTestUtils.setField(savedStock, "id", 10L);
@@ -97,18 +98,11 @@ class InventoryServiceTest {
 
     @Test
     void rejectsAddStock_differentProductOnLocation() {
-        Product differentProduct = new Product("Juice", "SKU-2", null, null);
-        ReflectionTestUtils.setField(differentProduct, "id", 99L);
-
-        Stock existingStock = new Stock(differentProduct, location);
-        existingStock.setQuantity(10);
-        ReflectionTestUtils.setField(existingStock, "id", 10L);
-
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(locationRepository.findById(2L)).thenReturn(Optional.of(location));
         when(userRepository.findById(3L)).thenReturn(Optional.of(user));
 
-        when(stockRepository.findByLocationId(2L)).thenReturn(Optional.of(existingStock));
+        when(stockRepository.existsByLocationAndAvailableIsTrueAndProductIsNot(location, product)).thenReturn(true);
 
         assertThatThrownBy(() -> inventoryService.addStock(new AddStockRequest(1L, 2L, 5, 0, null, null, 3L)))
             .isInstanceOf(InvalidRequestException.class)

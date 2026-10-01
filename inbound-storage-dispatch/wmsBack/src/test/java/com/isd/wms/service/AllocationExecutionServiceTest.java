@@ -6,6 +6,10 @@ import com.isd.wms.dto.allocation.ConfirmPickedQuantityRequest;
 import com.isd.wms.entity.*;
 import com.isd.wms.enums.*;
 import com.isd.wms.repository.*;
+import com.isd.wms.mapper.OperatorSummaryMapper;
+import com.isd.wms.service.allocation.PickingOperatorStrategy;
+import com.isd.wms.service.allocation.ReplenishmentOperatorStrategy;
+import com.isd.wms.service.allocation.ShortageResolver;
 import com.isd.wms.service.validation.SecurityFacade;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,6 +100,18 @@ class AllocationExecutionServiceTest {
         lenient().when(userRepository.findByUsername("operator")).thenReturn(Optional.of(operator));
         lenient().when(securityFacade.getCurrentUsername()).thenReturn("operator");
         lenient().when(securityFacade.getCurrentUser()).thenReturn(operator);
+
+        ShortageResolver shortageResolver = new ShortageResolver(stockRepository, allocationRepository);
+        OperatorSummaryMapper summaryMapper = new OperatorSummaryMapper();
+        PickingOperatorStrategy pickingStrategy = new PickingOperatorStrategy(
+            allocationRepository, orderLineRepository, orderRepository, tuRepository, stockRepository,
+            inventoryService, workflowService, shortageResolver, pickingFlowService, summaryMapper
+        );
+        ReplenishmentOperatorStrategy replenishmentStrategy = new ReplenishmentOperatorStrategy(
+            allocationRepository, replenishmentRepository, tuRepository, stockRepository,
+            inventoryService, workflowService, shortageResolver, pickingFlowService, summaryMapper
+        );
+        ReflectionTestUtils.setField(allocationExecutionService, "executionStrategies", List.of(pickingStrategy, replenishmentStrategy));
     }
 
     @AfterEach
@@ -112,7 +128,7 @@ class AllocationExecutionServiceTest {
 
         allocationExecutionService.confirmPickedQuantity(50L, new ConfirmPickedQuantityRequest(10));
 
-        assertThat(allocation.getPickedQuantity()).isEqualTo(10);
+        assertThat(allocation.getPickedQuantity()).contains(10);
     }
 
     @Test

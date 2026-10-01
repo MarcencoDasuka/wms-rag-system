@@ -9,6 +9,7 @@ import com.isd.wms.enums.AllocationCompletionStatus;
 import com.isd.wms.enums.OrderStatus;
 import com.isd.wms.enums.Status;
 import com.isd.wms.enums.TaskType;
+import com.isd.wms.repository.AllocationRepository;
 import com.isd.wms.repository.OrderLineRepository;
 import com.isd.wms.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,7 @@ class PickingAllocationCompletionStrategyTest {
 
     @Mock private OrderLineRepository orderLineRepository;
     @Mock private OrderRepository orderRepository;
+    @Mock private AllocationRepository allocationRepository;
 
     @InjectMocks
     private PickingAllocationCompletionStrategy strategy;
@@ -66,6 +68,7 @@ class PickingAllocationCompletionStrategyTest {
         orderLine.setDeliveredQuantity(5);
         when(orderLineRepository.findByTaskId(1L)).thenReturn(Optional.of(orderLine));
         when(orderLineRepository.findAllByOrderId(10L)).thenReturn(List.of(orderLine));
+        when(allocationRepository.findAllByTaskId(1L)).thenReturn(List.of());
 
         boolean res = strategy.updateStatus(task);
 

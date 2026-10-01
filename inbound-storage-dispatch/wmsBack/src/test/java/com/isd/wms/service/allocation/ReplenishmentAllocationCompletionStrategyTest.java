@@ -30,8 +30,6 @@ class ReplenishmentAllocationCompletionStrategyTest {
 
     @Mock private ReplenishmentRepository replenishmentRepository;
     @Mock private AllocationRepository allocationRepository;
-    @Mock private StockRepository stockRepository;
-    @Mock private InventoryService inventoryService;
 
     @InjectMocks
     private ReplenishmentAllocationCompletionStrategy strategy;
@@ -39,7 +37,6 @@ class ReplenishmentAllocationCompletionStrategyTest {
     private Task task;
     private Replenishment replenishment;
     private Allocation allocation;
-    private Stock sourceStock;
     private User operator;
 
     @BeforeEach
@@ -61,7 +58,7 @@ class ReplenishmentAllocationCompletionStrategyTest {
         ReflectionTestUtils.setField(replenishment, "id", 10L);
         replenishment.setTask(task);
 
-        sourceStock = new Stock();
+        Stock sourceStock = new Stock();
         sourceStock.setProduct(product);
         sourceStock.setQuantity(20);
         sourceStock.setReservedQuantity(10);
@@ -71,22 +68,6 @@ class ReplenishmentAllocationCompletionStrategyTest {
         allocation.setStock(sourceStock);
         allocation.setTask(task);
         ReflectionTestUtils.setField(allocation, "id", 100L);
-    }
-
-    @Test
-    void handle_withShortage_callsInventoryService() {
-        allocation.setPickedQuantity(7);
-        when(replenishmentRepository.findByTaskId(1L)).thenReturn(Optional.of(replenishment));
-
-        strategy.handle(allocation);
-
-        verify(inventoryService).recordShortageAdjustment(
-            eq(sourceStock),
-            eq(3),
-            eq(operator),
-            eq(InventoryOperationType.REPLENISHMENT_SHORTAGE),
-            eq("Replenishment shortage")
-        );
     }
 
     @Test
