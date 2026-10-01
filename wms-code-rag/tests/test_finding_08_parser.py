@@ -157,3 +157,35 @@ onMounted(async () => {
     script_chunk = next(c for c in chunks if c.chunk_type == "vue_script")
     assert '<script setup lang="ts">' in script_chunk.content
     assert "tasks.value = await fetchTasks();" in script_chunk.content
+
+
+def test_vue_parser_handles_comments_with_closing_tags_and_script_strings(tmp_path: Path):
+    """Verify Vue chunker is not prematurely truncated by comments with closing tags or strings with closing tags."""
+    vue_code = '''<template lang="html" #header="{ item }">
+  <div class="test-container" :data-meta="`key: ${item.id}`">
+    <!-- Comment with </template> tag inside -->
+    <p v-if="item.active">Active: {{ item.name }}</p>
+    <custom-tag attr="foo > bar < baz" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue';
+const fakeClosingTemplate = "</template>";
+const fakeClosingScript = "</script>";
+const count = ref(0);
+</script>
+'''
+    file_path = tmp_path / "ComplexComponent.vue"
+    file_path.write_text(vue_code, encoding="utf-8")
+
+    chunker = CodeAwareChunker()
+    chunks = chunker.chunk_file(file_path, "ComplexComponent.vue")
+
+    tpl_chunk = next(c for c in chunks if c.chunk_type == "vue_template")
+    assert '<custom-tag attr="foo > bar < baz" />' in tpl_chunk.content
+    assert '<p v-if="item.active">' in tpl_chunk.content
+
+    scr_chunk = next(c for c in chunks if c.chunk_type == "vue_script")
+    assert 'const count = ref(0);' in scr_chunk.content
+    assert 'const fakeClosingScript = "</script>";' in scr_chunk.content

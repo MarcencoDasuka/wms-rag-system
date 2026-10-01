@@ -202,6 +202,89 @@ def _mask_sql_syntax(sql: str) -> str:
     return "".join(res)
 
 
+def _extract_vue_block(content: str, tag_name: str) -> Optional[str]:
+    """Safely extracts a root Vue block (<template> or <script>), masking comments and string literals."""
+    tag_lower = tag_name.lower()
+    open_pattern = re.compile(rf"<{tag_lower}\b", re.IGNORECASE)
+    match = open_pattern.search(content)
+    if not match:
+        return None
+    start_pos = match.start()
+
+    # Find end of opening tag, respecting attribute quotes (e.g. <template v-if="x > 0">)
+    i = match.end()
+    in_quote = None
+    while i < len(content):
+        ch = content[i]
+        if in_quote:
+            if ch == in_quote and content[i-1] != '\\':
+                in_quote = None
+        elif ch in ('"', "'"):
+            in_quote = ch
+        elif ch == '>':
+            i += 1
+            break
+        i += 1
+
+    open_tag_end = i
+    depth = 1
+    i = open_tag_end
+    in_quote = None
+    n = len(content)
+
+    while i < n:
+        # Ignore HTML comments: <!-- ... </template> ... -->
+        if not in_quote and content[i:i+4] == "<!--":
+            end_cmt = content.find("-->", i + 4)
+            if end_cmt == -1:
+                break
+            i = end_cmt + 3
+            continue
+
+        ch = content[i]
+        if in_quote:
+            if ch == in_quote and content[i-1] != '\\':
+                in_quote = None
+            i += 1
+            continue
+
+        if ch in ('"', "'", '`'):
+            in_quote = ch
+            i += 1
+            continue
+
+        if content[i:i+2] == "//":
+            end_line = content.find("\n", i + 2)
+            i = n if end_line == -1 else end_line + 1
+            continue
+
+        if content[i:i+2] == "/*":
+            end_block = content.find("*/", i + 2)
+            i = n if end_block == -1 else end_block + 2
+            continue
+
+        if tag_lower == "template" and content[i:i+9].lower() == "<template":
+            depth += 1
+            i += 9
+            continue
+
+        close_tag = f"</{tag_lower}"
+        if content[i:i+len(close_tag)].lower() == close_tag:
+            after = content[i+len(close_tag):]
+            m_close = re.match(r"^\s*>", after)
+            if m_close:
+                depth -= 1
+                if depth == 0:
+                    end_pos = i + len(close_tag) + m_close.end()
+                    return content[start_pos:end_pos]
+                i += len(close_tag) + m_close.end()
+                continue
+
+        i += 1
+
+    return None
+
+
 class CodeAwareChunker:
     """Specialized chunker that preserves semantic boundaries for code and configs."""
 
@@ -489,10 +572,10 @@ class CodeAwareChunker:
         chunks = []
         comp_name = Path(file_name).stem
 
-        # Extract <script setup> or <script>
-        script_match = re.search(r"(<script[^>]*>.*?</script>)", content, re.DOTALL | re.IGNORECASE)
-        if script_match:
-            script_content = script_match.group(1).strip()
+        # Extract <script setup> or <script> using syntax-safe parser
+        script_block = _extract_vue_block(content, "script")
+        if script_block:
+            script_content = script_block.strip()
             chunk_id = hashlib.sha256(f"{rel_path}:vue_script".encode("utf-8")).hexdigest()[:32]
             content_hash = hashlib.sha256(script_content.encode("utf-8")).hexdigest()
             chunks.append(
@@ -510,10 +593,10 @@ class CodeAwareChunker:
                 )
             )
 
-        # Extract <template> (handling any attributes, e.g. <template lang="html"> or <template #header>)
-        template_match = re.search(r"(<template(?:\s+[^>]*)?>.*?</template>)", content, re.DOTALL | re.IGNORECASE)
-        if template_match:
-            tpl_content = template_match.group(1).strip()
+        # Extract <template> using syntax-safe parser
+        template_block = _extract_vue_block(content, "template")
+        if template_block:
+            tpl_content = template_block.strip()
             tpl_lines = tpl_content.splitlines()
             chunk_id = hashlib.sha256(f"{rel_path}:vue_template".encode("utf-8")).hexdigest()[:32]
             content_hash = hashlib.sha256(tpl_content.encode("utf-8")).hexdigest()
