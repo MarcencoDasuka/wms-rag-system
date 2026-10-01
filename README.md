@@ -86,3 +86,14 @@ docker compose up -d
 * `search_wms_security(topic)` — специализированный поиск по безопасности (JWT, PreAuthorize, роли).
 * `get_rag_status()` — метрики и статус векторного хранилища.
 * `reindex_wms_codebase()` — полная переиндексация кодовой базы.
+
+---
+
+## 4. Документация проекта
+
+* [`docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — сквозной архитектурный реестр 19 исправлений (WMS backend + RAG сервис).
+* [`docs/RAG_POST_FIX_EVALUATION.md`](docs/RAG_POST_FIX_EVALUATION.md) — итоговый эмпирический отчёт верификации качества поиска (1,261 чанк, Hit@1 83.3%).
+* [`docs/archive/`](docs/archive/README.md) — архив завершённых технических аудитов и первичных замеров.
+* [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — спецификация домена и REST API склада WMS.
+* [`wms-code-rag/README.md`](wms-code-rag/README.md) — автономное руководство по RAG MCP сервису.
+

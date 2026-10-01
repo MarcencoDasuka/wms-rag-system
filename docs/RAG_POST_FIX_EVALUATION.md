@@ -46,7 +46,7 @@ This report delivers an independent, empirical post-fix evaluation of the WMS Co
 
 ### 2.1 Resolution of Methodological Ambiguities
 
-As established in [`docs/RAG_RETRIEVAL_EVALUATION_REVIEW.md`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/docs/RAG_RETRIEVAL_EVALUATION_REVIEW.md), the original evaluation report had arithmetic inconsistencies because it did not formally specify whether `Hit@K` and `MRR` evaluated **Strict Primary Evidence** (the exact method/class declaration) or **Lenient Any Evidence** (including callers, unit tests, or related DTOs).
+As established in [`docs/archive/RAG_RETRIEVAL_EVALUATION_REVIEW.md`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/docs/archive/RAG_RETRIEVAL_EVALUATION_REVIEW.md), the original evaluation report had arithmetic inconsistencies because it did not formally specify whether `Hit@K` and `MRR` evaluated **Strict Primary Evidence** (the exact method/class declaration) or **Lenient Any Evidence** (including callers, unit tests, or related DTOs).
 
 To ensure complete epistemic honesty and prevent deceptive metric inflation:
 1. **Strict Primary Evaluation:** Evaluates whether the exact target symbol declaration or primary algorithm chunk appears within top-K. A query that retrieves only a calling service is scored as a non-hit.

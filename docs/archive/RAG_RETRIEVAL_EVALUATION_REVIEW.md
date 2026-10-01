@@ -2,7 +2,7 @@
 
 > **Review Type:** Adversarial Validation of Benchmark Conclusions  
 > **Date:** 2026-10-01  
-> **Reviewed Document:** [`docs/RAG_RETRIEVAL_EVALUATION.md`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/docs/RAG_RETRIEVAL_EVALUATION.md)  
+> **Reviewed Document:** [`docs/archive/RAG_RETRIEVAL_EVALUATION.md`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/docs/archive/RAG_RETRIEVAL_EVALUATION.md)  
 > **Reviewer:** Antigravity Agent (Adversarial Mode)  
 > **Principle:** Attempt to break the benchmark's own conclusions before accepting them.
 
