@@ -71,16 +71,38 @@ def get_entity_and_schema(table_or_entity: str) -> str:
     """
     if err := validate_query(table_or_entity, "table_or_entity"):
         return err
-    query = f"table entity definition {table_or_entity} create table schema"
-    results = retriever.retrieve(
-        query=query,
-        top_n=5,
+
+    # 1. Retrieve SQL schema / DDL migrations
+    sql_query = f"table schema definition CREATE TABLE ALTER TABLE {table_or_entity}"
+    sql_results = retriever.retrieve(
+        query=sql_query,
+        top_n=3,
         where_filter={"chunk_type": "sql_schema"},
     )
-    if not results:
-        # Fallback to searching without where_filter
-        results = retriever.retrieve(query=query, top_n=4)
-    return retriever.format_for_agent(results)
+
+    # 2. Retrieve Java JPA Entity definitions (@Entity, @Table, class definition)
+    entity_query = f"JPA @Entity @Table class definition {table_or_entity} fields relationships"
+    entity_results = retriever.retrieve(
+        query=entity_query,
+        top_n=3,
+        where_filter={"language": "java"},
+    )
+
+    # 3. Combine and deduplicate
+    combined = []
+    seen_ids = set()
+    for item in sql_results + entity_results:
+        chunk = item[0]
+        if chunk.id not in seen_ids:
+            seen_ids.add(chunk.id)
+            combined.append(item)
+
+    # 4. Fallback if both specific searches returned nothing
+    if not combined:
+        fallback_query = f"table entity definition {table_or_entity} create table schema"
+        combined = retriever.retrieve(query=fallback_query, top_n=4)
+
+    return retriever.format_for_agent(combined)
 
 
 @mcp.tool()
