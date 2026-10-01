@@ -340,23 +340,31 @@ class CodeAwareChunker:
             return self._chunk_fallback(content, rel_path, file_path.name)
 
     def _chunk_java(self, content: str, rel_path: str, file_name: str) -> List[CodeChunk]:
-        """Extract Java class overview and individual methods using syntax-aware masking."""
+        """Extract Java class overview, inner types, and methods (including interface/abstract/record declarations)."""
         chunks = []
         lines = content.splitlines()
         total_lines = len(lines)
 
         masked = _mask_java_syntax(content)
 
-        # Detect package and class name
+        # Detect package and primary class/interface/enum/record
         package_match = re.search(r"^\s*package\s+([\w\.]+);", masked, re.MULTILINE)
         package_name = package_match.group(1) if package_match else ""
 
         class_match = re.search(
-            r"\b(?:public|protected|private)?\s*(?:class|interface|enum|record)\s+(\w+)[^{]*\{",
+            r"\b(?:(?:public|protected|private|abstract|static|final|sealed|non-sealed)\s+)*(class|interface|enum|record)\s+(\w+)[^{]*\{",
             masked
         )
-        class_name = class_match.group(1) if class_match else Path(file_name).stem
-        class_body_start = class_match.end() - 1 if class_match else 0
+        if class_match:
+            decl_type = class_match.group(1)
+            class_name = class_match.group(2)
+            decl_line = content[:class_match.start(2)].count("\n") + 1
+            class_body_start = class_match.end() - 1
+        else:
+            decl_type = "class"
+            class_name = Path(file_name).stem
+            decl_line = 1
+            class_body_start = 0
 
         # Chunk 1: Class Summary / Header
         header_lines = min(40, total_lines)
@@ -382,6 +390,8 @@ class CodeAwareChunker:
                 metadata={
                     "package": package_name,
                     "class": class_name,
+                    "declaration_type": decl_type,
+                    "declaration_line": decl_line,
                     "is_class_header": True,
                     "content_hash": content_hash,
                 }
@@ -394,18 +404,142 @@ class CodeAwareChunker:
             "do", "yield", "class", "interface", "enum", "record"
         }
 
+        # Check for compact constructor in records: RecordName { ... }
+        if decl_type == "record":
+            compact_ctor_match = re.search(
+                rf"\b(?:(?:public|protected|private)\s+)?({re.escape(class_name)})\s*\{{",
+                masked[class_body_start:]
+            )
+            if compact_ctor_match:
+                c_start_offset = class_body_start + compact_ctor_match.start(1)
+                c_brace_open = class_body_start + compact_ctor_match.end() - 1
+                b_count = 1
+                b_idx = c_brace_open + 1
+                while b_idx < len(masked) and b_count > 0:
+                    if masked[b_idx] == '{':
+                        b_count += 1
+                    elif masked[b_idx] == '}':
+                        b_count -= 1
+                    b_idx += 1
+                if b_count == 0:
+                    c_body_text = content[c_start_offset:b_idx].strip()
+                    c_start_line = content[:c_start_offset].count("\n") + 1
+                    c_end_line = c_start_line + c_body_text.count("\n")
+                    annotated = (
+                        f"// File: {rel_path} (Lines {c_start_line}-{c_end_line})\n"
+                        f"// Class: {class_name} | Method: {class_name}\n\n"
+                        f"{c_body_text}"
+                    )
+                    c_id = hashlib.sha256(f"{rel_path}:method:{class_name}.{class_name}".encode("utf-8")).hexdigest()[:32]
+                    chunks.append(
+                        CodeChunk(
+                            id=c_id,
+                            file_path=rel_path,
+                            file_name=file_name,
+                            language="java",
+                            chunk_type="method",
+                            symbol_name=f"{class_name}.{class_name}",
+                            content=annotated,
+                            start_line=c_start_line,
+                            end_line=c_end_line,
+                            metadata={
+                                "package": package_name,
+                                "class": class_name,
+                                "method": class_name,
+                                "declaration_type": "constructor",
+                                "declaration_line": c_start_line,
+                                "content_hash": hashlib.sha256(annotated.encode("utf-8")).hexdigest(),
+                            }
+                        )
+                    )
+
         idx = class_body_start + 1
         last_boundary = class_body_start + 1
         ident_pattern = re.compile(r"\b([a-zA-Z_]\w*)\s*\(")
+        inner_type_pattern = re.compile(
+            r"\b(?:(?:public|protected|private|abstract|static|final|sealed|non-sealed)\s+)*(record|class|interface|enum)\s+(\w+)[^{;]*\{"
+        )
         method_counts: dict[str, int] = {}
 
         while idx < len(masked):
-            match = ident_pattern.search(masked, idx)
-            if not match:
+            m_method = ident_pattern.search(masked, idx)
+            m_inner = inner_type_pattern.search(masked, idx)
+
+            # If inner type declaration (e.g. inner record / class / enum) comes first
+            if m_inner and (not m_method or m_inner.start() < m_method.start()):
+                inner_kind = m_inner.group(1)
+                inner_name = m_inner.group(2)
+                brace_open = m_inner.end() - 1
+                b_count = 1
+                b_idx = brace_open + 1
+                while b_idx < len(masked) and b_count > 0:
+                    if masked[b_idx] == '{':
+                        b_count += 1
+                    elif masked[b_idx] == '}':
+                        b_count -= 1
+                    b_idx += 1
+
+                if b_count == 0:
+                    inner_prefix_start = last_boundary
+                    prefix_region = content[last_boundary:m_inner.start(1)]
+                    lines_in_prefix = prefix_region.splitlines(keepends=True)
+                    for line in lines_in_prefix:
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
+                        if stripped.startswith("@") or stripped.startswith("/*") or stripped.startswith("//") or any(
+                            stripped.startswith(m) for m in ["public", "protected", "private", "static", "final", "sealed", "non-sealed", inner_kind]
+                        ):
+                            line_idx = content.find(line, last_boundary)
+                            if line_idx != -1:
+                                inner_prefix_start = line_idx
+                                break
+
+                    inner_text = content[inner_prefix_start:b_idx].strip()
+                    i_start_line = content[:inner_prefix_start].count("\n") + 1
+                    i_end_line = i_start_line + inner_text.count("\n")
+                    i_decl_line = content[:m_inner.start(2)].count("\n") + 1
+
+                    annotated = (
+                        f"// File: {rel_path} (Lines {i_start_line}-{i_end_line})\n"
+                        f"// Class: {class_name} | {inner_kind.capitalize()}: {inner_name}\n\n"
+                        f"{inner_text}"
+                    )
+                    inner_chunk_id = hashlib.sha256(f"{rel_path}:class_summary:{class_name}.{inner_name}".encode("utf-8")).hexdigest()[:32]
+                    chunks.append(
+                        CodeChunk(
+                            id=inner_chunk_id,
+                            file_path=rel_path,
+                            file_name=file_name,
+                            language="java",
+                            chunk_type="class_summary",
+                            symbol_name=f"{class_name}.{inner_name}",
+                            content=annotated,
+                            start_line=i_start_line,
+                            end_line=i_end_line,
+                            metadata={
+                                "package": package_name,
+                                "class": class_name,
+                                "inner_name": inner_name,
+                                "declaration_type": inner_kind,
+                                "declaration_line": i_decl_line,
+                                "is_inner_declaration": True,
+                                "content_hash": hashlib.sha256(annotated.encode("utf-8")).hexdigest(),
+                            }
+                        )
+                    )
+                    last_boundary = b_idx
+                    idx = b_idx
+                    continue
+                else:
+                    idx = m_inner.end()
+                    continue
+
+            if not m_method:
                 break
 
-            method_name = match.group(1)
-            paren_open = match.end() - 1  # at '('
+            method_name = m_method.group(1)
+            paren_open = m_method.end() - 1
 
             if method_name in JAVA_KEYWORDS:
                 idx = paren_open + 1
@@ -425,51 +559,83 @@ class CodeAwareChunker:
                 idx = paren_open + 1
                 continue
 
-            paren_close = p_idx  # index after ')'
-
-            # Look ahead from paren_close for '{' (opening brace of method body)
+            paren_close = p_idx
             tail = masked[paren_close:]
-            head_match = re.match(r"^(\s*(?:throws\s+[\w,\s\.\<\>\[\]]+)?\s*)(\{)", tail)
-            if not head_match:
-                # Abstract method, interface method, or field call
+
+            body_match = re.match(r"^(\s*(?:throws\s+[\w,\s\.\<\>\[\]]+)?\s*)(\{)", tail)
+            decl_match = re.match(r"^(\s*(?:throws\s+[\w,\s\.\<\>\[\]]+)?\s*)(;)", tail)
+
+            if body_match:
+                brace_open = paren_close + body_match.start(2)
+                b_count = 1
+                b_idx = brace_open + 1
+                while b_idx < len(masked) and b_count > 0:
+                    if masked[b_idx] == '{':
+                        b_count += 1
+                    elif masked[b_idx] == '}':
+                        b_count -= 1
+                    b_idx += 1
+
+                if b_count != 0:
+                    idx = brace_open + 1
+                    continue
+
+                end_pos = b_idx
+            elif decl_match:
+                # Validation checks for declaration-only methods (abstract / interface / repository)
+                prefix_to_ident = masked[last_boundary:m_method.start(1)]
+                # Check 1: Must not be a method call like obj.method()
+                if prefix_to_ident.rstrip().endswith("."):
+                    idx = paren_close
+                    continue
+
+                # Check 2: Strip annotations and ensure no '=' assignment operator exists in prefix
+                unannotated = re.sub(r"@\w+(?:\([^)]*\))?", " ", prefix_to_ident)
+                if "=" in unannotated:
+                    idx = paren_close
+                    continue
+
+                # Check 3: Must not be a statement keyword like return, throw, new, assert
+                if re.search(r"\b(?:return|throw|new|assert)\b", unannotated):
+                    idx = paren_close
+                    continue
+
+                # Check 4: Must contain a return type or modifier
+                if not re.search(r"\b(?:public|protected|private|abstract|default|static|final|native|void|boolean|byte|short|int|long|char|float|double|[A-Z]\w*)\b", unannotated):
+                    idx = paren_close
+                    continue
+
+                semicolon_pos = paren_close + decl_match.end(2)
+                end_pos = semicolon_pos
+            else:
                 idx = paren_close
                 continue
 
-            brace_open = paren_close + head_match.start(2)
-
-            # Find matching '}' for method body
-            b_count = 1
-            b_idx = brace_open + 1
-            while b_idx < len(masked) and b_count > 0:
-                if masked[b_idx] == '{':
-                    b_count += 1
-                elif masked[b_idx] == '}':
-                    b_count -= 1
-                b_idx += 1
-
-            if b_count != 0:
-                idx = brace_open + 1
-                continue
-
-            brace_close = b_idx
-
-            # Determine method start: include annotations, javadocs, and modifiers
-            prefix_region = content[last_boundary:match.start(1)]
+            # Determine method start: include annotations, javadocs, modifiers, return type
+            prefix_region = content[last_boundary:m_method.start(1)]
             lines_in_prefix = prefix_region.splitlines(keepends=True)
             method_prefix_start = last_boundary
             for line in lines_in_prefix:
                 stripped = line.strip()
-                if stripped.startswith("@") or any(
-                    stripped.startswith(m) for m in ["public", "protected", "private", "static", "final", "synchronized", "default"]
+                if not stripped:
+                    continue
+                if (
+                    stripped.startswith("@")
+                    or stripped.startswith("/*")
+                    or stripped.startswith("*")
+                    or stripped.startswith("//")
+                    or any(stripped.startswith(m) for m in ["public", "protected", "private", "static", "final", "synchronized", "default", "abstract", "native"])
+                    or re.match(r"^(?:<[\w\s,\.\<\>\[\]]+>\s+)?[\w\<\>\[\]]+\s+", stripped)
                 ):
                     line_idx = content.find(line, last_boundary)
                     if line_idx != -1:
                         method_prefix_start = line_idx
                         break
 
-            method_text = content[method_prefix_start:brace_close].strip()
+            method_text = content[method_prefix_start:end_pos].strip()
             start_line = content[:method_prefix_start].count("\n") + 1
             end_line = start_line + method_text.count("\n")
+            decl_line = content[:m_method.start(1)].count("\n") + 1
 
             count = method_counts.get(method_name, 0)
             method_counts[method_name] = count + 1
@@ -501,13 +667,15 @@ class CodeAwareChunker:
                         "package": package_name,
                         "class": class_name,
                         "method": method_name,
+                        "declaration_type": "method",
+                        "declaration_line": decl_line,
                         "content_hash": m_content_hash,
                     }
                 )
             )
 
-            last_boundary = brace_close
-            idx = brace_close
+            last_boundary = end_pos
+            idx = end_pos
 
         return chunks
 

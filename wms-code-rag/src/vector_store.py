@@ -27,6 +27,14 @@ class CodeVectorStore:
             path=str(self.persist_dir),
             settings=Settings(anonymized_telemetry=False, is_persistent=True),
         )
+        self._symbol_cache: Optional[dict[str, Any]] = None
+        self._symbol_cache_count: Optional[int] = None
+
+    def invalidate_symbol_cache(self) -> None:
+        """Explicitly invalidate the in-memory symbol cache."""
+        self._symbol_cache = None
+        self._symbol_cache_count = None
+
 
     @property
     def collection(self):
@@ -49,6 +57,9 @@ class CodeVectorStore:
         """Batch upsert code chunks into ChromaDB."""
         if not chunks:
             return
+
+        self._symbol_cache = None
+        self._symbol_cache_count = None
 
         ids = [c.id for c in chunks]
         documents = [c.content for c in chunks]
@@ -132,6 +143,8 @@ class CodeVectorStore:
         """Delete specific chunks by ID."""
         if not ids:
             return
+        self._symbol_cache = None
+        self._symbol_cache_count = None
         batch_size = 500
         for i in range(0, len(ids), batch_size):
             self.collection.delete(ids=ids[i:i + batch_size])
@@ -151,6 +164,8 @@ class CodeVectorStore:
 
     def clear(self) -> None:
         """Clear all indexed data from the collection."""
+        self._symbol_cache = None
+        self._symbol_cache_count = None
         try:
             self.client.delete_collection(name=self.collection_name)
         except Exception:
@@ -162,3 +177,134 @@ class CodeVectorStore:
             name=self.collection_name,
             metadata=init_metadata,
         )
+
+    def _rebuild_symbol_cache(self) -> None:
+        """Rebuilds deterministic in-memory lookup index from persistent collection metadata."""
+        cache: dict[str, dict[str, List[CodeChunk]]] = {
+            "exact": {},
+            "qualified": {},
+            "unqualified": {},
+            "case_insensitive": {},
+        }
+        current_count = self.collection.count()
+        if current_count == 0:
+            self._symbol_cache = cache
+            self._symbol_cache_count = 0
+            return
+
+        data = self.collection.get(include=["metadatas", "documents"])
+        ids = data.get("ids") or []
+        metas = data.get("metadatas") or []
+        docs = data.get("documents") or []
+
+        for cid, meta, doc in zip(ids, metas, docs):
+            m = dict(meta) if meta else {}
+            chunk = CodeChunk(
+                id=cid,
+                file_path=m.get("file_path", "unknown"),
+                file_name=m.get("file_name", "unknown"),
+                language=m.get("language", "text"),
+                chunk_type=m.get("chunk_type", "general"),
+                symbol_name=m.get("symbol_name", ""),
+                content=doc or "",
+                start_line=int(m.get("start_line", 1)),
+                end_line=int(m.get("end_line", 1)),
+                metadata=m,
+            )
+
+            sym = chunk.symbol_name.strip()
+            pkg = m.get("package", "").strip()
+            cls = m.get("class", "").strip()
+            method = m.get("method", "").strip()
+            inner = m.get("inner_name", "").strip()
+            fname = m.get("file_name", "").strip()
+
+            def add_to_bucket(bucket_name: str, key_name: str, item: CodeChunk):
+                if not key_name:
+                    return
+                bucket = cache[bucket_name]
+                lst = bucket.setdefault(key_name, [])
+                if not any(x.id == item.id for x in lst):
+                    lst.append(item)
+
+            if sym:
+                add_to_bucket("exact", sym, chunk)
+                add_to_bucket("case_insensitive", sym.lower(), chunk)
+
+            # Package-qualified symbols (e.g. com.isd.wms.repository.StockRepository)
+            if pkg and cls:
+                pkg_cls = f"{pkg}.{cls}"
+                add_to_bucket("qualified", pkg_cls, chunk)
+                add_to_bucket("case_insensitive", pkg_cls.lower(), chunk)
+                if method:
+                    pkg_method = f"{pkg}.{cls}.{method}"
+                    add_to_bucket("qualified", pkg_method, chunk)
+                    add_to_bucket("case_insensitive", pkg_method.lower(), chunk)
+
+            # Class-level standalone symbol
+            if cls:
+                if chunk.chunk_type == "class_summary":
+                    add_to_bucket("exact", cls, chunk)
+                    add_to_bucket("case_insensitive", cls.lower(), chunk)
+
+            # Inner declaration (e.g. inner record / DTO)
+            if inner:
+                add_to_bucket("exact", inner, chunk)
+                add_to_bucket("case_insensitive", inner.lower(), chunk)
+
+            # Unqualified method name (e.g. findAvailableStocksByProductIdAndZone)
+            if method:
+                add_to_bucket("unqualified", method, chunk)
+                add_to_bucket("case_insensitive", method.lower(), chunk)
+
+            # File name (e.g. StockRepository.java, V25__rename_processes_to_allocations.sql)
+            if fname:
+                add_to_bucket("exact", fname, chunk)
+                add_to_bucket("case_insensitive", fname.lower(), chunk)
+
+        self._symbol_cache = cache
+        self._symbol_cache_count = current_count
+
+    def find_symbol_declarations(self, symbol_name: str) -> List[CodeChunk]:
+        """Deterministic exact lookup for symbol declarations in indexed metadata."""
+        if not symbol_name or not symbol_name.strip():
+            return []
+
+        target = symbol_name.strip()
+        target_lower = target.lower()
+
+        current_count = self.collection.count()
+        if self._symbol_cache is None or self._symbol_cache_count != current_count:
+            self._rebuild_symbol_cache()
+
+
+        results: List[CodeChunk] = []
+        if target in self._symbol_cache["exact"]:
+            results = list(self._symbol_cache["exact"][target])
+        elif target in self._symbol_cache["qualified"]:
+            results = list(self._symbol_cache["qualified"][target])
+        elif target in self._symbol_cache["unqualified"]:
+            results = list(self._symbol_cache["unqualified"][target])
+        elif target_lower in self._symbol_cache["case_insensitive"]:
+            results = list(self._symbol_cache["case_insensitive"][target_lower])
+
+        if not results:
+            return []
+
+        # Deterministic ranking:
+        # 1. Exact symbol_name match or exact inner_name / class match
+        # 2. class_summary
+        # 3. file_path, start_line
+        def sort_key(c: CodeChunk):
+            is_exact = 0 if (
+                c.symbol_name == target
+                or c.metadata.get("class") == target
+                or c.metadata.get("inner_name") == target
+                or c.metadata.get("method") == target
+            ) else 1
+            is_summary = 0 if c.chunk_type == "class_summary" else 1
+            return (is_exact, is_summary, c.file_path, c.start_line)
+
+        results.sort(key=sort_key)
+        return results
+

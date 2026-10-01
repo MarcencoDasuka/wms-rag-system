@@ -24,7 +24,7 @@ from src.retriever import CodeRetriever
 
 config = load_config()
 indexer = CodebaseIndexer(config)
-retriever = CodeRetriever(config)
+retriever = CodeRetriever(config, store=indexer.store)
 
 # Initialize FastMCP Server
 mcp = FastMCP(
@@ -54,16 +54,46 @@ def clamp_top_n(top_n: int, default: int = 4, max_val: int = 20) -> int:
 
 @mcp.tool()
 def search_wms_code(query: str, top_n: int = 4) -> str:
-    """Semantic search across the WMS codebase (Java services, controllers, Vue components, configs).
+    """Semantic discovery search across the WMS codebase (Java services, controllers, Vue components, configs).
 
+    Answers: 'What code is semantically relevant to this concept/query?'
     Use this tool to find how warehouse operations, business logic, endpoints,
-    or components are implemented without reading the entire repository.
+    or components are implemented conceptually without reading the entire repository.
+
+    IMPORTANT: Semantic relevance scores are NOT proof that an exact symbol exists.
+    To verify whether a specific symbol, class, method, or interface is declared in the codebase,
+    use 'find_symbol_declaration' instead.
+
+    Args:
+        query: Conceptual or natural language query describing functionality or code.
+        top_n: Number of semantically relevant chunks to return (default: 4, max: 20).
     """
     if err := validate_query(query, "query"):
         return err
     bounded_n = clamp_top_n(top_n, default=4, max_val=20)
     results = retriever.retrieve(query=query, top_n=bounded_n)
     return retriever.format_for_agent(results)
+
+
+@mcp.tool()
+def find_symbol_declaration(symbol_name: str) -> str:
+    """Deterministically checks if an exact symbol is declared in the indexed WMS codebase and returns its declaration location.
+
+    Answers: 'Is this exact symbol declared in the indexed codebase, and where?'
+    Performs deterministic lookup against indexed symbol metadata and source declarations
+    (classes, interfaces, methods, enums, records/DTOs, and package-qualified symbols).
+
+    IMPORTANT: Returns FOUND with source location, or NOT_FOUND stating that no matching declaration
+    was found in the indexed WMS codebase. NOT_FOUND does not claim absence beyond the indexed codebase.
+    This operation does not rely on embedding similarity.
+
+    Args:
+        symbol_name: Exact or qualified symbol identifier to look up (e.g. 'StockAllocationStrategy', 'StockRepository.findAvailableStocksByProductIdAndZone', 'CreateInboundScheduleDto').
+    """
+    if err := validate_query(symbol_name, "symbol_name"):
+        return err
+    return retriever.find_symbol_declaration(symbol_name)
+
 
 
 @mcp.tool()
