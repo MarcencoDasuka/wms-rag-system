@@ -211,9 +211,12 @@ class CodeAwareChunker:
     def chunk_file(self, file_path: Path, rel_path: str) -> List[CodeChunk]:
         """Route file to appropriate language chunker based on extension."""
         try:
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+            raw_content = file_path.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return []
+
+        # Sanitize secrets across all ingested files (Java, SQL, Vue, Properties, YAML, etc.)
+        content = sanitize_secrets(raw_content)
 
         suffix = file_path.suffix.lower()
         if suffix == ".java":
@@ -223,13 +226,11 @@ class CodeAwareChunker:
         elif suffix == ".vue":
             return self._chunk_vue(content, rel_path, file_path.name)
         elif suffix in [".properties", ".yaml", ".yml"]:
-            clean_content = sanitize_secrets(content)
-            return self._chunk_config(clean_content, rel_path, file_path.name)
+            return self._chunk_config(content, rel_path, file_path.name)
         elif suffix == ".md":
             return self._chunk_markdown(content, rel_path, file_path.name)
         else:
-            clean_content = sanitize_secrets(content)
-            return self._chunk_fallback(clean_content, rel_path, file_path.name)
+            return self._chunk_fallback(content, rel_path, file_path.name)
 
     def _chunk_java(self, content: str, rel_path: str, file_name: str) -> List[CodeChunk]:
         """Extract Java class overview and individual methods using syntax-aware masking."""
