@@ -85,3 +85,51 @@ def test_indexer_ignores_sensitive_files(tmp_path: Path):
 
     # Only OrderService.java and application.properties should be scanned
     assert files_scanned == 2
+
+
+def test_sanitize_secrets_in_code_and_sql():
+    """Verify that Java variable assignments, setters, SQL passwords, and extended keys are redacted."""
+    source_code = """
+package com.isd.wms.auth;
+
+public class SecurityConfig {
+    private final String jwtSecret = "SUPER_SECRET_JWT_KEY_CANARY_888";
+    private String apiKey = "SUPER_SECRET_API_KEY_CANARY_777";
+    public String masterKey = "SUPER_SECRET_MASTER_KEY_CANARY_666";
+
+    public void configure(DataSource ds) {
+        ds.setPassword("SUPER_SECRET_DB_PASS_CANARY_555");
+    }
+}
+"""
+    sanitized_code = sanitize_secrets(source_code)
+    assert "SUPER_SECRET_JWT_KEY_CANARY_888" not in sanitized_code
+    assert "SUPER_SECRET_API_KEY_CANARY_777" not in sanitized_code
+    assert "SUPER_SECRET_MASTER_KEY_CANARY_666" not in sanitized_code
+    assert "SUPER_SECRET_DB_PASS_CANARY_555" not in sanitized_code
+    assert '[REDACTED]' in sanitized_code
+
+    sql_code = """
+CREATE USER wms_user WITH PASSWORD 'SUPER_SECRET_SQL_PW_CANARY_444';
+ALTER USER replica IDENTIFIED BY 'SUPER_SECRET_REPLICA_PW_333';
+"""
+    sanitized_sql = sanitize_secrets(sql_code)
+    assert "SUPER_SECRET_SQL_PW_CANARY_444" not in sanitized_sql
+    assert "SUPER_SECRET_REPLICA_PW_333" not in sanitized_sql
+    assert "'[REDACTED]'" in sanitized_sql
+
+    config_code = """
+authorization=Bearer SUPER_SECRET_BEARER_222
+signingKey=SUPER_SECRET_SIGNING_111
+encryptionKey=SUPER_SECRET_ENC_000
+clientAuth=SUPER_SECRET_CLIENT_999
+authValue=SUPER_SECRET_AUTHVAL_888
+"""
+    sanitized_cfg = sanitize_secrets(config_code)
+    assert "SUPER_SECRET_BEARER_222" not in sanitized_cfg
+    assert "SUPER_SECRET_SIGNING_111" not in sanitized_cfg
+    assert "SUPER_SECRET_ENC_000" not in sanitized_cfg
+    assert "SUPER_SECRET_CLIENT_999" not in sanitized_cfg
+    assert "SUPER_SECRET_AUTHVAL_888" not in sanitized_cfg
+    assert "[REDACTED]" in sanitized_cfg
+

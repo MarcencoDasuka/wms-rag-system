@@ -21,13 +21,30 @@ class CodeChunk(BaseModel):
 
 
 SENSITIVE_KEY_PATTERN = re.compile(
-    r"(?i)(password|secret|jwt|token|credential|api[_-]?key|private[_-]?key|"
-    r"access[_-]?key|auth[_-]?token|bearer[_-]?token|datasource\.password)"
+    r"(?i)(password|passwd|secret|jwt|token|credential|api[_-]?key|private[_-]?key|"
+    r"access[_-]?key|auth[_-]?token|bearer[_-]?token|datasource\.password|"
+    r"authorization|signing[_-]?key|encryption[_-]?key|master[_-]?key|"
+    r"client[_-]?auth|auth[_-]?val(?:ue)?|cipher[_-]?key)"
 )
 
 PRIVATE_KEY_BLOCK_PATTERN = re.compile(
     r"-----BEGIN [A-Z0-9_-]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9_-]+ PRIVATE KEY-----",
     re.MULTILINE
+)
+
+CODE_ASSIGN_SECRET_PATTERN = re.compile(
+    r"(?i)(\b[\w\.]*(?:password|passwd|secret|jwt|token|api[_-]?key|private[_-]?key|"
+    r"signing[_-]?key|master[_-]?key|encryption[_-]?key|authorization|client[_-]?auth)[\w\.]*\s*=\s*)"
+    r'(["\'])(?:\\.|[^\\])*?\2'
+)
+
+SETTER_SECRET_PATTERN = re.compile(
+    r"(?i)(\.set(?:Password|Passwd|Secret|Token|ApiKey|PrivateKey|SigningKey|MasterKey|EncryptionKey)\s*\(\s*)"
+    r'(["\'])(?:\\.|[^\\])*?\2(\s*\))'
+)
+
+SQL_PASSWORD_PATTERN = re.compile(
+    r"(?i)(\b(?:IDENTIFIED\s+BY|PASSWORD)\s+)(['\"])(?:\\.|[^\\])*?\2"
 )
 
 
@@ -43,7 +60,11 @@ def sanitize_secrets(content: str) -> str:
     # 1. Scrub private key PEM blocks
     sanitized = PRIVATE_KEY_BLOCK_PATTERN.sub("[REDACTED_PRIVATE_KEY]", content)
 
-    # 2. Scrub key-value configuration lines (properties, yaml, env)
+    # 2. Scrub method setters and SQL password clauses
+    sanitized = SETTER_SECRET_PATTERN.sub(r'\1"[REDACTED]"\3', sanitized)
+    sanitized = SQL_PASSWORD_PATTERN.sub(r"\1'[REDACTED]'", sanitized)
+
+    # 3. Scrub key-value configuration lines and variable assignments
     lines = sanitized.splitlines()
     redacted_lines = []
     for line in lines:
@@ -63,6 +84,9 @@ def sanitize_secrets(content: str) -> str:
                 comment = comment_match.group(1) if comment_match else ""
                 redacted_lines.append(f"{prefix}[REDACTED]{comment}")
                 continue
+
+        # Scrub code variable assignments (Java, JS, Vue, Python): e.g. String jwtSecret = "..."
+        line = CODE_ASSIGN_SECRET_PATTERN.sub(r'\1"[REDACTED]"', line)
 
         # Scrub Spring property placeholders with default secrets: ${VAR:secret_fallback}
         def redact_placeholder(m):
