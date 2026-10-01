@@ -31,11 +31,23 @@ def test_is_session_active_prefers_public_api_and_gracefully_handles_unknown():
     assert is_session_active(priv_sm, "sess-abc") is True
     assert is_session_active(priv_sm, "sess-other") is False
 
-    # 3. Future/different manager with no _server_instances does not raise AttributeError
+    # 3. Manager with _sessions or sessions attribute
+    class MockSessionsListManager:
+        def __init__(self, sessions):
+            self.sessions = sessions
+    sess_list_sm = MockSessionsListManager(["sess-xyz"])
+    assert is_session_active(sess_list_sm, "sess-xyz") is True
+    assert is_session_active(sess_list_sm, "sess-unknown") is False
+
+    # 4. Empty/whitespace session_id returns False safely
+    assert is_session_active(pub_sm, "") is False
+    assert is_session_active(pub_sm, "   ") is False
+
+    # 5. Future/different manager with no recognized attributes does not raise AttributeError
     empty_sm = MockEmptySessionManager()
     assert is_session_active(empty_sm, "any-id") is True
 
-    # 4. None session manager does not crash
+    # 6. None session manager does not crash
     assert is_session_active(None, "any-id") is True
 
 

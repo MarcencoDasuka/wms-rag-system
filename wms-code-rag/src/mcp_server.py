@@ -219,11 +219,14 @@ def is_session_active(session_manager: Any, session_id: str) -> bool:
     Inspects public methods if provided by current/future FastMCP versions,
     with safe defensive inspection of container attributes if private.
     """
+    if not session_id or not session_id.strip():
+        return False
+
     if not session_manager:
         return True
 
     # 1. Prefer public session check APIs if provided by FastMCP version
-    for method_name in ("has_session", "is_active", "get_session"):
+    for method_name in ("has_session", "is_active", "get_session", "contains_session"):
         method = getattr(session_manager, method_name, None)
         if callable(method):
             try:
@@ -233,9 +236,10 @@ def is_session_active(session_manager: Any, session_id: str) -> bool:
                 pass
 
     # 2. Defensive fallback checking session container without crashing on attribute change
-    instances = getattr(session_manager, "_server_instances", None)
-    if isinstance(instances, (dict, set, list)):
-        return session_id in instances
+    for attr in ("_server_instances", "_sessions", "sessions"):
+        instances = getattr(session_manager, attr, None)
+        if isinstance(instances, (dict, set, list)):
+            return session_id in instances
 
     # 3. Default to True so standard MCP protocol error handling applies
     return True
