@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any, Optional
 
 # Ensure package root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -84,9 +85,118 @@ def get_rag_status() -> str:
     )
 
 
+class AuthMiddleware:
+    """Enforces token-based authentication on remote MCP endpoints when auth_token is configured."""
+
+    def __init__(self, inner_app, auth_token: str | None = None):
+        self.inner_app = inner_app
+        self.auth_token = auth_token
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            path = scope.get("path", "")
+            # Whitelist healthcheck endpoint for orchestration/readiness probes
+            if path == "/health":
+                await self.inner_app(scope, receive, send)
+                return
+
+            if self.auth_token:
+                import hmac
+                from urllib.parse import parse_qs
+                from starlette.responses import JSONResponse
+
+                headers = dict(scope.get("headers", []))
+                auth_header = headers.get(b"authorization", b"").decode("latin-1")
+                api_key_header = headers.get(b"x-api-key", b"").decode("latin-1")
+                query_string = scope.get("query_string", b"").decode("latin-1")
+                params = parse_qs(query_string)
+                query_token = params.get("token", [""])[0]
+
+                bearer_token = ""
+                if auth_header.lower().startswith("bearer "):
+                    bearer_token = auth_header[7:].strip()
+
+                provided_token = bearer_token or api_key_header or query_token
+                if not provided_token or not hmac.compare_digest(provided_token, self.auth_token):
+                    response = JSONResponse(
+                        {"error": "Unauthorized: valid authentication token required"},
+                        status_code=401,
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                    await response(scope, receive, send)
+                    return
+
+        await self.inner_app(scope, receive, send)
+
+
+# Auto-heal expired session IDs instead of failing with 404
+class SessionAutoHealMiddleware:
+    def __init__(self, inner_app, session_manager):
+        self.inner_app = inner_app
+        self.session_manager = session_manager
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            headers = dict(scope.get("headers", []))
+            session_id = headers.get(b"mcp-session-id")
+            if session_id:
+                sess_str = session_id.decode("ascii", errors="ignore")
+                # If session ID is not active, strip header to start fresh session seamlessly
+                if sess_str not in self.session_manager._server_instances:
+                    scope["headers"] = [
+                        (k, v) for k, v in scope.get("headers", [])
+                        if k.lower() != b"mcp-session-id"
+                    ]
+        await self.inner_app(scope, receive, send)
+
+
+def create_http_app(mcp_server: FastMCP, app_config) -> Any:
+    """Build ASGI application supporting modern MCP Streamable HTTP, health checks, and authentication."""
+    from starlette.routing import Route
+    from starlette.responses import JSONResponse
+
+    app = mcp_server.streamable_http_app()
+    endpoint = app.routes[0].endpoint
+
+    # Mount on common MCP paths so clients connecting to /sse, /mcp, or root / all work
+    app.routes.append(Route("/sse", endpoint))
+    app.routes.append(Route("/", endpoint))
+
+    # Fast, non-blocking health check endpoint for Docker & monitoring
+    async def health_check(request):
+        return JSONResponse({
+            "status": "healthy",
+            "service": "wms-code-rag",
+            "indexed_chunks": indexer.store.count(),
+        })
+
+    app.routes.append(Route("/health", health_check, methods=["GET"]))
+
+    session_app = SessionAutoHealMiddleware(app, mcp_server.session_manager)
+    effective_token = app_config.server.auth_token or os.environ.get("MCP_AUTH_TOKEN")
+    return AuthMiddleware(session_app, auth_token=effective_token)
+
+
 @mcp.tool()
-def reindex_wms_codebase() -> str:
-    """Forces a full re-scan and re-index of the WMS codebase into the vector database."""
+def reindex_wms_codebase(confirm: bool = False, auth_token: str | None = None) -> str:
+    """Forces a full re-scan and re-index of the WMS codebase into the vector database.
+
+    Args:
+        confirm: Confirmation flag. Must be True to proceed with clearing and reindexing.
+        auth_token: Required authorization token when server authentication is configured.
+    """
+    expected_token = config.server.auth_token or os.environ.get("MCP_AUTH_TOKEN")
+    if expected_token:
+        import hmac
+        if not auth_token or not hmac.compare_digest(auth_token, expected_token):
+            return "Error: Unauthorized. Valid auth_token required to execute destructive reindexing."
+
+    if not confirm:
+        return (
+            "Warning: reindex_wms_codebase is a destructive operation that clears the existing "
+            "vector store and reindexes the codebase. Pass confirm=True to proceed."
+        )
+
     files_scanned, chunks_indexed = indexer.scan_and_index(clear_first=True)
     return (
         f"Re-indexing complete!\n"
@@ -121,48 +231,7 @@ def main():
 
     if args.transport in ("sse", "http", "streamable-http"):
         import uvicorn
-        from starlette.routing import Route
-        from starlette.responses import JSONResponse
-
-        # Build StreamableHTTP application supporting modern MCP specification (2024-11-05)
-        app = mcp.streamable_http_app()
-        endpoint = app.routes[0].endpoint
-
-        # Mount on common MCP paths so clients connecting to /sse, /mcp, or root / all work
-        app.routes.append(Route("/sse", endpoint))
-        app.routes.append(Route("/", endpoint))
-
-        # Fast, non-blocking health check endpoint for Docker & monitoring
-        async def health_check(request):
-            return JSONResponse({
-                "status": "healthy",
-                "service": "wms-code-rag",
-                "indexed_chunks": indexer.store.count(),
-            })
-
-        app.routes.append(Route("/health", health_check, methods=["GET"]))
-
-        # Auto-heal expired session IDs instead of failing with 404
-        class SessionAutoHealMiddleware:
-            def __init__(self, inner_app, session_manager):
-                self.inner_app = inner_app
-                self.session_manager = session_manager
-
-            async def __call__(self, scope, receive, send):
-                if scope.get("type") == "http":
-                    headers = dict(scope.get("headers", []))
-                    session_id = headers.get(b"mcp-session-id")
-                    if session_id:
-                        sess_str = session_id.decode("ascii", errors="ignore")
-                        # If session ID is not active, strip header to start fresh session seamlessly
-                        if sess_str not in self.session_manager._server_instances:
-                            scope["headers"] = [
-                                (k, v) for k, v in scope.get("headers", [])
-                                if k.lower() != b"mcp-session-id"
-                            ]
-                await self.inner_app(scope, receive, send)
-
-        final_app = SessionAutoHealMiddleware(app, mcp.session_manager)
+        final_app = create_http_app(mcp, config)
 
         uvicorn_config = uvicorn.Config(
             final_app,

@@ -6,12 +6,13 @@ services:
     container_name: wms-code-rag-server
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - WMS_CODEBASE_PATH=/workspace/wms
       - CHROMA_PERSIST_DIR=/app/data/chroma
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
     volumes:
       # Mount source code for live development/updates
       - ./src:/app/src

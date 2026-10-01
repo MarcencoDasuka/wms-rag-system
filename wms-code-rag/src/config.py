@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -41,8 +41,9 @@ class RetrievalConfig(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
+    auth_token: Optional[str] = None
 
 
 class AppConfig(BaseModel):
@@ -77,5 +78,7 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
         config.server.host = env_host
     if env_port := os.environ.get("MCP_PORT"):
         config.server.port = int(env_port)
+    if env_auth := os.environ.get("MCP_AUTH_TOKEN"):
+        config.server.auth_token = env_auth
 
     return config
