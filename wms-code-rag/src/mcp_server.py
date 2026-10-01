@@ -29,6 +29,25 @@ mcp = FastMCP(
 )
 
 
+MAX_QUERY_LENGTH = 1000
+
+
+def validate_query(text: str, name: str = "query") -> str | None:
+    if not text or not text.strip():
+        return f"Error: {name} parameter cannot be empty."
+    if len(text) > MAX_QUERY_LENGTH:
+        return f"Error: {name} exceeds maximum allowed length of {MAX_QUERY_LENGTH} characters."
+    return None
+
+
+def clamp_top_n(top_n: int, default: int = 4, max_val: int = 20) -> int:
+    try:
+        val = int(top_n)
+        return min(max(1, val), max_val)
+    except (ValueError, TypeError):
+        return default
+
+
 @mcp.tool()
 def search_wms_code(query: str, top_n: int = 4) -> str:
     """Semantic search across the WMS codebase (Java services, controllers, Vue components, configs).
@@ -36,7 +55,10 @@ def search_wms_code(query: str, top_n: int = 4) -> str:
     Use this tool to find how warehouse operations, business logic, endpoints,
     or components are implemented without reading the entire repository.
     """
-    results = retriever.retrieve(query=query, top_n=top_n)
+    if err := validate_query(query, "query"):
+        return err
+    bounded_n = clamp_top_n(top_n, default=4, max_val=20)
+    results = retriever.retrieve(query=query, top_n=bounded_n)
     return retriever.format_for_agent(results)
 
 
@@ -47,6 +69,8 @@ def get_entity_and_schema(table_or_entity: str) -> str:
     Args:
         table_or_entity: Name of the table or entity (e.g., 'orders', 'stock', 'location', 'product')
     """
+    if err := validate_query(table_or_entity, "table_or_entity"):
+        return err
     query = f"table entity definition {table_or_entity} create table schema"
     results = retriever.retrieve(
         query=query,
@@ -66,6 +90,8 @@ def search_wms_security(topic: str) -> str:
     Args:
         topic: Specific security aspect (e.g., 'PreAuthorize role checks', 'jwt token validation', 'excel upload sanitization')
     """
+    if err := validate_query(topic, "topic"):
+        return err
     query = f"security auth permission {topic}"
     results = retriever.retrieve(query=query, top_n=5)
     return retriever.format_for_agent(results)
@@ -197,7 +223,11 @@ def reindex_wms_codebase(confirm: bool = False, auth_token: str | None = None) -
             "vector store and reindexes the codebase. Pass confirm=True to proceed."
         )
 
-    files_scanned, chunks_indexed = indexer.scan_and_index(clear_first=True)
+    try:
+        files_scanned, chunks_indexed = indexer.scan_and_index(clear_first=True)
+    except RuntimeError as e:
+        return f"Error: {e}"
+
     return (
         f"Re-indexing complete!\n"
         f"- Scanned Files: {files_scanned}\n"
