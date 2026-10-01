@@ -8,8 +8,8 @@
 
 ```text
 .
-├── inbound-storage-dispatch — копия/   # Ядро WMS-системы (Clean Copy)
-│   ├── wmsBack/                        # Spring Boot 3 бэкенд (Java 17, JPA, Flyway, PostgreSQL)
+├── inbound-storage-dispatch/           # Ядро WMS-системы (Clean Copy)
+│   ├── wmsBack/                        # Spring Boot 3 бэкенд (Java 21, JPA, Flyway, PostgreSQL)
 │   └── wmsFront/                       # Vue 3 фронтенд (Vite, PrimeVue, Pinia, TypeScript)
 │
 ├── wms-code-rag/                       # Контейнеризированный сервис Codebase RAG + MCP
@@ -26,19 +26,19 @@
 
 ## 1. Подсистема WMS (`inbound-storage-dispatch`)
 
-* **Backend:** Java 17, Spring Boot, Spring Data JPA, Flyway-миграции, PostgreSQL.
+* **Backend:** Java 21, Spring Boot, Spring Data JPA, Flyway-миграции, PostgreSQL.
 * **Frontend:** Vue 3 Composition API, Vite, PrimeVue.
 * **Функционал:** Управление процессами приемки (Inbound), хранения и аллокации (Storage), комплектации и отгрузки (Dispatch).
 
 ### Запуск WMS локально
 * **Бэкенд:**
   ```bash
-  cd "inbound-storage-dispatch — копия/wmsBack"
+  cd "inbound-storage-dispatch/wmsBack"
   ./mvnw clean spring-boot:run
   ```
 * **Фронтенд:**
   ```bash
-  cd "inbound-storage-dispatch — копия/wmsFront"
+  cd "inbound-storage-dispatch/wmsFront"
   npm install
   npm run dev
   ```
