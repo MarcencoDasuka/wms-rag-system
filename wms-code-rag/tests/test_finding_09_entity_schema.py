@@ -63,3 +63,35 @@ def test_get_entity_and_schema_retrieves_both_sql_ddl_and_jpa_entity():
 
     finally:
         retriever.retrieve = original_retrieve
+
+
+def test_get_entity_and_schema_rejects_unrelated_entities_and_prevents_fabrication():
+    """Verify that get_entity_and_schema does not fabricate/hallucinate schemas when queried with unrelated symbols."""
+    unrelated_chunk = CodeChunk(
+        id="sql-zones-01",
+        file_path="src/main/resources/db/migration/V2__zones.sql",
+        file_name="V2__zones.sql",
+        language="sql",
+        chunk_type="sql_schema",
+        symbol_name="warehouse_zones",
+        content="-- Migration: V2__zones.sql\nCREATE TABLE warehouse_zones (id BIGINT PRIMARY KEY, code VARCHAR(50));",
+        start_line=1,
+        end_line=2,
+        metadata={"table_or_index": "warehouse_zones", "chunk_type": "sql_schema", "language": "sql"}
+    )
+
+    original_retrieve = retriever.retrieve
+    try:
+        # Mock retrieve returning an unrelated table regardless of query
+        retriever.retrieve = MagicMock(return_value=[(unrelated_chunk, 0.85)])
+
+        response = get_entity_and_schema("crypto_wallet_account")
+
+        # Invariant: Unrelated table must NOT be returned for crypto_wallet_account
+        assert "CREATE TABLE warehouse_zones" not in response
+        assert "V2__zones.sql" not in response
+        assert "No relevant code or documentation found" in response
+
+    finally:
+        retriever.retrieve = original_retrieve
+

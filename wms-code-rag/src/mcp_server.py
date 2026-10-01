@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -105,7 +106,41 @@ def get_entity_and_schema(table_or_entity: str) -> str:
         fallback_query = f"table entity definition {table_or_entity} create table schema"
         combined = retriever.retrieve(query=fallback_query, top_n=4)
 
-    return retriever.format_for_agent(combined)
+    # 5. Entity Relevance Verification: ensure returned chunks actually relate to the requested entity
+    target_clean = table_or_entity.strip().lower()
+    target_stems = {target_clean}
+    if target_clean.endswith("s") and len(target_clean) > 3:
+        target_stems.add(target_clean[:-1])
+    if target_clean.endswith("es") and len(target_clean) > 4:
+        target_stems.add(target_clean[:-2])
+
+    relevant_combined = []
+    for item in combined:
+        chunk = item[0]
+        symbol = (chunk.symbol_name or "").lower()
+        table_meta = str(chunk.metadata.get("table_or_index", "")).lower()
+        class_meta = str(chunk.metadata.get("class", "")).lower()
+        content_lower = chunk.content.lower()
+
+        matched = False
+        for stem in target_stems:
+            if symbol and (stem in symbol or (len(symbol) >= 3 and symbol in stem)):
+                matched = True
+                break
+            if table_meta and (stem in table_meta or (len(table_meta) >= 3 and table_meta in stem)):
+                matched = True
+                break
+            if class_meta and (stem in class_meta or (len(class_meta) >= 3 and class_meta in stem)):
+                matched = True
+                break
+            if re.search(rf"\b{re.escape(stem)}\b", content_lower):
+                matched = True
+                break
+
+        if matched:
+            relevant_combined.append(item)
+
+    return retriever.format_for_agent(relevant_combined)
 
 
 @mcp.tool()
