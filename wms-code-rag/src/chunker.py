@@ -20,6 +20,63 @@ class CodeChunk(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+SENSITIVE_KEY_PATTERN = re.compile(
+    r"(?i)(password|secret|jwt|token|credential|api[_-]?key|private[_-]?key|"
+    r"access[_-]?key|auth[_-]?token|bearer[_-]?token|datasource\.password)"
+)
+
+PRIVATE_KEY_BLOCK_PATTERN = re.compile(
+    r"-----BEGIN [A-Z0-9_-]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9_-]+ PRIVATE KEY-----",
+    re.MULTILINE
+)
+
+
+def sanitize_secrets(content: str) -> str:
+    """Sanitizes secret-bearing configurations and keys before chunking.
+    
+    Prevents passwords, JWT secrets, database credentials, and private keys
+    from entering the vector embeddings, store, and retrieval context.
+    """
+    if not content:
+        return ""
+
+    # 1. Scrub private key PEM blocks
+    sanitized = PRIVATE_KEY_BLOCK_PATTERN.sub("[REDACTED_PRIVATE_KEY]", content)
+
+    # 2. Scrub key-value configuration lines (properties, yaml, env)
+    lines = sanitized.splitlines()
+    redacted_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*"):
+            redacted_lines.append(line)
+            continue
+
+        # Check properties / yaml key: value or key=value
+        kv_match = re.match(r"^(\s*[\w\.\-\[\]]+\s*[:=]\s*)(.*)$", line)
+        if kv_match:
+            prefix, val = kv_match.group(1), kv_match.group(2)
+            key_part = prefix.split(":")[0].split("=")[0]
+            if SENSITIVE_KEY_PATTERN.search(key_part):
+                # Redact value, preserving any trailing comments
+                comment_match = re.search(r"(\s+#.*|\s+//.*)$", val)
+                comment = comment_match.group(1) if comment_match else ""
+                redacted_lines.append(f"{prefix}[REDACTED]{comment}")
+                continue
+
+        # Scrub Spring property placeholders with default secrets: ${VAR:secret_fallback}
+        def redact_placeholder(m):
+            var_name = m.group(1)
+            if SENSITIVE_KEY_PATTERN.search(var_name):
+                return f"${{{var_name}:[REDACTED]}}"
+            return m.group(0)
+
+        line = re.sub(r"\$\{([A-Za-z0-9_\.\-]+):([^}]+)\}", redact_placeholder, line)
+        redacted_lines.append(line)
+
+    return "\n".join(redacted_lines)
+
+
 class CodeAwareChunker:
     """Specialized chunker that preserves semantic boundaries for code and configs."""
 
@@ -41,11 +98,13 @@ class CodeAwareChunker:
         elif suffix == ".vue":
             return self._chunk_vue(content, rel_path, file_path.name)
         elif suffix in [".properties", ".yaml", ".yml"]:
-            return self._chunk_config(content, rel_path, file_path.name)
+            clean_content = sanitize_secrets(content)
+            return self._chunk_config(clean_content, rel_path, file_path.name)
         elif suffix == ".md":
             return self._chunk_markdown(content, rel_path, file_path.name)
         else:
-            return self._chunk_fallback(content, rel_path, file_path.name)
+            clean_content = sanitize_secrets(content)
+            return self._chunk_fallback(clean_content, rel_path, file_path.name)
 
     def _chunk_java(self, content: str, rel_path: str, file_name: str) -> List[CodeChunk]:
         """Extract Java class overview and individual methods."""

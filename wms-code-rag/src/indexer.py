@@ -53,15 +53,29 @@ class CodebaseIndexer:
             console.print("[yellow]Clearing existing vector collection...[/yellow]")
             self.store.clear()
 
+        import re
+        import os
+
+        secret_file_patterns = [
+            re.compile(r"^\.env.*", re.IGNORECASE),
+            re.compile(r".*secret.*", re.IGNORECASE),
+            re.compile(r".*credential.*", re.IGNORECASE),
+            re.compile(r".*id_rsa.*", re.IGNORECASE),
+            re.compile(r".*\.(pem|key|pkcs12|p12|pfx|jks|keystore)$", re.IGNORECASE),
+        ]
+        sensitive_dirs = {"secrets", ".ssh", ".aws", ".gnupg", "certificates"}
+
         extensions = set(self.config.codebase.extensions)
-        ignore_dirs = set(self.config.codebase.ignore_dirs)
+        ignore_dirs = set(self.config.codebase.ignore_dirs) | sensitive_dirs
 
         matched_files: List[Path] = []
-        import os
         for root, dirs, files in os.walk(str(target_path)):
             # In-place directory pruning: do not recurse into ignored directories (e.g. node_modules, target)
             dirs[:] = [d for d in dirs if d not in ignore_dirs and not d.startswith(".")]
             for file in files:
+                # Exclude secret-bearing files by name/pattern
+                if any(p.match(file) for p in secret_file_patterns):
+                    continue
                 ext = Path(file).suffix.lower()
                 if ext in extensions:
                     matched_files.append(Path(root) / file)
