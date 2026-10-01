@@ -39,14 +39,14 @@ public class CustomUserDetailsService implements UserDetailsService {
      * {@link UserDetails} object.
      * <p>
      * The identifier is first treated as a username; if not found, it is treated as
-     * an email. If the user exists but has not verified their email, a
+     * an email. If the user is inactive or has not verified their email, a
      * {@link DisabledException} is thrown.
      * </p>
      *
      * @param usernameOrEmail the username or email of the user
      * @return the UserDetails object with authorities
      * @throws UsernameNotFoundException if no user is found
-     * @throws DisabledException if the email is not verified
+     * @throws DisabledException if the user is inactive or the email is not verified
      */
     @Override
     public @NonNull UserDetails loadUserByUsername(@NonNull String usernameOrEmail) throws UsernameNotFoundException {
@@ -59,6 +59,11 @@ public class CustomUserDetailsService implements UserDetailsService {
                     return new UsernameNotFoundException("User not found: " + usernameOrEmail);
                 });
 
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            log.warn("Authentication failed: User '{}' is inactive", user.getUsername());
+            throw new DisabledException("Account is inactive for user: " + user.getUsername());
+        }
+
         if (!user.isEmailVerified()) {
             log.warn("Authentication failed: User '{}' has not verified their email", user.getUsername());
             throw new DisabledException("Email not verified for user: " + user.getUsername());
@@ -69,6 +74,10 @@ public class CustomUserDetailsService implements UserDetailsService {
         return new org.springframework.security.core.userdetails.User(
                 user.getUsername(),
                 user.getPassword(),
+                Boolean.TRUE.equals(user.getIsActive()),
+                true,
+                true,
+                true,
                 Collections.singletonList(new SimpleGrantedAuthority(user.getUserRole().name()))
         );
     }

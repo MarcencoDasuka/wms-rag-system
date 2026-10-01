@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -70,6 +71,8 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 }
             } catch (UsernameNotFoundException e) {
                 log.warn("Token validation failed: User '{}' not found in database. The token is likely obsolete due to a username change.", username);
+            } catch (DisabledException e) {
+                log.warn("Token validation failed: User '{}' is inactive or disabled: {}", username, e.getMessage());
             } catch (Exception e) {
                 log.error("Error setting security context for user '{}'", username, e);
             }

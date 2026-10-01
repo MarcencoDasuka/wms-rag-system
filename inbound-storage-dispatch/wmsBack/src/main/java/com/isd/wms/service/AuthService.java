@@ -46,6 +46,9 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(username, password)
             );
         } catch (DisabledException e) {
+            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("inactive")) {
+                throw new DisabledException("Account is inactive.");
+            }
             throw new UserNotVerifiedException("Please verify your email before logging in.");
         } catch (BadCredentialsException e) {
             throw new InvalidCredentialsException("Incorrect username or password.");

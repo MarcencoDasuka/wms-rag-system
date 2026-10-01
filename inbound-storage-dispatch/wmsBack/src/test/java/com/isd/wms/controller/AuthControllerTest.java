@@ -83,6 +83,36 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.message").value("Incorrect username or password."));
     }
 
+    @Test
+    void whenAccountIsInactive_thenReturn403Forbidden() throws Exception {
+        String loginPayload = "{\"username\":\"inactive_user\",\"password\":\"password\"}";
+
+        when(authService.authenticateAndGenerateToken("inactive_user", "password"))
+                .thenThrow(new org.springframework.security.authentication.DisabledException("Account is inactive."));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginPayload)
+                        .with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Account is inactive."));
+    }
+
+    @Test
+    void whenEmailNotVerified_thenReturn403Forbidden() throws Exception {
+        String loginPayload = "{\"username\":\"unverified_user\",\"password\":\"password\"}";
+
+        when(authService.authenticateAndGenerateToken("unverified_user", "password"))
+                .thenThrow(new com.isd.wms.exception.UserNotVerifiedException("Please verify your email before logging in."));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginPayload)
+                        .with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Please verify your email before logging in."));
+    }
+
     @Configuration
     @EnableWebMvc
     @EnableWebSecurity
