@@ -53,6 +53,15 @@ class JwtUtilTest {
     }
 
     @Test
+    void constructor_withCompromisedHistoricalSecret_throwsIllegalStateException() {
+        Environment env = mock(Environment.class);
+
+        assertThatThrownBy(() -> new JwtUtil(JwtUtil.COMPROMISED_HISTORICAL_SECRET, env))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("known compromised historical key");
+    }
+
+    @Test
     void constructor_withNullOrBlankSecret_throwsIllegalStateException() {
         Environment env = mock(Environment.class);
 

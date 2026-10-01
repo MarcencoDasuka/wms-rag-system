@@ -32,7 +32,7 @@ public class EmailService {
     @Value("${wms.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
-    @Value("${wms.mail.from:pajiloybaraban@gmail.com}")
+    @Value("${wms.mail.from:noreply@wms.local}")
     private String fromEmail;
 
     /**

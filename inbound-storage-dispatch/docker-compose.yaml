@@ -32,7 +32,7 @@ services:
       - DB_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-wms_db}
       - DB_USERNAME=${POSTGRES_USER:-wms_user}
       - DB_PASSWORD=${POSTGRES_PASSWORD:-wms_password}
-      - JWT_SECRET=${JWT_SECRET:-f8gH9sK2mN5pQ8rV1vW4xZ7aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeF}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable must be set}
       - WMS_APP_URL=${WMS_APP_URL:-http://localhost:8080}
       - WMS_FRONTEND_URL=${WMS_FRONTEND_URL:-http://localhost:5173}
       - MAIL_HOST=${MAIL_HOST:-smtp.gmail.com}

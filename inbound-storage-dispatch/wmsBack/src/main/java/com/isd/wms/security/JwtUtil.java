@@ -20,6 +20,7 @@ import java.util.function.Function;
 public class JwtUtil {
 
     public static final String DEFAULT_DEV_SECRET = "default_jwt_dev_secret_key_must_be_changed_in_production_32bytes_min";
+    public static final String COMPROMISED_HISTORICAL_SECRET = "f8gH9sK2mN5pQ8rV1vW4xZ7aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeF";
 
     private final SecretKey SECRET_KEY;
     private final long JWT_EXPIRATION_TIME = 86400000; // 24 hours
@@ -30,6 +31,13 @@ public class JwtUtil {
     ) {
         if (secretString == null || secretString.isBlank()) {
             throw new IllegalStateException("CRITICAL: JWT secret string is empty or null!");
+        }
+
+        if (COMPROMISED_HISTORICAL_SECRET.equals(secretString)) {
+            throw new IllegalStateException(
+                "CRITICAL: The configured JWT secret is a known compromised historical key and cannot be used. " +
+                "Please configure a newly generated, secure JWT_SECRET."
+            );
         }
 
         if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "production"))) {
