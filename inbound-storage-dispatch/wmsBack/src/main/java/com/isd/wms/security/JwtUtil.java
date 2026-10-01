@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Value;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 import java.util.function.Function;
 
@@ -20,7 +22,8 @@ import java.util.function.Function;
 public class JwtUtil {
 
     public static final String DEFAULT_DEV_SECRET = "default_jwt_dev_secret_key_must_be_changed_in_production_32bytes_min";
-    public static final String COMPROMISED_HISTORICAL_SECRET = "f8gH9sK2mN5pQ8rV1vW4xZ7aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeF";
+    public static final String COMPROMISED_HISTORICAL_SECRET_FINGERPRINT =
+        "c14ac8f0beed73c045836cd2694ffeec2fda62091c1daf95d458a81f8022ce98";
 
     private final SecretKey SECRET_KEY;
     private final long JWT_EXPIRATION_TIME = 86400000; // 24 hours
@@ -33,9 +36,17 @@ public class JwtUtil {
             throw new IllegalStateException("CRITICAL: JWT secret string is empty or null!");
         }
 
-        if (COMPROMISED_HISTORICAL_SECRET.equals(secretString)) {
+        byte[] secretBytes = secretString.getBytes(StandardCharsets.UTF_8);
+        if (secretBytes.length < 32) {
+            throw new IllegalStateException("CRITICAL: JWT secret key must be at least 32 bytes (256 bits) long!");
+        }
+
+        String secretFingerprint = computeSha256Hex(secretBytes);
+        if (MessageDigest.isEqual(
+                secretFingerprint.getBytes(StandardCharsets.UTF_8),
+                COMPROMISED_HISTORICAL_SECRET_FINGERPRINT.getBytes(StandardCharsets.UTF_8))) {
             throw new IllegalStateException(
-                "CRITICAL: The configured JWT secret is a known compromised historical key and cannot be used. " +
+                "CRITICAL: The configured JWT secret matches a known compromised historical key fingerprint and cannot be used. " +
                 "Please configure a newly generated, secure JWT_SECRET."
             );
         }
@@ -51,8 +62,26 @@ public class JwtUtil {
             log.warn("WARNING: Using default development JWT secret key. Ensure JWT_SECRET is configured for production!");
         }
 
-        this.SECRET_KEY = Keys.hmacShaKeyFor(secretString.getBytes(StandardCharsets.UTF_8));
+        this.SECRET_KEY = Keys.hmacShaKeyFor(secretBytes);
         log.info("JwtUtil initialized. Secret key loaded successfully.");
+    }
+
+    private static String computeSha256Hex(byte[] inputBytes) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(inputBytes);
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available in current JVM", e);
+        }
     }
 
     public String generateToken(String username, String role) {

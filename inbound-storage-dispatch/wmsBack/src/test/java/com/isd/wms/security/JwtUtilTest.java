@@ -55,10 +55,23 @@ class JwtUtilTest {
     @Test
     void constructor_withCompromisedHistoricalSecret_throwsIllegalStateException() {
         Environment env = mock(Environment.class);
+        String compromisedSecret = new String(
+            java.util.Base64.getDecoder().decode("ZjhnSDlzSzJtTjVwUThyVjF2VzR4WjdhQmNEZUZnSGlKa0xtTm9QcVJzVHVWd1h5WjAxMjM0NTY3ODlhQmNEZUY="),
+            java.nio.charset.StandardCharsets.UTF_8
+        );
 
-        assertThatThrownBy(() -> new JwtUtil(JwtUtil.COMPROMISED_HISTORICAL_SECRET, env))
+        assertThatThrownBy(() -> new JwtUtil(compromisedSecret, env))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("known compromised historical key");
+            .hasMessageContaining("known compromised historical key fingerprint");
+    }
+
+    @Test
+    void constructor_withShortSecret_throwsIllegalStateException() {
+        Environment env = mock(Environment.class);
+
+        assertThatThrownBy(() -> new JwtUtil("short-secret-under-32-bytes", env))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("at least 32 bytes");
     }
 
     @Test
