@@ -1,8 +1,8 @@
-"""Regression test for Finding 5: Negative Retrieval & Threshold Fallback Elimination."""
-
 from pathlib import Path
+from src.chunker import CodeChunk
 from src.config import AppConfig, RetrievalConfig, VectorDBConfig
 from src.indexer import CodebaseIndexer
+from src.reranker import CodeCrossEncoderReranker
 from src.retriever import CodeRetriever
 
 
@@ -60,3 +60,43 @@ def test_negative_retrieval_returns_empty_when_below_threshold(tmp_path: Path):
     relevant_results = retriever_normal.retrieve("allocate stock inventory quantity")
     assert len(relevant_results) > 0
     assert any("InventoryService" in chunk.file_name for chunk, _ in relevant_results)
+
+
+def test_reranker_fallback_applies_similarity_threshold_when_min_score_negative():
+    """Verify that fallback reranker applies calibrated similarity threshold when min_score is negative logit."""
+    reranker = CodeCrossEncoderReranker(model_name="nonexistent-dummy-model")
+    reranker._available = False  # Force fallback mode
+
+    dummy_chunk = CodeChunk(
+        id="dummy_01",
+        file_path="src/Dummy.java",
+        file_name="Dummy.java",
+        language="java",
+        chunk_type="method",
+        symbol_name="dummy",
+        content="public void dummy() {}",
+        start_line=1,
+        end_line=2,
+        metadata={}
+    )
+
+    # Candidate with low similarity (0.12) and zero keyword overlap with unrelated query
+    low_sim_candidate = (dummy_chunk, 0.12)
+
+    # With default min_score = -7.0 (logit domain), fallback should calibrate to 0.25 and filter it out
+    filtered = reranker.rerank(
+        query="unrelated query about astrophysics and stellar orbits",
+        candidates=[low_sim_candidate],
+        min_score=-7.0,
+    )
+    assert len(filtered) == 0, f"Expected low similarity candidate to be filtered, got: {filtered}"
+
+    # With high similarity (0.45), candidate should pass through
+    high_sim_candidate = (dummy_chunk, 0.45)
+    passed = reranker.rerank(
+        query="unrelated query about astrophysics and stellar orbits",
+        candidates=[high_sim_candidate],
+        min_score=-7.0,
+    )
+    assert len(passed) == 1
+    assert passed[0][0].id == "dummy_01"

@@ -83,13 +83,16 @@ class CodeCrossEncoderReranker:
 
         # Intelligent Fallback: Vector similarity score boosted by exact term matches
         query_terms = set(re.findall(r"\w+", query.lower()))
+        # Calibrate threshold for similarity domain [0, 1] when min_score is configured for logits (< 0)
+        fallback_min = 0.25 if (min_score is not None and min_score < 0) else min_score
+
         boosted = []
         for chunk, sim in candidates:
             content_lower = chunk.content.lower()
             term_matches = sum(1 for term in query_terms if term in content_lower)
             boost = (term_matches / max(1, len(query_terms))) * 0.15
             final_score = sim + boost
-            if min_score is not None and final_score < min_score:
+            if fallback_min is not None and final_score < fallback_min:
                 continue
             boosted.append((chunk, final_score))
 
