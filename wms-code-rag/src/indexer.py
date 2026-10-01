@@ -98,6 +98,12 @@ class CodebaseIndexer:
             embeddings = self.embedder.embed_texts(texts, batch_size=32)
             self.store.add_chunks(all_chunks, embeddings)
 
+        # Reconciliation: prune orphaned / deleted / obsolete chunks from collection
+        active_ids = {c.id for c in all_chunks}
+        pruned_count = self.store.prune_stale_chunks(active_ids)
+        if pruned_count > 0:
+            console.print(f"[yellow]Pruned {pruned_count} obsolete/ghost chunks from index.[/yellow]")
+
         console.print(f"[bold green]Indexing complete! Collection size: {self.store.count()} chunks.[/bold green]")
         return len(matched_files), len(all_chunks)
 

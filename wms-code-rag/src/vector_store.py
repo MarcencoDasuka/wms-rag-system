@@ -128,9 +128,33 @@ class CodeVectorStore:
 
         return chunks_with_scores
 
+    def delete_chunks_by_ids(self, ids: List[str]) -> None:
+        """Delete specific chunks by ID."""
+        if not ids:
+            return
+        batch_size = 500
+        for i in range(0, len(ids), batch_size):
+            self.collection.delete(ids=ids[i:i + batch_size])
+
+    def get_all_ids(self) -> List[str]:
+        """Fetch all indexed chunk IDs from collection."""
+        res = self.collection.get(include=[])
+        return res.get("ids", []) if res else []
+
+    def prune_stale_chunks(self, active_ids: set[str]) -> int:
+        """Removes orphaned chunks from collection that no longer exist in the source tree."""
+        all_ids = set(self.get_all_ids())
+        stale_ids = list(all_ids - active_ids)
+        if stale_ids:
+            self.delete_chunks_by_ids(stale_ids)
+        return len(stale_ids)
+
     def clear(self) -> None:
         """Clear all indexed data from the collection."""
-        self.client.delete_collection(name=self.collection_name)
+        try:
+            self.client.delete_collection(name=self.collection_name)
+        except Exception:
+            pass
         init_metadata = {"hnsw:space": "cosine"}
         if self.embedding_model:
             init_metadata["embedding_model"] = self.embedding_model

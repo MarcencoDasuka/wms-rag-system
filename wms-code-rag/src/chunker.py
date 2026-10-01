@@ -131,7 +131,8 @@ class CodeAwareChunker:
             f"// Class: {class_name}\n\n"
             + "\n".join(lines[:header_lines])
         )
-        chunk_id = hashlib.md5(f"{rel_path}:class_summary".encode()).hexdigest()
+        chunk_id = hashlib.sha256(f"{rel_path}:class_summary:{class_name}".encode("utf-8")).hexdigest()[:32]
+        content_hash = hashlib.sha256(summary_text.encode("utf-8")).hexdigest()
         chunks.append(
             CodeChunk(
                 id=chunk_id,
@@ -143,7 +144,12 @@ class CodeAwareChunker:
                 content=summary_text,
                 start_line=1,
                 end_line=header_lines,
-                metadata={"package": package_name, "class": class_name, "is_class_header": True}
+                metadata={
+                    "package": package_name,
+                    "class": class_name,
+                    "is_class_header": True,
+                    "content_hash": content_hash,
+                }
             )
         )
 
@@ -154,10 +160,15 @@ class CodeAwareChunker:
             re.MULTILINE
         )
 
+        method_counts: dict[str, int] = {}
         for match in method_pattern.finditer(content):
             method_name = match.group(2)
             if method_name in ["if", "for", "while", "switch", "catch"]:
                 continue
+
+            count = method_counts.get(method_name, 0)
+            method_counts[method_name] = count + 1
+            occ_suffix = f":{count}" if count > 0 else ""
 
             start_char = match.start()
             start_line = content[:start_char].count("\n") + 1
@@ -186,7 +197,11 @@ class CodeAwareChunker:
                 f"{method_text}"
             )
 
-            m_chunk_id = hashlib.md5(f"{rel_path}:{method_name}:{start_line}".encode()).hexdigest()
+            m_chunk_id = hashlib.sha256(
+                f"{rel_path}:method:{class_name}.{method_name}{occ_suffix}".encode("utf-8")
+            ).hexdigest()[:32]
+            m_content_hash = hashlib.sha256(annotated_content.encode("utf-8")).hexdigest()
+
             chunks.append(
                 CodeChunk(
                     id=m_chunk_id,
@@ -198,7 +213,12 @@ class CodeAwareChunker:
                     content=annotated_content,
                     start_line=start_line,
                     end_line=end_line,
-                    metadata={"package": package_name, "class": class_name, "method": method_name}
+                    metadata={
+                        "package": package_name,
+                        "class": class_name,
+                        "method": method_name,
+                        "content_hash": m_content_hash,
+                    }
                 )
             )
 
@@ -209,17 +229,22 @@ class CodeAwareChunker:
         chunks = []
         statements = [s.strip() for s in content.split(";") if s.strip()]
         current_line = 1
+        sql_counts: dict[str, int] = {}
 
         for i, stmt in enumerate(statements):
             table_match = re.search(r"(?:CREATE\s+TABLE|ALTER\s+TABLE|CREATE\s+INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s\(;]+)", stmt, re.IGNORECASE)
             symbol = table_match.group(1).replace('"', '') if table_match else f"stmt_{i+1}"
-            
+            count = sql_counts.get(symbol, 0)
+            sql_counts[symbol] = count + 1
+            occ_suffix = f":{count}" if count > 0 else ""
+
             stmt_lines = stmt.count("\n") + 1
             end_line = current_line + stmt_lines - 1
 
             formatted_content = f"-- Migration: {file_name}\n-- Path: {rel_path}\n-- Target: {symbol}\n\n{stmt};"
-            chunk_id = hashlib.md5(f"{rel_path}:{symbol}:{current_line}".encode()).hexdigest()
-            
+            chunk_id = hashlib.sha256(f"{rel_path}:sql:{symbol}{occ_suffix}".encode("utf-8")).hexdigest()[:32]
+            content_hash = hashlib.sha256(formatted_content.encode("utf-8")).hexdigest()
+
             chunks.append(
                 CodeChunk(
                     id=chunk_id,
@@ -231,7 +256,7 @@ class CodeAwareChunker:
                     content=formatted_content,
                     start_line=current_line,
                     end_line=end_line,
-                    metadata={"table_or_index": symbol, "migration_file": file_name}
+                    metadata={"table_or_index": symbol, "migration_file": file_name, "content_hash": content_hash}
                 )
             )
             current_line = end_line + 1
@@ -247,7 +272,8 @@ class CodeAwareChunker:
         script_match = re.search(r"(<script[^>]*>.*?</script>)", content, re.DOTALL)
         if script_match:
             script_content = script_match.group(1).strip()
-            chunk_id = hashlib.md5(f"{rel_path}:script".encode()).hexdigest()
+            chunk_id = hashlib.sha256(f"{rel_path}:vue_script".encode("utf-8")).hexdigest()[:32]
+            content_hash = hashlib.sha256(script_content.encode("utf-8")).hexdigest()
             chunks.append(
                 CodeChunk(
                     id=chunk_id,
@@ -259,7 +285,7 @@ class CodeAwareChunker:
                     content=f"// Vue Component Script: {rel_path}\n\n{script_content}",
                     start_line=1,
                     end_line=script_content.count("\n") + 1,
-                    metadata={"component": comp_name, "section": "script"}
+                    metadata={"component": comp_name, "section": "script", "content_hash": content_hash}
                 )
             )
 
@@ -267,9 +293,9 @@ class CodeAwareChunker:
         template_match = re.search(r"(<template>.*?</template>)", content, re.DOTALL)
         if template_match:
             tpl_content = template_match.group(1).strip()
-            # If template is huge, take first 60 lines
             tpl_lines = tpl_content.splitlines()[:60]
-            chunk_id = hashlib.md5(f"{rel_path}:template".encode()).hexdigest()
+            chunk_id = hashlib.sha256(f"{rel_path}:vue_template".encode("utf-8")).hexdigest()[:32]
+            content_hash = hashlib.sha256(tpl_content.encode("utf-8")).hexdigest()
             chunks.append(
                 CodeChunk(
                     id=chunk_id,
@@ -281,7 +307,7 @@ class CodeAwareChunker:
                     content=f"<!-- Vue Component Template: {rel_path} -->\n\n" + "\n".join(tpl_lines),
                     start_line=1,
                     end_line=len(tpl_lines),
-                    metadata={"component": comp_name, "section": "template"}
+                    metadata={"component": comp_name, "section": "template", "content_hash": content_hash}
                 )
             )
 
@@ -291,7 +317,8 @@ class CodeAwareChunker:
         """Chunk configuration files by blocks."""
         chunks = []
         lines = content.splitlines()
-        chunk_id = hashlib.md5(f"{rel_path}:config".encode()).hexdigest()
+        chunk_id = hashlib.sha256(f"{rel_path}:config".encode("utf-8")).hexdigest()[:32]
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         chunks.append(
             CodeChunk(
                 id=chunk_id,
@@ -303,7 +330,7 @@ class CodeAwareChunker:
                 content=f"# Configuration File: {rel_path}\n\n{content}",
                 start_line=1,
                 end_line=len(lines),
-                metadata={"config_type": Path(file_name).suffix}
+                metadata={"config_type": Path(file_name).suffix, "content_hash": content_hash}
             )
         )
         return chunks
@@ -313,13 +340,20 @@ class CodeAwareChunker:
         chunks = []
         sections = re.split(r"\n(?=#{1,3}\s+)", content)
         line_offset = 1
+        sec_counts: dict[str, int] = {}
 
         for i, sec in enumerate(sections):
             if not sec.strip():
                 continue
             lines = sec.splitlines()
             title = lines[0].replace("#", "").strip() if lines else f"Section {i+1}"
-            chunk_id = hashlib.md5(f"{rel_path}:{i}:{title}".encode()).hexdigest()
+            title_slug = re.sub(r"[^\w]+", "-", title.lower()).strip("-") or f"section-{i+1}"
+            count = sec_counts.get(title_slug, 0)
+            sec_counts[title_slug] = count + 1
+            occ_suffix = f":{count}" if count > 0 else ""
+
+            chunk_id = hashlib.sha256(f"{rel_path}:doc:{title_slug}{occ_suffix}".encode("utf-8")).hexdigest()[:32]
+            content_hash = hashlib.sha256(sec.encode("utf-8")).hexdigest()
 
             chunks.append(
                 CodeChunk(
@@ -332,7 +366,7 @@ class CodeAwareChunker:
                     content=f"# Doc: {rel_path}\n\n{sec.strip()}",
                     start_line=line_offset,
                     end_line=line_offset + len(lines),
-                    metadata={"section_title": title}
+                    metadata={"section_title": title, "content_hash": content_hash}
                 )
             )
             line_offset += len(lines)
@@ -344,7 +378,8 @@ class CodeAwareChunker:
         lines = content.splitlines()
         if not lines:
             return []
-        chunk_id = hashlib.md5(f"{rel_path}:general".encode()).hexdigest()
+        chunk_id = hashlib.sha256(f"{rel_path}:general".encode("utf-8")).hexdigest()[:32]
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return [
             CodeChunk(
                 id=chunk_id,
@@ -356,6 +391,6 @@ class CodeAwareChunker:
                 content=f"// File: {rel_path}\n\n" + "\n".join(lines[:100]),
                 start_line=1,
                 end_line=min(100, len(lines)),
-                metadata={}
+                metadata={"content_hash": content_hash}
             )
         ]
