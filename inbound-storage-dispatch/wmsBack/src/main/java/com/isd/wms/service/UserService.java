@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +71,29 @@ public class UserService {
             throw new AccessDeniedException("Creating DEV accounts via API is strictly prohibited.");
         }
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String currentUsername = (auth != null && auth.isAuthenticated()) ? auth.getName() : null;
+
+        User currentUser = null;
+        if (currentUsername != null) {
+            currentUser = userRepository.findByUsername(currentUsername).orElse(null);
+            if (currentUser != null && !Boolean.TRUE.equals(currentUser.getIsActive())) {
+                log.warn("Security block: Inactive user '{}' attempted to register/reactivate an account", currentUsername);
+                throw new AccessDeniedException("Inactive accounts cannot register or reactivate users.");
+            }
+            if (currentUsername.equalsIgnoreCase(request.username()) ||
+                (currentUser != null && currentUser.getEmail() != null && currentUser.getEmail().equalsIgnoreCase(request.email()))) {
+                log.warn("Security block: User '{}' attempted self-reactivation", currentUsername);
+                throw new AccessDeniedException("You cannot reactivate your own account.");
+            }
+        }
+
+        boolean isDev = securityFacade.hasRole(Role.ROLE_DEV);
+        if (!isDev && request.userRole() != Role.ROLE_OPERATOR) {
+            log.warn("Security block: Non-DEV user '{}' attempted to register account with role {}", currentUsername, request.userRole());
+            throw new AccessDeniedException("Supervisors are only allowed to register operator accounts.");
+        }
+
         Optional<User> existingUserOpt = userRepository.findByUsername(request.username());
         Optional<User> existingEmailOpt = userRepository.findByEmail(request.email());
 
@@ -82,10 +107,21 @@ public class UserService {
             if (user.getIsActive()) {
                 throw new RuntimeException("This username is already taken by an active user.");
             }
-            if (existingEmailOpt.isPresent() && !existingEmailOpt.get().getId().equals(user.getId())) {
+            if (existingEmailOpt.isPresent() && !java.util.Objects.equals(existingEmailOpt.get().getId(), user.getId())) {
                 throw new RuntimeException("This email belongs to a different deactivated account. " +
                     "Please use a unique combination.");
             }
+            if (currentUsername != null && (user.getUsername().equalsIgnoreCase(currentUsername) ||
+                (user.getEmail() != null && user.getEmail().equalsIgnoreCase(currentUsername)))) {
+                log.warn("Security block: User '{}' attempted self-reactivation of existing account", currentUsername);
+                throw new AccessDeniedException("You cannot reactivate your own account.");
+            }
+            if (!isDev && user.getUserRole() != Role.ROLE_OPERATOR) {
+                log.warn("Security block: Non-DEV user '{}' attempted to reactivate {} account '{}'",
+                    currentUsername, user.getUserRole(), user.getUsername());
+                throw new AccessDeniedException("Supervisors are not allowed to reactivate supervisor accounts.");
+            }
+
             userToSave = user;
             log.info("Reactivating deactivated account for username: {}", request.username());
 
@@ -94,6 +130,17 @@ public class UserService {
             if (user.getIsActive()) {
                 throw new RuntimeException("This email is already registered to an active user.");
             }
+            if (currentUsername != null && (user.getUsername().equalsIgnoreCase(currentUsername) ||
+                (user.getEmail() != null && user.getEmail().equalsIgnoreCase(currentUsername)))) {
+                log.warn("Security block: User '{}' attempted self-reactivation of existing account", currentUsername);
+                throw new AccessDeniedException("You cannot reactivate your own account.");
+            }
+            if (!isDev && user.getUserRole() != Role.ROLE_OPERATOR) {
+                log.warn("Security block: Non-DEV user '{}' attempted to reactivate {} account '{}'",
+                    currentUsername, user.getUserRole(), user.getUsername());
+                throw new AccessDeniedException("Supervisors are not allowed to reactivate supervisor accounts.");
+            }
+
             userToSave = user;
             log.info("Reactivating deactivated account for email: {}", request.email());
 
@@ -107,7 +154,7 @@ public class UserService {
                 verificationToken,
                 LocalDateTime.now().plusHours(24)
             );
-            userToSave.setIsActive(true);
+            userToSave.setIsActive(false);
             userRepository.save(userToSave);
 
             emailService.sendVerificationEmail(request.email(), request.username(), verificationToken);
@@ -119,7 +166,7 @@ public class UserService {
         userToSave.setEmail(request.email());
         userToSave.setPassword(passwordEncoder.encode(temporaryPassword));
         userToSave.setUserRole(request.userRole());
-        userToSave.setIsActive(true);
+        userToSave.setIsActive(false);
         userToSave.setEmailVerified(false);
         userToSave.setVerificationToken(verificationToken);
         userToSave.setVerificationTokenExpiresAt(LocalDateTime.now().plusHours(24));
@@ -127,7 +174,7 @@ public class UserService {
         userRepository.save(userToSave);
 
         emailService.sendVerificationEmail(request.email(), request.username(), verificationToken);
-        log.info("User '{}' successfully reactivated, new verification email sent to {}",
+        log.info("User '{}' scheduled for reactivation, new verification email sent to {}",
             request.username(), request.email());
     }
 
@@ -195,6 +242,7 @@ public class UserService {
         }
 
         user.setEmailVerified(true);
+        user.setIsActive(true);
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setVerificationToken(null);
         user.setVerificationTokenExpiresAt(null);
