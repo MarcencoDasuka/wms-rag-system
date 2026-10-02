@@ -75,6 +75,12 @@ public class ReplenishmentService {
     private static final List<Status> ACTIVE_STATUSES = List.of(Status.CREATED, Status.ASSIGNED, Status.IN_PROGRESS);
 
     private void validateDestinationLocation(Product incomingProduct, Location destinationLocation) {
+        if (!Boolean.TRUE.equals(destinationLocation.getIsActive()) || !Boolean.TRUE.equals(destinationLocation.getAvailable())) {
+            throw new InvalidRequestException(
+                "Cannot route replenishment to inactive or unavailable location: " + destinationLocation.getBarcode()
+            );
+        }
+
         stockRepository.findByLocationIdAndAvailableIsTrue(destinationLocation.getId())
             .ifPresent(stock -> {
                 Product existingProduct = stock.getProduct().orElse(null);

@@ -79,12 +79,14 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     List<Stock> findAvailableStocksByProductIdAndZoneForUpdate(@Param("productId") Long productId, @Param("zone") Zone zone);
 
     /**
-     * Finds the stock located at a given location.
+     * Finds all stocks (active and historical) located at a given location.
      *
      * @param locationId the location ID
-     * @return an Optional containing the stock, if found
+     * @return a list of stocks located at the given location
      */
-    Optional<Stock> findByLocationId(Long locationId);
+    List<Stock> findByLocationId(Long locationId);
+
+    List<Stock> findAllByLocationId(Long locationId);
 
     List<Stock> findAllByAvailableIsTrue();
 

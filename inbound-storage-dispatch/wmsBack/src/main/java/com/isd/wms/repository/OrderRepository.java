@@ -55,6 +55,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         @Param("updatedAt") LocalDateTime updatedAt
     );
 
+    /**
+     * Checks whether an order targeting the given destination location exists with any of the specified statuses.
+     *
+     * @param destinationLocationId destination location ID
+     * @param statuses              collection of order statuses
+     * @return true if matching order exists
+     */
+    boolean existsByDestinationLocationIdAndStatusIn(Long destinationLocationId, java.util.Collection<OrderStatus> statuses);
+
    /**
      * Finds all orders created by a specific supervisor (by username).
      *

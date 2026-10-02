@@ -85,6 +85,10 @@ public class InventoryService {
         Location location = getLocation(request.locationId());
         User user = getUser(request.userId());
 
+        if (!Boolean.TRUE.equals(location.getIsActive()) || !Boolean.TRUE.equals(location.getAvailable())) {
+            throw new InvalidRequestException("Cannot add stock to an inactive or unavailable location: " + location.getBarcode());
+        }
+
         // Lock location to prevent concurrent stock additions for different products
         locationRepository.findByIdWithLock(location.getId())
             .or(() -> locationRepository.findById(location.getId()));

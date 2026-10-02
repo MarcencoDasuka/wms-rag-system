@@ -55,7 +55,7 @@ public class Stock extends BaseTimestampEntity {
     @Getter(AccessLevel.NONE)
     private Product product;
 
-    @OneToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "location_id", nullable = false)
     private Location location;
 

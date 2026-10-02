@@ -91,7 +91,7 @@ public class OrderService {
             throw new InvalidRequestException("An order with logicId " + logicId + " already exists");
         }
 
-        Order order = new Order(logicId, getLocation(request.destinationLocationId()));
+        Order order = new Order(logicId, getDestinationLocation(request.destinationLocationId()));
         return orderRepository.save(order);
     }
 
@@ -111,7 +111,7 @@ public class OrderService {
 
     private void updateOrder(OrderUpdateRequest request, Order order) {
         order.setLogicId(request.logicId());
-        order.setDestinationLocation(getLocation(request.destinationLocationId()));
+        order.setDestinationLocation(getDestinationLocation(request.destinationLocationId()));
         order.setStatus(request.status());
     }
 
@@ -124,7 +124,7 @@ public class OrderService {
         }
 
         order.setLogicId(request.order().logicId());
-        order.setDestinationLocation(getLocation(request.order().destinationLocationId()));
+        order.setDestinationLocation(getDestinationLocation(request.order().destinationLocationId()));
         Order savedOrder = orderRepository.save(order);
 
         List<OrderLine> oldLines = orderLineRepository.findAllByOrderId(savedOrder.getId());
@@ -233,6 +233,14 @@ public class OrderService {
     private Location getLocation(Long locationId) {
         return locationRepository.findById(locationId)
             .orElseThrow(() -> new LocationNotFoundException(locationId));
+    }
+
+    private Location getDestinationLocation(Long locationId) {
+        Location location = getLocation(locationId);
+        if (!Boolean.TRUE.equals(location.getIsActive()) || !Boolean.TRUE.equals(location.getAvailable())) {
+            throw new InvalidRequestException("Cannot route order to inactive or unavailable destination location: " + location.getBarcode());
+        }
+        return location;
     }
 
     private void releaseReservedStock(Order order) {

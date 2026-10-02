@@ -82,6 +82,17 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
     );
 
     /**
+     * Checks whether there is an active replenishment targeting the specified destination location.
+     *
+     * @param destinationLocationId the destination location ID
+     * @param statuses              allowed statuses (e.g., CREATED, ASSIGNED, IN_PROGRESS)
+     * @return true if exists
+     */
+    boolean existsByDestinationLocationIdAndStatusIn(
+        Long destinationLocationId, Collection<Status> statuses
+    );
+
+    /**
      * Updates the replenishment status to COMPLETED when its task is completed.
      *
      * @param task the completed task

@@ -9,7 +9,11 @@ import com.isd.wms.exception.DuplicateBarcodeException;
 import com.isd.wms.exception.DuplicateLocationNameException;
 import com.isd.wms.exception.LocationNotFoundException;
 import com.isd.wms.mapper.LocationMapper;
+import com.isd.wms.enums.OrderStatus;
+import com.isd.wms.enums.Status;
 import com.isd.wms.repository.LocationRepository;
+import com.isd.wms.repository.OrderRepository;
+import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.StockRepository;
 import com.isd.wms.repository.projections.ShortLocationProjection;
 import com.isd.wms.service.imports.ImportService;
@@ -46,6 +50,8 @@ public class LocationService {
     private final LocationRepository locationRepository;
     private final LocationMapper locationMapper;
     private final StockRepository stockRepository;
+    private final ReplenishmentRepository replenishmentRepository;
+    private final OrderRepository orderRepository;
     private final ImportService importService;
 
     /**
@@ -111,6 +117,10 @@ public class LocationService {
             throw new IllegalStateException("Cannot change the code, zone, or availability of a location that contains products. Only the description can be updated. Please move the products first.");
         }
 
+        if (!Boolean.TRUE.equals(location.getIsActive()) && Boolean.TRUE.equals(request.available())) {
+            throw new IllegalStateException("Cannot set an inactive/deleted location as available");
+        }
+
         if (isCodeChanged) {
             validateBarcodeUniqueness(newCode);
         }
@@ -129,10 +139,10 @@ public class LocationService {
     }
 
     /**
-     * Soft‑deletes a location (marks as inactive) if it is empty.
+     * Soft‑deletes a location (marks as inactive and unavailable) if it is empty and has no active tasks.
      *
      * @param locationId the ID of the location to delete
-     * @throws IllegalStateException if the location still contains products
+     * @throws IllegalStateException if the location still contains products or active inbound/outbound tasks
      */
     @Transactional
     public void deleteLocation(Long locationId) {
@@ -142,12 +152,31 @@ public class LocationService {
             throw new IllegalStateException("You cannot delete a location while there is a product in it");
         }
 
+        boolean hasActiveReplenishments = replenishmentRepository.existsByDestinationLocationIdAndStatusIn(
+            locationId,
+            List.of(Status.CREATED, Status.ASSIGNED, Status.IN_PROGRESS)
+        );
+        if (hasActiveReplenishments) {
+            log.warn("Attempt to delete location ID {} with active replenishments", locationId);
+            throw new IllegalStateException("Cannot delete a location that is the destination for active replenishment tasks");
+        }
+
+        boolean hasActiveOrders = orderRepository.existsByDestinationLocationIdAndStatusIn(
+            locationId,
+            List.of(OrderStatus.CREATED, OrderStatus.ASSIGNED, OrderStatus.IN_PROGRESS)
+        );
+        if (hasActiveOrders) {
+            log.warn("Attempt to delete location ID {} with active orders", locationId);
+            throw new IllegalStateException("Cannot delete a location that is the destination for active orders");
+        }
+
         Location location = getLocation(locationId);
         location.setIsActive(false);
+        location.setAvailable(false);
 
         locationRepository.save(location);
 
-        log.info("Location ID {} successfully deleted", locationId);
+        log.info("Location ID {} successfully deleted (marked inactive and unavailable)", locationId);
     }
 
     public List<LocationResponse> getAllLocations() {

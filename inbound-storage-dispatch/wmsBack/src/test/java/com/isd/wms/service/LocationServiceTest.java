@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.isd.wms.repository.OrderRepository;
+import com.isd.wms.repository.ReplenishmentRepository;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -31,6 +33,8 @@ class LocationServiceTest {
 
     @Mock private LocationRepository locationRepository;
     @Mock private StockRepository stockRepository;
+    @Mock private ReplenishmentRepository replenishmentRepository;
+    @Mock private OrderRepository orderRepository;
 
     @Spy private LocationMapper locationMapper = new LocationMapper();
 
@@ -46,6 +50,57 @@ class LocationServiceTest {
 
         verify(locationRepository).save(existingLocation);
         assertThat(existingLocation.getIsActive()).isFalse();
+        assertThat(existingLocation.getAvailable()).isFalse();
+    }
+
+    @Test
+    void rejectsDeletingLocationWhenOccupiedByStock() {
+        when(stockRepository.existsByLocationIdAndAvailableIsTrue(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> locationService.deleteLocation(1L))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("You cannot delete a location while there is a product in it");
+
+        verify(locationRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsDeletingLocationWithActiveReplenishments() {
+        when(stockRepository.existsByLocationIdAndAvailableIsTrue(1L)).thenReturn(false);
+        when(replenishmentRepository.existsByDestinationLocationIdAndStatusIn(eq(1L), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> locationService.deleteLocation(1L))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("active replenishment");
+
+        verify(locationRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsDeletingLocationWithActiveOrders() {
+        when(stockRepository.existsByLocationIdAndAvailableIsTrue(1L)).thenReturn(false);
+        when(replenishmentRepository.existsByDestinationLocationIdAndStatusIn(eq(1L), any())).thenReturn(false);
+        when(orderRepository.existsByDestinationLocationIdAndStatusIn(eq(1L), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> locationService.deleteLocation(1L))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("active orders");
+
+        verify(locationRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsActivatingInactiveLocation() {
+        Location inactiveLocation = location(1L, "A-01", Zone.PICKING, false);
+        inactiveLocation.setIsActive(false);
+        when(locationRepository.findById(1L)).thenReturn(Optional.of(inactiveLocation));
+
+        assertThatThrownBy(() -> locationService.updateLocation(
+            1L,
+            new LocationUpdateRequest("A-01", "A-01", Zone.PICKING, "Desc", true)
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Cannot set an inactive/deleted location as available");
     }
 
     @Test
