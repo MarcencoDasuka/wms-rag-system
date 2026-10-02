@@ -1,9 +1,3 @@
-TRUNCATE TABLE
-    transport_units, allocations, order_lines, orders,
-    replenishments, tasks, inventory_history, stocks,
-    locations, products, categories, users
-    RESTART IDENTITY CASCADE;
-
 INSERT INTO users (id, username, email, password, user_role, email_verified, is_active)
 VALUES
     (1, 'dev', 'dev@isd.com', '$2a$12$Jgx.cGwjrw/ICdWSY4iYHuJ0eGKTRhfZ5IOO/tjrAtps/JkZ9J.vS', 'ROLE_DEV', true, true),
@@ -42,7 +36,8 @@ VALUES
     -- holly.flax -> password: WorldsBest$56
     (19, 'holly.flax', 'holly.flax@isd.com', '$2b$12$FC6M/w8YmCUnU08QCVUAi.c65r6.fO6UlZzthpjveV4D8P66e8.Ku', 'ROLE_DEV', true, true),
     -- jan.levinson -> password: Office$15
-    (20, 'jan.levinson', 'jan.levinson@isd.com', '$2b$12$E7BhQ4/4ToACH1DTUpDH.OlAkWBQ95iBNQrajorvnOqqHF4875gQq', 'ROLE_SUPERVISOR', true, true);
+    (20, 'jan.levinson', 'jan.levinson@isd.com', '$2b$12$E7BhQ4/4ToACH1DTUpDH.OlAkWBQ95iBNQrajorvnOqqHF4875gQq', 'ROLE_SUPERVISOR', true, true)
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO categories (id, name)
 VALUES
@@ -55,7 +50,8 @@ VALUES
     (7, 'Automotive'),
     (8, 'Office Supplies'),
     (9, 'Chemicals & Safety'),
-    (10, 'Packaging Materials');
+    (10, 'Packaging Materials')
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO products (id, name, barcode, description, category_id, auto_replenish, min_threshold, replenish_qty)
 VALUES
@@ -88,7 +84,8 @@ VALUES
     (27, 'Replacement Blades 10x', 'BLD-RET-10', 'Spare blades pack', 5, true, 20, 100),
     (28, 'Packing Tape Clear', 'TAPE-CLR-6R', 'Packing tape 6 rolls', 10, true, 40, 150),
     (29, 'Tape Dispenser Gun', 'GUN-TAPE-01', 'Tape dispenser', 5, false, NULL, NULL),
-    (30, 'Steel Toe Boots M', 'BOOT-STL-M', 'Safety boots medium', 6, false, NULL, NULL);
+    (30, 'Steel Toe Boots M', 'BOOT-STL-M', 'Safety boots medium', 6, false, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO locations (id, barcode, name, zone, description, available, is_active)
 VALUES
@@ -131,7 +128,8 @@ VALUES
     (37, 'DISP-07', 'DISP-07', 'DISPATCH', 'Dispatch Lane 07', true, true),
     (38, 'DISP-08', 'DISP-08', 'DISPATCH', 'Dispatch Lane 08', true, true),
     (39, 'DISP-09', 'DISP-09', 'DISPATCH', 'Dispatch Lane 09', true, true),
-    (40, 'DISP-10', 'DISP-10', 'DISPATCH', 'Dispatch Lane 10', true, true);
+    (40, 'DISP-10', 'DISP-10', 'DISPATCH', 'Dispatch Lane 10', true, true)
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO transport_units (barcode, order_id, replenishment_id)
 VALUES
@@ -184,12 +182,13 @@ VALUES
     ('TU100047', NULL, NULL),
     ('TU100048', NULL, NULL),
     ('TU100049', NULL, NULL),
-    ('TU100050', NULL, NULL);
+    ('TU100050', NULL, NULL)
+ON CONFLICT (barcode) DO NOTHING;
 
-SELECT setval('users_sequence', (SELECT MAX(id) FROM users));
-SELECT setval('categories_sequence', (SELECT MAX(id) FROM categories));
-SELECT setval('products_sequence', (SELECT MAX(id) FROM products));
-SELECT setval('locations_sequence', (SELECT MAX(id) FROM locations));
-SELECT setval('transport_units_sequence', (SELECT MAX(id) FROM transport_units));
+SELECT setval('users_sequence', (SELECT COALESCE(MAX(id), 1) FROM users));
+SELECT setval('categories_sequence', (SELECT COALESCE(MAX(id), 1) FROM categories));
+SELECT setval('products_sequence', (SELECT COALESCE(MAX(id), 1) FROM products));
+SELECT setval('locations_sequence', (SELECT COALESCE(MAX(id), 1) FROM locations));
+SELECT setval('transport_units_sequence', (SELECT COALESCE(MAX(id), 1) FROM transport_units));
 
-ALTER TABLE replenishments ADD COLUMN logic_id VARCHAR(50);
+ALTER TABLE replenishments ADD COLUMN IF NOT EXISTS logic_id VARCHAR(50);
