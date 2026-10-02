@@ -2,6 +2,7 @@ package com.isd.wms.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -43,12 +44,27 @@ public class JwtRequestFilter extends OncePerRequestFilter {
             jwt = authorizationHeader.substring(7);
             try {
                 username = jwtUtil.extractUsername(jwt);
-                log.debug("JWT Token detected. Extracted username: '{}' for URI: {}", username, requestURI);
+                log.debug("JWT Token detected in Authorization header. Extracted username: '{}' for URI: {}", username, requestURI);
             } catch (Exception e) {
-                log.error("Failed to extract username from JWT token for URI: {}", requestURI, e);
+                log.error("Failed to extract username from JWT header for URI: {}", requestURI, e);
+            }
+        } else if (request.getCookies() != null) {
+            for (Cookie cookie : request.getCookies()) {
+                if ("jwt_token".equals(cookie.getName())) {
+                    jwt = cookie.getValue();
+                    break;
+                }
+            }
+            if (jwt != null && !jwt.isBlank()) {
+                try {
+                    username = jwtUtil.extractUsername(jwt);
+                    log.debug("JWT Cookie detected. Extracted username: '{}' for URI: {}", username, requestURI);
+                } catch (Exception e) {
+                    log.error("Failed to extract username from JWT cookie for URI: {}", requestURI, e);
+                }
             }
         } else {
-            log.trace("No Bearer token found in Authorization header for URI: {}", requestURI);
+            log.trace("No Bearer token or jwt_token cookie found for URI: {}", requestURI);
         }
 
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {

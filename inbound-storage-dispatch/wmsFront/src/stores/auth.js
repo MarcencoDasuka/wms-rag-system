@@ -8,6 +8,11 @@ const ROLE_KEY = 'user_role'
 const USER_KEY = 'user'
 const USER_ID_KEY = 'user_id'
 
+// Purge any legacy token from localStorage to remediate S-5 (XSS protection)
+if (typeof window !== 'undefined' && window.localStorage) {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
 const seededUsers = {
   dev: { id: 1, role: 'ROLE_DEV' },
   supervisor: { id: 2, role: 'ROLE_SUPERVISOR' },
@@ -48,11 +53,12 @@ const safeDashboardForRole = (role) => {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(localStorage.getItem(TOKEN_KEY) || null)
-  const role = ref(localStorage.getItem(ROLE_KEY) || null)
-  const user = ref(JSON.parse(localStorage.getItem(USER_KEY) || 'null'))
+  // Token is strictly in-memory; credentials are primarily transmitted via HttpOnly cookie
+  const token = ref(null)
+  const role = ref(typeof window !== 'undefined' ? sessionStorage.getItem(ROLE_KEY) : null)
+  const user = ref(typeof window !== 'undefined' ? JSON.parse(sessionStorage.getItem(USER_KEY) || 'null') : null)
 
-  const isAuthenticated = computed(() => !!token.value)
+  const isAuthenticated = computed(() => !!token.value || !!user.value)
   const dashboardPath = computed(() => safeDashboardForRole(role.value))
 
   const persistAuth = (authData) => {
@@ -60,14 +66,17 @@ export const useAuthStore = defineStore('auth', () => {
     role.value = authData.role
     user.value = authData.user
 
-    localStorage.setItem(TOKEN_KEY, token.value)
-    localStorage.setItem(ROLE_KEY, role.value)
-    localStorage.setItem(USER_KEY, JSON.stringify(user.value))
+    // Invariant: Never store JWT in localStorage/sessionStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(TOKEN_KEY)
+      sessionStorage.setItem(ROLE_KEY, role.value)
+      sessionStorage.setItem(USER_KEY, JSON.stringify(user.value))
 
-    if (user.value?.id) {
-      localStorage.setItem(USER_ID_KEY, user.value.id)
-    } else {
-      localStorage.removeItem(USER_ID_KEY)
+      if (user.value?.id) {
+        sessionStorage.setItem(USER_ID_KEY, user.value.id)
+      } else {
+        sessionStorage.removeItem(USER_ID_KEY)
+      }
     }
   }
 
@@ -98,15 +107,48 @@ export const useAuthStore = defineStore('auth', () => {
     return { token: responseToken, role: detectedRole, user: authUser }
   }
 
-  const logout = () => {
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await authApi.getMe()
+      if (response.data) {
+        user.value = {
+          id: response.data.id,
+          username: response.data.username
+        }
+        role.value = normalizeRole(response.data.role)
+
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(ROLE_KEY, role.value)
+          sessionStorage.setItem(USER_KEY, JSON.stringify(user.value))
+          if (response.data.id) {
+            sessionStorage.setItem(USER_ID_KEY, response.data.id)
+          }
+        }
+        return response.data
+      }
+    } catch (e) {
+      await logout()
+      throw e
+    }
+  }
+
+  const logout = async () => {
     token.value = null
     role.value = null
     user.value = null
 
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(ROLE_KEY)
-    localStorage.removeItem(USER_KEY)
-    localStorage.removeItem(USER_ID_KEY)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(TOKEN_KEY)
+      sessionStorage.removeItem(ROLE_KEY)
+      sessionStorage.removeItem(USER_KEY)
+      sessionStorage.removeItem(USER_ID_KEY)
+    }
+
+    try {
+      await authApi.logout()
+    } catch {
+      // Ignore network errors during logout
+    }
   }
 
   const hasAnyRole = (allowedRoles = []) => {
@@ -114,5 +156,15 @@ export const useAuthStore = defineStore('auth', () => {
     return allowedRoles.includes(role.value)
   }
 
-  return { token, role, user, isAuthenticated, dashboardPath, login, logout, hasAnyRole }
+  return {
+    token,
+    role,
+    user,
+    isAuthenticated,
+    dashboardPath,
+    login,
+    logout,
+    fetchCurrentUser,
+    hasAnyRole
+  }
 })

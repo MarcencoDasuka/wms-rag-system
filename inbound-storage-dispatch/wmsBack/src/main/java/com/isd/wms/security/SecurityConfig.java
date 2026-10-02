@@ -47,7 +47,7 @@ public class SecurityConfig {
             .httpBasic(basic -> basic.disable())
 
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/api/auth/verify", "/error", "/favicon.ico").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/verify", "/api/auth/logout", "/error", "/favicon.ico").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
                 .requestMatchers("/api/supervisor/**").hasAnyAuthority("ROLE_SUPERVISOR", "ROLE_DEV", "SUPERVISOR", "DEV")

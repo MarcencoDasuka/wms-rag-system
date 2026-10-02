@@ -1,43 +1,67 @@
 package com.isd.wms.controller;
 
+import com.isd.wms.entity.User;
 import com.isd.wms.service.AuthService;
 import com.isd.wms.service.UserService;
-import lombok.RequiredArgsConstructor;
+import com.isd.wms.service.validation.SecurityFacade;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * REST controller for authentication and account verification operations.
  *
- * <p>Provides public endpoints for user login and email verification.
- * Successful login returns a JWT token; email verification activates a newly
- * registered account using a one-time token.</p>
+ * <p>Provides public endpoints for user login, logout, account verification,
+ * and an authenticated endpoint for fetching current user profile.</p>
  *
  * <p>Base path: {@code /api/auth}</p>
  */
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
 @Slf4j
 public class AuthController {
 
+    public static final String JWT_COOKIE_NAME = "jwt_token";
+    private static final Duration JWT_COOKIE_MAX_AGE = Duration.ofHours(24);
+
     private final AuthService authService;
     private final UserService userService;
+    private final SecurityFacade securityFacade;
+    private final boolean cookieSecure;
+
+    public AuthController(
+            AuthService authService,
+            UserService userService,
+            SecurityFacade securityFacade,
+            @Value("${wms.jwt.cookie-secure:false}") boolean cookieSecure) {
+        this.authService = authService;
+        this.userService = userService;
+        this.securityFacade = securityFacade;
+        this.cookieSecure = cookieSecure;
+    }
 
     /**
-     * Authenticates a user and returns a JWT token on success.
+     * Authenticates a user, issues an HttpOnly JWT cookie, and returns a JWT token on success.
      *
      * <p>The request body must contain {@code username} (username or email) and
      * {@code password} fields.</p>
      *
      * @param loginRequest a map containing {@code username} and {@code password}
+     * @param response     the HttpServletResponse to attach the HttpOnly cookie
      * @return {@code 200 OK} with a map containing the generated {@code token}
      */
     @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> login(@RequestBody Map<String, String> loginRequest) {
+    public ResponseEntity<Map<String, String>> login(
+            @RequestBody Map<String, String> loginRequest,
+            HttpServletResponse response) {
         String usernameOrEmail = loginRequest.get("username");
         String password = loginRequest.get("password");
 
@@ -45,9 +69,55 @@ public class AuthController {
 
         String token = authService.authenticateAndGenerateToken(usernameOrEmail, password);
 
-        log.info("Authentication successful! Token is generated for user: {}", usernameOrEmail);
+        ResponseCookie cookie = ResponseCookie.from(JWT_COOKIE_NAME, token)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .path("/")
+                .maxAge(JWT_COOKIE_MAX_AGE)
+                .sameSite("Lax")
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        log.info("Authentication successful! Token generated and HttpOnly cookie attached for user: {}", usernameOrEmail);
 
         return ResponseEntity.ok(Map.of("token", token));
+    }
+
+    /**
+     * Logs out the user by clearing the HttpOnly JWT cookie.
+     *
+     * @param response the HttpServletResponse to clear the cookie
+     * @return {@code 200 OK} with logout confirmation
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, String>> logout(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from(JWT_COOKIE_NAME, "")
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        log.info("User session logged out, {} cookie invalidated", JWT_COOKIE_NAME);
+        return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+    }
+
+    /**
+     * Retrieves the profile information of the currently authenticated user.
+     *
+     * @return {@code 200 OK} with user id, username, role, and email
+     */
+    @GetMapping("/me")
+    public ResponseEntity<Map<String, Object>> getCurrentUser() {
+        User user = securityFacade.getCurrentUser();
+        Map<String, Object> userData = new HashMap<>();
+        userData.put("id", user.getId());
+        userData.put("username", user.getUsername());
+        userData.put("role", user.getUserRole() != null ? (user.getUserRole().name().startsWith("ROLE_") ? user.getUserRole().name() : "ROLE_" + user.getUserRole().name()) : "");
+        userData.put("email", user.getEmail() != null ? user.getEmail() : "");
+        return ResponseEntity.ok(userData);
     }
 
     /**

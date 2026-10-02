@@ -12,9 +12,15 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('jwt_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  // If in-memory token is available, pass it in Authorization header;
+  // otherwise, the browser transmits the HttpOnly cookie automatically via withCredentials: true.
+  try {
+    const authStore = useAuthStore()
+    if (authStore.token) {
+      config.headers.Authorization = `Bearer ${authStore.token}`
+    }
+  } catch {
+    // Pinia not active yet in current execution context
   }
   return config
 })
@@ -23,11 +29,14 @@ apiClient.interceptors.response.use(
   (response) => {
     return response
   },
-  (error) => {
+  async (error) => {
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      const authStore = useAuthStore()
-
-      authStore.logout()
+      try {
+        const authStore = useAuthStore()
+        await authStore.logout()
+      } catch {
+        // ignore
+      }
 
       if (router.currentRoute.value.name !== 'login') {
         router.push('/login?loggedOut=true')

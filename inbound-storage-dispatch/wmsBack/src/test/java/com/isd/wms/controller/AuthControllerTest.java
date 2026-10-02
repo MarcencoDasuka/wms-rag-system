@@ -1,9 +1,12 @@
 package com.isd.wms.controller;
 
+import com.isd.wms.entity.User;
+import com.isd.wms.enums.Role;
 import com.isd.wms.exception.GlobalExceptionHandler;
 import com.isd.wms.exception.InvalidCredentialsException;
 import com.isd.wms.service.AuthService;
 import com.isd.wms.service.UserService;
+import com.isd.wms.service.validation.SecurityFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +29,9 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -45,16 +50,19 @@ class AuthControllerTest {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private SecurityFacade securityFacade;
+
     @BeforeEach
     void setUp() {
-        reset(authService, userService);
+        reset(authService, userService, securityFacade);
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
                 .build();
     }
 
     @Test
-    void whenDataIsCorrect_thenLoginReturnsTokenJWT() throws Exception {
+    void whenDataIsCorrect_thenLoginReturnsTokenJWTAndSetsHttpOnlyCookie() throws Exception {
         String loginPayload = "{\"username\":\"test_user\",\"password\":\"secret_password\"}";
 
         when(authService.authenticateAndGenerateToken("test_user", "secret_password"))
@@ -65,7 +73,11 @@ class AuthControllerTest {
                         .content(loginPayload)
                         .with(csrf()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("fake-jwt-token"));
+                .andExpect(jsonPath("$.token").value("fake-jwt-token"))
+                .andExpect(cookie().exists("jwt_token"))
+                .andExpect(cookie().httpOnly("jwt_token", true))
+                .andExpect(cookie().path("jwt_token", "/"))
+                .andExpect(cookie().value("jwt_token", "fake-jwt-token"));
     }
 
     @Test
@@ -113,6 +125,33 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.message").value("Please verify your email before logging in."));
     }
 
+    @Test
+    void whenLogout_thenClearsJwtCookie() throws Exception {
+        mockMvc.perform(post("/api/auth/logout")
+                        .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(cookie().maxAge("jwt_token", 0))
+                .andExpect(jsonPath("$.message").value("Logged out successfully"));
+    }
+
+    @Test
+    void whenGetMe_thenReturnCurrentUserProfile() throws Exception {
+        User user = new User();
+        user.setId(42L);
+        user.setUsername("current_tester");
+        user.setUserRole(Role.ROLE_SUPERVISOR);
+        user.setEmail("tester@isd.com");
+
+        when(securityFacade.getCurrentUser()).thenReturn(user);
+
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(42))
+                .andExpect(jsonPath("$.username").value("current_tester"))
+                .andExpect(jsonPath("$.role").value("ROLE_SUPERVISOR"))
+                .andExpect(jsonPath("$.email").value("tester@isd.com"));
+    }
+
     @Configuration
     @EnableWebMvc
     @EnableWebSecurity
@@ -129,8 +168,16 @@ class AuthControllerTest {
         }
 
         @Bean
-        public AuthController authController(AuthService authService, UserService userService) {
-            return new AuthController(authService, userService);
+        public SecurityFacade securityFacade() {
+            return mock(SecurityFacade.class);
+        }
+
+        @Bean
+        public AuthController authController(
+                AuthService authService,
+                UserService userService,
+                SecurityFacade securityFacade) {
+            return new AuthController(authService, userService, securityFacade, false);
         }
 
         @Bean
