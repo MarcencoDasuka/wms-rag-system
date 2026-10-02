@@ -33,9 +33,13 @@ public class InventoryAdjustmentPlanner {
     private final StockRepository stockRepository;
 
     public InventoryAdjustmentPlan buildPlan(InventoryAdjustmentContext context) {
-        List<Allocation> adjustedStockAllocations = allocationRepository.findActiveByStockId(
-                context.stockId(),
-                INACTIVE_ALLOCATION_STATUSES
+        return buildPlan(context, false);
+    }
+
+    public InventoryAdjustmentPlan buildPlan(InventoryAdjustmentContext context, boolean lockAllocations) {
+        List<Allocation> adjustedStockAllocations = (lockAllocations
+                ? allocationRepository.findActiveByStockIdWithLock(context.stockId(), INACTIVE_ALLOCATION_STATUSES)
+                : allocationRepository.findActiveByStockId(context.stockId(), INACTIVE_ALLOCATION_STATUSES)
             ).stream()
             .sorted(Comparator.comparing(Allocation::getCreatedAt).thenComparing(Allocation::getId))
             .toList();

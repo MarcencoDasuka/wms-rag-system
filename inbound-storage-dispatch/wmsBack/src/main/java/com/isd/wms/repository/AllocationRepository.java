@@ -5,7 +5,9 @@ import com.isd.wms.entity.Order;
 import com.isd.wms.entity.User;
 import com.isd.wms.enums.Status;
 import com.isd.wms.repository.projections.AllocationSupervisorProjection;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -298,4 +300,36 @@ public interface AllocationRepository extends JpaRepository<Allocation, Long> {
           )
         """)
     int deleteAllocationsOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
+
+    /**
+     * Finds an allocation by ID with a pessimistic write lock.
+     * Prevents race conditions during concurrent allocation completion and inventory adjustments.
+     *
+     * @param id the allocation ID
+     * @return an Optional containing the locked allocation, if found
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Allocation a WHERE a.id = :id")
+    Optional<Allocation> findByIdWithLock(@Param("id") Long id);
+
+    /**
+     * Finds active allocations for a stock with a pessimistic write lock,
+     * excluding given statuses, ordered by creation time.
+     * Prevents race conditions during inventory adjustments and concurrent picks.
+     *
+     * @param stockId          the stock ID
+     * @param excludedStatuses statuses to exclude (e.g. COMPLETED, CANCELED)
+     * @return ordered list of locked active allocations
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT a FROM Allocation a
+            WHERE a.stock.id = :stockId
+              AND a.status NOT IN (:excludedStatuses)
+            ORDER BY a.createdAt, a.id
+        """)
+    List<Allocation> findActiveByStockIdWithLock(
+        @Param("stockId") Long stockId,
+        @Param("excludedStatuses") List<Status> excludedStatuses
+    );
 }

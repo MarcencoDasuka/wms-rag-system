@@ -110,7 +110,7 @@ public class InventoryAdjustmentApplier {
 
     private List<Allocation> updateAdjustedStockAllocations(InventoryAdjustmentContext context) {
         List<Allocation> allocationsToSave = new ArrayList<>();
-        List<Allocation> adjustedStockAllocations = allocationRepository.findActiveByStockId(
+        List<Allocation> adjustedStockAllocations = allocationRepository.findActiveByStockIdWithLock(
                 context.stockId(),
                 INACTIVE_ALLOCATION_STATUSES
             ).stream()

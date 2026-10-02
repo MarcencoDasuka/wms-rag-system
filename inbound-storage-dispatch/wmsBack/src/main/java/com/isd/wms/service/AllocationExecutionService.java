@@ -165,7 +165,7 @@ public class AllocationExecutionService {
 
     @Transactional
     public AllocationExecutionResponse confirmPickedQuantity(Long allocationId, ConfirmPickedQuantityRequest request) {
-        Allocation allocation = getAssignedAllocationInProgress(allocationId);
+        Allocation allocation = getAssignedAllocationInProgressWithLock(allocationId);
 
         if (!allocation.isProductScanned()) {
             throw new InvalidRequestException("Product barcode must be scanned first");
@@ -174,6 +174,9 @@ public class AllocationExecutionService {
         Integer pickedQuantity = request.pickedQuantity();
         if (pickedQuantity == null || pickedQuantity < 0) {
             throw new InvalidRequestException("Picked quantity must be greater than or equal to 0");
+        }
+        if (allocation.getQuantity() <= 0) {
+            throw new InvalidRequestException("Allocation has no remaining quantity");
         }
         if (pickedQuantity > allocation.getQuantity()) {
             throw new InvalidRequestException("Picked quantity cannot exceed required quantity");
@@ -189,7 +192,7 @@ public class AllocationExecutionService {
 
     @Transactional
     public AllocationCompletionResponse completeAllocation(Long allocationId) {
-        Allocation allocation = getAssignedAllocationInProgress(allocationId);
+        Allocation allocation = getAssignedAllocationInProgressWithLock(allocationId);
 
         if (!allocation.isSourceLocationScanned()) {
             throw new InvalidRequestException("Source location must be scanned first");
@@ -199,6 +202,13 @@ public class AllocationExecutionService {
         }
 
         int pickedQuantity = allocation.getPickedQuantity().orElseThrow(() -> new InvalidRequestException("Picked quantity must be confirmed before completion"));
+
+        if (allocation.getQuantity() <= 0) {
+            throw new InvalidRequestException("Allocation has no remaining quantity");
+        }
+        if (pickedQuantity > allocation.getQuantity()) {
+            throw new InvalidRequestException("Picked quantity cannot exceed required quantity");
+        }
 
         allocation.setStatus(pickedQuantity == 0 ? Status.CANCELED : (pickedQuantity < allocation.getQuantity() ? Status.PARTIALLY_COMPLETED : Status.COMPLETED));
 
@@ -233,6 +243,19 @@ public class AllocationExecutionService {
     private AllocationExecutionResponse toResponse(Allocation allocation) {
         return new AllocationExecutionResponse(allocation.getId(), allocation.getStatus().name(),
             allocation.isSourceLocationScanned(), allocation.isProductScanned(), allocation.getQuantity(), allocation.getPickedQuantity().orElse(0));
+    }
+
+    private Allocation getAssignedAllocationInProgressWithLock(Long allocationId) {
+        Allocation allocation = allocationRepository.findByIdWithLock(allocationId)
+            .or(() -> allocationRepository.findById(allocationId))
+            .orElseThrow(() -> new InvalidRequestException("Allocation not found"));
+        if (allocation.getTask().getOperator().filter(securityFacade.getCurrentUser()::equals).isEmpty()) {
+            throw new InvalidRequestException("Allocation is not assigned to current operator");
+        }
+        if (allocation.getStatus() == Status.COMPLETED) throw new InvalidRequestException("Allocation is already completed");
+        if (allocation.getStatus() == Status.CANCELED) throw new InvalidRequestException("Allocation is cancelled");
+        if (allocation.getStatus() != Status.IN_PROGRESS) throw new InvalidRequestException("Allocation is not in progress");
+        return allocation;
     }
 
     private Allocation getAssignedAllocationInProgress(Long allocationId) {

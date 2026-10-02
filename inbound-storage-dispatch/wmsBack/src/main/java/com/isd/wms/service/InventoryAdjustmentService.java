@@ -87,7 +87,7 @@ public class InventoryAdjustmentService {
             request.reason(), request.userId(), preview
         );
 
-        InventoryAdjustmentPlan plan = inventoryAdjustmentPlanner.buildPlan(context);
+        InventoryAdjustmentPlan plan = inventoryAdjustmentPlanner.buildPlan(context, !preview);
         log.info(
             "Adjustment plan calculated: stockId={}, affectedOrderLines={}, " +
                 "affectedOrders={}, preservedQuantityOnAdjustedStock={}",
