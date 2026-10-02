@@ -95,6 +95,21 @@ The system supports three primary user roles:
 
 ---
 
+## Concurrency, Data Integrity & Security Architecture
+
+The core WMS backend enforces strict transactional and concurrency invariants:
+
+1. **Order Picking Concurrency:** Pessimistic write locking on `OrderLine` (`findByTaskIdWithLock`) serializes concurrent allocation completions, preventing lost updates on `deliveredQuantity`.
+2. **Location Monopoly:** A partial unique index (`uk_stocks_active_location` on `stocks (location_id) WHERE available = true`, Flyway `V34`) combined with pessimistic row-locking on `Location` guarantees that a single warehouse location can never hold multiple distinct product types.
+3. **Allocation vs Adjustment Race Protection:** Stock adjustments and operator picking executions serialize via pessimistic write locks (`findByIdWithLock`, `findActiveByStockIdWithLock`), preventing phantom picks on canceled allocations.
+4. **Data Cleanup Safety:** `DataCleanupJob` strictly deletes records in terminal statuses (`COMPLETED`, `CANCELED`), never deleting active orders or allocations.
+5. **AI Tool Security Boundaries:** Mutating AI tools require two-phase confirmation tokens, enforce `ROLE_SUPERVISOR` / `ROLE_DEV`, and validate object-level access boundaries (`enforceOrderAccess`, `enforceReplenishmentAccess`, `enforceTargetOperator`).
+6. **Account Lifecycle & Security:** Inactive accounts are denied authentication across all endpoints, reactivation is blocked through registration, and credentials must not match known compromised secrets.
+
+For full architectural details and code snippets, see the [Architecture and Fixes Guide](../docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md).
+
+---
+
 ## Tech Stack
 
 ### Backend

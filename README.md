@@ -91,7 +91,7 @@ docker compose up -d
 
 ## 4. Документация проекта
 
-* [`docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — сквозной архитектурный реестр 19 исправлений (WMS backend + RAG сервис).
+* [`docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — сквозной архитектурный реестр 29 решений (18 в ядре WMS + 11 в RAG) и дорожная карта (Roadmap) из 8 открытых дефектов аудита.
 * [`docs/RAG_POST_FIX_EVALUATION.md`](docs/RAG_POST_FIX_EVALUATION.md) — итоговый эмпирический отчёт верификации качества поиска (1,261 чанк, Hit@1 83.3%).
 * [`docs/archive/`](docs/archive/README.md) — архив завершённых технических аудитов и первичных замеров.
 * [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — спецификация домена и REST API склада WMS.
