@@ -2,7 +2,9 @@ package com.isd.wms.repository;
 
 import com.isd.wms.repository.projections.ShortLocationProjection;
 import com.isd.wms.entity.Location;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -68,4 +70,15 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
     Optional<Long> findLocationIdByName(
         @Param("name") String name
     );
+
+    /**
+     * Finds a location by its ID with a pessimistic write lock.
+     * Prevents race conditions during concurrent stock assignment/replenishment.
+     *
+     * @param id the location ID
+     * @return an Optional containing the locked location, if found
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT l FROM Location l WHERE l.id = :id")
+    Optional<Location> findByIdWithLock(@Param("id") Long id);
 }

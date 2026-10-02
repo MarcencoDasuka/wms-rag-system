@@ -44,6 +44,7 @@ class AllocationExecutionServiceTest {
     @Mock private SecurityFacade securityFacade;
     @Mock private WorkflowService workflowService;
     @Mock private ReplenishmentRepository replenishmentRepository;
+    @Mock private LocationRepository locationRepository;
     @Spy private PickingFlowService pickingFlowService;
 
     @InjectMocks
@@ -108,7 +109,7 @@ class AllocationExecutionServiceTest {
             inventoryService, workflowService, shortageResolver, pickingFlowService, summaryMapper
         );
         ReplenishmentOperatorStrategy replenishmentStrategy = new ReplenishmentOperatorStrategy(
-            allocationRepository, replenishmentRepository, tuRepository, stockRepository,
+            allocationRepository, replenishmentRepository, locationRepository, tuRepository, stockRepository,
             inventoryService, workflowService, shortageResolver, pickingFlowService, summaryMapper
         );
         ReflectionTestUtils.setField(allocationExecutionService, "executionStrategies", List.of(pickingStrategy, replenishmentStrategy));

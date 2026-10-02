@@ -9,6 +9,7 @@ import com.isd.wms.enums.TaskType;
 import com.isd.wms.exception.InvalidRequestException;
 import com.isd.wms.mapper.OperatorSummaryMapper;
 import com.isd.wms.repository.AllocationRepository;
+import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.StockRepository;
 import com.isd.wms.repository.TransportUnitRepository;
@@ -29,6 +30,7 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
 
     private final AllocationRepository allocationRepository;
     private final ReplenishmentRepository replenishmentRepository;
+    private final LocationRepository locationRepository;
     private final TransportUnitRepository tuRepository;
     private final StockRepository stockRepository;
     private final InventoryService inventoryService;
@@ -89,35 +91,46 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
             .orElseThrow(() -> new InvalidRequestException("Replenishment not found"));
         Location destinationLocation = replenishment.getDestinationLocation();
 
+        // Lock destination location to serialize concurrent replenishment dispatches targeting the same bin
+        locationRepository.findByIdWithLock(destinationLocation.getId())
+            .or(() -> locationRepository.findById(destinationLocation.getId()));
+
         List<Allocation> taskAllocations = allocationRepository.findAllByTaskId(task.getId());
         for (Allocation alloc : taskAllocations) {
             if (alloc.getStatus() == Status.COMPLETED || alloc.getStatus() == Status.PARTIALLY_COMPLETED) {
                 int quantityToMove = alloc.getPickedQuantity().orElse(alloc.getQuantity());
                 if (quantityToMove > 0) {
                     Product product = alloc.getStock().getProduct().orElseThrow();
-                    stockRepository.findByLocationId(destinationLocation.getId()).ifPresentOrElse(existingStock -> {
-                        Product existingProduct = existingStock.getProduct().orElse(null);
-                        if (existingProduct != null && !existingProduct.getId().equals(product.getId())) {
-                            if (existingStock.getQuantity() == 0 && existingStock.getReservedQuantity() == 0) {
-                                existingStock.setProduct(product);
-                                existingStock.setQuantity(existingStock.getQuantity() + quantityToMove);
+                    try {
+                        stockRepository.findByLocationIdAndAvailableIsTrue(destinationLocation.getId()).ifPresentOrElse(existingStock -> {
+                            Product existingProduct = existingStock.getProduct().orElse(null);
+                            if (existingProduct != null && !existingProduct.getId().equals(product.getId())) {
+                                if (existingStock.getQuantity() == 0 && existingStock.getReservedQuantity() == 0) {
+                                    existingStock.setProduct(product);
+                                    existingStock.setQuantity(existingStock.getQuantity() + quantityToMove);
+                                    existingStock.updateDate(alloc.getStock().getManufactureDate(), alloc.getStock().getExpirationDate());
+                                    existingStock.setAvailable(true);
+                                } else {
+                                    throw new IllegalStateException("Location is already occupied by a different product!");
+                                }
+                            } else {
+                                if (existingProduct == null) existingStock.setProduct(product);
+                                existingStock.addQuantity(quantityToMove);
                                 existingStock.updateDate(alloc.getStock().getManufactureDate(), alloc.getStock().getExpirationDate());
                                 existingStock.setAvailable(true);
-                            } else {
-                                throw new IllegalStateException("Location is already occupied by a different product!");
                             }
-                        } else {
-                            if (existingProduct == null) existingStock.setProduct(product);
-                            existingStock.addQuantity(quantityToMove);
-                            existingStock.updateDate(alloc.getStock().getManufactureDate(), alloc.getStock().getExpirationDate());
-                            existingStock.setAvailable(true);
-                        }
-                        stockRepository.save(existingStock);
-                    }, () -> {
-                        Stock newStock = new Stock(product, destinationLocation, quantityToMove, alloc.getStock().getManufactureDate(), alloc.getStock().getExpirationDate());
-                        newStock.setAvailable(true);
-                        stockRepository.save(newStock);
-                    });
+                            stockRepository.save(existingStock);
+                        }, () -> {
+                            Stock stockToUse = stockRepository.findByProductIdAndLocationId(product.getId(), destinationLocation.getId())
+                                .orElseGet(() -> new Stock(product, destinationLocation));
+                            stockToUse.setQuantity(stockToUse.getQuantity() + quantityToMove);
+                            stockToUse.updateDate(alloc.getStock().getManufactureDate(), alloc.getStock().getExpirationDate());
+                            stockToUse.setAvailable(true);
+                            stockRepository.save(stockToUse);
+                        });
+                    } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                        throw new IllegalStateException("Location is already occupied by a different product!", e);
+                    }
                 }
             }
         }

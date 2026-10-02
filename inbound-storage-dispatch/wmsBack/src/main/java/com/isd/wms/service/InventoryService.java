@@ -85,6 +85,10 @@ public class InventoryService {
         Location location = getLocation(request.locationId());
         User user = getUser(request.userId());
 
+        // Lock location to prevent concurrent stock additions for different products
+        locationRepository.findByIdWithLock(location.getId())
+            .or(() -> locationRepository.findById(location.getId()));
+
         if(stockRepository.existsByLocationAndAvailableIsTrueAndProductIsNot(location, product)) {
             throw new InvalidRequestException("Location is already occupied by a different product with remaining quantity.");
         }
@@ -101,7 +105,12 @@ public class InventoryService {
         stock.setExpirationDate(request.expirationDate());
         stock.setAvailable(true);
 
-        Stock savedStock = stockRepository.save(stock);
+        Stock savedStock;
+        try {
+            savedStock = stockRepository.save(stock);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw new InvalidRequestException("Location is already occupied by a different product with remaining quantity.");
+        }
 
         createHistory(savedStock, quantity, savedStock.getQuantity(), null, location,
             InventoryOperationType.ADD_STOCK, null, null, user);
