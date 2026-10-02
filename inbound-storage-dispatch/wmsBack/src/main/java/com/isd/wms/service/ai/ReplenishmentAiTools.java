@@ -7,6 +7,7 @@ import com.isd.wms.entity.Replenishment;
 import com.isd.wms.entity.Task;
 import com.isd.wms.entity.User;
 import com.isd.wms.enums.Status;
+import com.isd.wms.enums.Zone;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.ProductRepository;
 import com.isd.wms.repository.ReplenishmentRepository;
@@ -45,6 +46,9 @@ public class ReplenishmentAiTools {
 
         Location dest = findLocationOrNull(destinationLocationBarcode);
         if (dest == null) return "Error: Destination location barcode not found.";
+        if (dest.getZone() != null && dest.getZone() != Zone.PICKING) {
+            return "Error: Replenishment destination must be in a PICKING zone.";
+        }
 
         try {
             replenishmentService.createReplenishment(new ReplenishmentCreateRequest(product.getId(), quantity, dest.getId()));
@@ -65,8 +69,10 @@ public class ReplenishmentAiTools {
         Replenishment repl = replenishmentRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
         if (repl == null) return "Error: Replenishment with logical ID " + logicId + " not found.";
 
+        securityBoundary.enforceReplenishmentAccess(repl);
+
         User operator = findOperatorOrNull(operatorUsername);
-        if (operator == null) return "Error: Operator not found.";
+        securityBoundary.enforceTargetOperator(operator);
 
         try {
             replenishmentService.assignReplenishment(repl.getId(), operator.getId());
@@ -83,6 +89,8 @@ public class ReplenishmentAiTools {
         log.info("AI invoked cancelReplenishmentTask for Logic ID {}", logicId);
         Replenishment repl = replenishmentRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
         if (repl == null) return "Error: Replenishment with logical ID " + logicId + " not found.";
+
+        securityBoundary.enforceReplenishmentAccess(repl);
 
         try {
             replenishmentService.cancelReplenishment(repl.getId());

@@ -7,6 +7,7 @@ import com.isd.wms.entity.Location;
 import com.isd.wms.entity.Order;
 import com.isd.wms.entity.Product;
 import com.isd.wms.entity.User;
+import com.isd.wms.enums.Zone;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.OrderRepository;
 import com.isd.wms.repository.ProductRepository;
@@ -49,6 +50,9 @@ public class OrderMutatingAiTools {
 
         Location dest = findLocationOrNull(destinationLocationBarcode);
         if (dest == null) return "Error: Destination location barcode not found.";
+        if (dest.getZone() != null && dest.getZone() != Zone.DISPATCH) {
+            return "Error: Destination location must be in a DISPATCH zone.";
+        }
 
         String finalLogicId = (logicId == null || logicId.trim().isEmpty())
             ? "ORD-AI-" + (System.currentTimeMillis() % 100000)
@@ -81,8 +85,10 @@ public class OrderMutatingAiTools {
         Order order = orderRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
         if (order == null) return "Error: Order with logical ID " + logicId + " not found.";
 
+        securityBoundary.enforceOrderAccess(order);
+
         User operator = findOperatorOrNull(operatorUsername);
-        if (operator == null) return "Error: Operator '" + operatorUsername + "' not found.";
+        securityBoundary.enforceTargetOperator(operator);
 
         try {
             orderService.assignOrder(order.getId(), operator.getId());
@@ -103,6 +109,8 @@ public class OrderMutatingAiTools {
 
         Order order = orderRepository.findByLogicIdIgnoreCase(logicId).orElse(null);
         if (order == null) return "Error: Order with logical ID " + logicId + " not found.";
+
+        securityBoundary.enforceOrderAccess(order);
 
         String confirmationResult = securityBoundary.requireConfirmation(
             "DELETE_ORDER",

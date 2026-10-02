@@ -1,5 +1,11 @@
 package com.isd.wms.service.ai;
 
+import com.isd.wms.entity.Order;
+import com.isd.wms.entity.Replenishment;
+import com.isd.wms.entity.Task;
+import com.isd.wms.entity.User;
+import com.isd.wms.enums.Role;
+import com.isd.wms.repository.OrderRepository;
 import com.isd.wms.service.validation.SecurityFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -20,7 +27,7 @@ import java.util.function.Supplier;
 
 /**
  * Enforces server-side authorization boundaries, two-phase confirmation protocol,
- * and security audit logging for all mutating AI tools.
+ * object-level access control, and security audit logging for all mutating AI tools.
  */
 @Slf4j
 @Component
@@ -43,6 +50,7 @@ public class AiToolSecurityBoundary {
     }
 
     private final SecurityFacade securityFacade;
+    private final OrderRepository orderRepository;
     private final ConcurrentMap<String, PendingConfirmation> pendingConfirmations = new ConcurrentHashMap<>();
 
     /**
@@ -83,6 +91,96 @@ public class AiToolSecurityBoundary {
                        "ROLE_DEV".equalsIgnoreCase(authority) ||
                        "DEV".equalsIgnoreCase(authority);
             });
+    }
+
+    /**
+     * Returns true if the currently authenticated user has the DEV role.
+     */
+    public boolean hasDevRole() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        return auth.getAuthorities().stream()
+            .anyMatch(a -> {
+                String authority = a.getAuthority();
+                return "ROLE_DEV".equalsIgnoreCase(authority) ||
+                       "DEV".equalsIgnoreCase(authority);
+            });
+    }
+
+    /**
+     * Enforces object-level authorization for an Order target.
+     * DEV role can manage any order.
+     * SUPERVISOR role can only manage orders they supervise. If the order has assigned supervisor(s)
+     * and none match the authenticated caller, access is denied.
+     *
+     * @param order target order
+     * @throws AccessDeniedException if caller lacks permission for this order
+     */
+    public void enforceOrderAccess(Order order) {
+        enforceSupervisorOrDev("orderAccess");
+        if (hasDevRole()) {
+            return;
+        }
+
+        String currentUsername = securityFacade.getCurrentUsername();
+        List<String> supervisors = orderRepository.findSupervisorUsernamesByOrder(order);
+        if (!supervisors.isEmpty() && supervisors.stream().noneMatch(s -> s.equalsIgnoreCase(currentUsername))) {
+            AUDIT_LOG.warn("OBJECT_ACCESS_DENIED: Supervisor [{}] attempted to access order [{}] belonging to supervisor(s) {}",
+                currentUsername, order.getLogicId(), supervisors);
+            throw new AccessDeniedException("Access denied: Order '" + order.getLogicId() +
+                "' belongs to another supervisor.");
+        }
+    }
+
+    /**
+     * Enforces object-level authorization for a Replenishment target.
+     * DEV role can manage any replenishment.
+     * SUPERVISOR role can only manage replenishments they supervise.
+     *
+     * @param replenishment target replenishment
+     * @throws AccessDeniedException if caller lacks permission for this replenishment
+     */
+    public void enforceReplenishmentAccess(Replenishment replenishment) {
+        enforceSupervisorOrDev("replenishmentAccess");
+        if (hasDevRole()) {
+            return;
+        }
+
+        String currentUsername = securityFacade.getCurrentUsername();
+        String supervisorUsername = replenishment.getTask()
+            .map(Task::getSupervisor)
+            .map(User::getUsername)
+            .orElse(null);
+
+        if (supervisorUsername != null && !supervisorUsername.equalsIgnoreCase(currentUsername)) {
+            AUDIT_LOG.warn("OBJECT_ACCESS_DENIED: Supervisor [{}] attempted to access replenishment [{}] belonging to supervisor [{}]",
+                currentUsername, replenishment.getLogicId(), supervisorUsername);
+            throw new AccessDeniedException("Access denied: Replenishment '" + replenishment.getLogicId() +
+                "' belongs to another supervisor.");
+        }
+    }
+
+    /**
+     * Enforces that the target user for assignment exists, has ROLE_OPERATOR, and is active.
+     *
+     * @param operator target operator user
+     * @throws AccessDeniedException if the target user is not an active operator
+     */
+    public void enforceTargetOperator(User operator) {
+        if (operator == null) {
+            throw new AccessDeniedException("Target operator does not exist.");
+        }
+        if (operator.getUserRole() != Role.ROLE_OPERATOR) {
+            AUDIT_LOG.warn("OBJECT_ACCESS_DENIED: Attempted to assign task to non-operator user [{}] with role [{}]",
+                operator.getUsername(), operator.getUserRole());
+            throw new AccessDeniedException("Access denied: User '" + operator.getUsername() + "' is not an operator.");
+        }
+        if (!Boolean.TRUE.equals(operator.getIsActive())) {
+            AUDIT_LOG.warn("OBJECT_ACCESS_DENIED: Attempted to assign task to inactive operator [{}]", operator.getUsername());
+            throw new AccessDeniedException("Access denied: Operator '" + operator.getUsername() + "' is inactive.");
+        }
     }
 
     /**

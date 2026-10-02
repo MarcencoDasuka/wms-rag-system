@@ -7,6 +7,7 @@ import com.isd.wms.entity.Product;
 import com.isd.wms.entity.Stock;
 import com.isd.wms.entity.User;
 import com.isd.wms.enums.InventoryAdjustmentReason;
+import com.isd.wms.enums.Zone;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.ProductRepository;
 import com.isd.wms.repository.StockRepository;
@@ -53,6 +54,9 @@ public class InventoryMutatingAiTools {
 
         Location loc = findLocationOrNull(locationBarcode);
         if (loc == null) return "Error: Location with barcode " + locationBarcode + " not found.";
+        if (loc.getZone() != null && loc.getZone() == Zone.DISPATCH) {
+            return "Error: Cannot receive inbound stock into a DISPATCH location.";
+        }
 
         try {
             User currentUser = userRepository.findByUsername(securityFacade.getCurrentUsername()).orElseThrow();

@@ -200,5 +200,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         """)
     Optional<String> findOperatorUsernameByOrder(@Param("order") Order order);
 
+    /**
+     * Finds usernames of all supervisors who own/supervise tasks for a given order.
+     *
+     * @param order the order
+     * @return list of distinct supervisor usernames
+     */
+    @Query("""
+            SELECT DISTINCT u.username
+            FROM Order o
+            JOIN o.orderLines ol
+            JOIN ol.task t
+            JOIN t.supervisor u
+            WHERE o = :order
+        """)
+    List<String> findSupervisorUsernamesByOrder(@Param("order") Order order);
+
     Optional<Order> findByLogicIdIgnoreCase(String logicId);
 }

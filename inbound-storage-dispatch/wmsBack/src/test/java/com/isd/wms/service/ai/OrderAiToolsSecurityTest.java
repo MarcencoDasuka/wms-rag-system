@@ -4,6 +4,7 @@ import com.isd.wms.dto.order.ExtendedOrderCreateRequest;
 import com.isd.wms.entity.Location;
 import com.isd.wms.entity.Order;
 import com.isd.wms.entity.Product;
+import com.isd.wms.entity.User;
 import com.isd.wms.enums.OrderStatus;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.OrderRepository;
@@ -164,5 +165,39 @@ class OrderAiToolsSecurityTest {
             .isInstanceOf(AccessDeniedException.class);
 
         verify(orderService, never()).addExtendedOrder(any());
+    }
+
+    @Test
+    @DisplayName("deleteOrder throws AccessDeniedException when order belongs to another supervisor")
+    void deleteOrder_whenOrderBelongsToOtherSupervisor_throwsAccessDeniedException() {
+        Order order = new Order("ORD-001", null);
+        when(orderRepository.findByLogicIdIgnoreCase("ORD-001")).thenReturn(Optional.of(order));
+        doThrow(new AccessDeniedException("Access denied: Order belongs to another supervisor"))
+            .when(securityBoundary).enforceOrderAccess(order);
+
+        assertThatThrownBy(() -> orderMutatingAiTools.deleteOrder("ORD-001", "CONFIRM-123"))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessageContaining("belongs to another supervisor");
+
+        verify(orderService, never()).deleteOrderById(any());
+    }
+
+    @Test
+    @DisplayName("assignOrderToOperator throws AccessDeniedException when target user is not an operator")
+    void assignOrderToOperator_whenTargetNotOperator_throwsAccessDeniedException() {
+        Order order = new Order("ORD-001", null);
+        User supervisor = new User();
+        supervisor.setUsername("supervisor_other");
+
+        when(orderRepository.findByLogicIdIgnoreCase("ORD-001")).thenReturn(Optional.of(order));
+        when(userRepository.findAll()).thenReturn(List.of(supervisor));
+        doThrow(new AccessDeniedException("Access denied: User is not an operator"))
+            .when(securityBoundary).enforceTargetOperator(supervisor);
+
+        assertThatThrownBy(() -> orderMutatingAiTools.assignOrderToOperator("ORD-001", "supervisor_other"))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessageContaining("is not an operator");
+
+        verify(orderService, never()).assignOrder(any(), any());
     }
 }
