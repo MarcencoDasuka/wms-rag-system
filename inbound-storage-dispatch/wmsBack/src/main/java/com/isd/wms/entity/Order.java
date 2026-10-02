@@ -50,6 +50,13 @@ public class Order extends BaseTimestampEntity {
     @Column(name = "logic_id", nullable = false, unique = true)
     private String logicId;
 
+    @PrePersist
+    public void ensureLogicId() {
+        if (this.logicId == null || this.logicId.isBlank()) {
+            this.logicId = "ORD-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        }
+    }
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status = OrderStatus.CREATED;

@@ -86,12 +86,12 @@ public class OrderService {
         String logicId = request.logicId();
 
         if (logicId == null || logicId.isBlank()) {
-            logicId = "ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        } else if (orderRepository.findByLogicId(logicId).isPresent()) {
+            logicId = generateUniqueOrderLogicId();
+        } else if (orderRepository.findByLogicIdIgnoreCase(logicId.trim()).isPresent()) {
             throw new InvalidRequestException("An order with logicId " + logicId + " already exists");
         }
 
-        Order order = new Order(logicId, getDestinationLocation(request.destinationLocationId()));
+        Order order = new Order(logicId.trim(), getDestinationLocation(request.destinationLocationId()));
         return orderRepository.save(order);
     }
 
@@ -102,6 +102,12 @@ public class OrderService {
         }
         Order order = getOrder(id);
 
+        if (request.logicId() != null && !request.logicId().trim().equalsIgnoreCase(order.getLogicId())) {
+            if (orderRepository.findByLogicIdIgnoreCase(request.logicId().trim()).isPresent()) {
+                throw new InvalidRequestException("An order with logicId " + request.logicId() + " already exists");
+            }
+        }
+
         updateOrder(request, order);
 
         orderRepository.saveAndFlush(order);
@@ -110,7 +116,7 @@ public class OrderService {
     }
 
     private void updateOrder(OrderUpdateRequest request, Order order) {
-        order.setLogicId(request.logicId());
+        order.setLogicId(request.logicId().trim());
         order.setDestinationLocation(getDestinationLocation(request.destinationLocationId()));
         order.setStatus(request.status());
     }
@@ -123,7 +129,13 @@ public class OrderService {
             throw new InvalidRequestException("Cannot modify lines of an order that is already assigned or in progress.");
         }
 
-        order.setLogicId(request.order().logicId());
+        if (request.order().logicId() != null && !request.order().logicId().trim().equalsIgnoreCase(order.getLogicId())) {
+            if (orderRepository.findByLogicIdIgnoreCase(request.order().logicId().trim()).isPresent()) {
+                throw new InvalidRequestException("An order with logicId " + request.order().logicId() + " already exists");
+            }
+        }
+
+        order.setLogicId(request.order().logicId().trim());
         order.setDestinationLocation(getDestinationLocation(request.order().destinationLocationId()));
         Order savedOrder = orderRepository.save(order);
 
@@ -241,6 +253,16 @@ public class OrderService {
             throw new InvalidRequestException("Cannot route order to inactive or unavailable destination location: " + location.getBarcode());
         }
         return location;
+    }
+
+    private String generateUniqueOrderLogicId() {
+        for (int i = 0; i < 10; i++) {
+            String candidate = "ORD-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+            if (!orderRepository.existsByLogicIdIgnoreCase(candidate)) {
+                return candidate;
+            }
+        }
+        return "ORD-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase();
     }
 
     private void releaseReservedStock(Order order) {

@@ -42,7 +42,7 @@ public class Replenishment extends BaseTimestampEntity{
     @SequenceGenerator(name = "replenishment_seq", sequenceName = "replenishments_sequence", allocationSize = 1)
     private Long id;
 
-    @Column(name = "logic_id", unique = true, length = 50)
+    @Column(name = "logic_id", unique = true, nullable = false, length = 50)
     private String logicId;
 
     @OneToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL)
@@ -64,7 +64,15 @@ public class Replenishment extends BaseTimestampEntity{
     @JoinColumn(name = "destination_location_id")
     private Location destinationLocation;
 
+    @PrePersist
+    public void ensureLogicId() {
+        if (this.logicId == null || this.logicId.isBlank()) {
+            this.logicId = "REPL-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        }
+    }
+
     public Replenishment(Product product, Integer requestedQuantity, Location destinationLocation) {
+        this.logicId = "REPL-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         this.product = product;
         this.requestedQuantity = requestedQuantity;
         this.destinationLocation = destinationLocation;

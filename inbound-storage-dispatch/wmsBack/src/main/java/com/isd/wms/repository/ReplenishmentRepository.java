@@ -172,5 +172,9 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
 
     Optional<Replenishment> findByLogicIdIgnoreCase(String logicId);
 
+    Optional<Replenishment> findByLogicId(String logicId);
+
+    boolean existsByLogicIdIgnoreCase(String logicId);
+
 }
 

@@ -112,8 +112,7 @@ public class ReplenishmentService {
 
         Replenishment replenishment = new Replenishment(product, request.requestedQuantity(), destinationLocation);
         replenishment.setStatus(Status.CREATED);
-
-        replenishment.setLogicId("REPL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        replenishment.setLogicId(generateUniqueLogicId());
 
         replenishment = replenishmentRepository.save(replenishment);
 
@@ -449,5 +448,15 @@ public class ReplenishmentService {
     public void importReplenishmentsFromFile(MultipartFile file) {
         List<ReplenishmentCreateRequest> replenishments = importService.importData(file, ReplenishmentInfo.class);
         replenishments.forEach(this::createReplenishment);
+    }
+
+    private String generateUniqueLogicId() {
+        for (int i = 0; i < 10; i++) {
+            String candidate = "REPL-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+            if (!replenishmentRepository.existsByLogicIdIgnoreCase(candidate)) {
+                return candidate;
+            }
+        }
+        return "REPL-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase();
     }
 }

@@ -173,6 +173,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByLogicId(String logicId);
 
+    boolean existsByLogicIdIgnoreCase(String logicId);
+
     /**
      * Checks whether a specific order is assigned to a given operator.
      *
