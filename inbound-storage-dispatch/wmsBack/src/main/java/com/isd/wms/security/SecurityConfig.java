@@ -18,6 +18,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import org.springframework.beans.factory.annotation.Value;
+import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -26,9 +28,13 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtRequestFilter jwtRequestFilter;
+    private final String allowedOriginsConfig;
 
-    public SecurityConfig(JwtRequestFilter jwtRequestFilter) {
+    public SecurityConfig(
+            JwtRequestFilter jwtRequestFilter,
+            @Value("${wms.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173,http://localhost:80,http://127.0.0.1:80,http://localhost}") String allowedOriginsConfig) {
         this.jwtRequestFilter = jwtRequestFilter;
+        this.allowedOriginsConfig = allowedOriginsConfig;
     }
 
     @Bean
@@ -63,17 +69,22 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of(
-            "http://localhost:5173",
-            "http://127.0.0.1:5173"
-        ));
-        configuration.setAllowedOriginPatterns(List.of("http://172.*.*.*:5173", "http://192.168.*.*:5173"));
+        List<String> origins = Arrays.stream(allowedOriginsConfig.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .distinct()
+            .toList();
 
+        org.slf4j.LoggerFactory.getLogger(SecurityConfig.class).info("Configured CORS allowed origins: {}", origins);
+
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Cache-Control"));
-
+        configuration.setAllowedHeaders(List.of(
+            "Authorization", "Content-Type", "Cache-Control", "Accept", "Origin", "X-Requested-With"
+        ));
+        configuration.setExposedHeaders(List.of("Authorization", "Content-Disposition"));
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
