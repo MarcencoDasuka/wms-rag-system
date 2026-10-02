@@ -4,8 +4,10 @@ import com.isd.wms.entity.Location;
 import com.isd.wms.entity.Product;
 import com.isd.wms.entity.Stock;
 import com.isd.wms.enums.Zone;
+import jakarta.persistence.LockModeType;
 import jakarta.validation.constraints.Min;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -52,8 +54,29 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
           AND s.available = true
           AND s.location.zone = :zone
           AND (s.quantity - s.reservedQuantity) > 0
+        ORDER BY s.id ASC
         """)
     List<Stock> findAvailableStocksByProductIdAndZone(@Param("productId") Long productId, @Param("zone") Zone zone);
+
+    /**
+     * Finds stocks for a product in a specific zone with positive available quantity,
+     * locking the selected rows with PESSIMISTIC_WRITE (SELECT FOR UPDATE) in deterministic
+     * ID order to prevent overselling race conditions and concurrency deadlocks.
+     *
+     * @param productId the product ID
+     * @param zone      the zone (e.g., REPLENISHMENT, PICKING)
+     * @return list of locked stocks
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT s FROM Stock s
+        WHERE s.product.id = :productId
+          AND s.available = true
+          AND s.location.zone = :zone
+          AND (s.quantity - s.reservedQuantity) > 0
+        ORDER BY s.id ASC
+        """)
+    List<Stock> findAvailableStocksByProductIdAndZoneForUpdate(@Param("productId") Long productId, @Param("zone") Zone zone);
 
     /**
      * Finds the stock located at a given location.

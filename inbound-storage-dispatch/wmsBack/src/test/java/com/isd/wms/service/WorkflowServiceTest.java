@@ -78,7 +78,7 @@ class WorkflowServiceTest {
         stock.setQuantity(100);
         stock.setReservedQuantity(0);
 
-        when(stockRepository.findAvailableStocksByProductIdAndZone(1L, Zone.PICKING))
+        when(stockRepository.findAvailableStocksByProductIdAndZoneForUpdate(1L, Zone.PICKING))
             .thenReturn(new ArrayList<>(List.of(stock)));
 
         workflowService.generateAllocationsForTask(task, 1L, 50);

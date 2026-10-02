@@ -158,7 +158,7 @@ class AllocationExecutionServiceTest {
 
         Stock alternativeStock = new Stock(product, new Location("Alt", "PICK-02", Zone.PICKING, null, true), 100, 0, null, null);
         ReflectionTestUtils.setField(alternativeStock, "id", 99L);
-        when(stockRepository.findAvailableStocksByProductIdAndZone(10L, Zone.PICKING)).thenReturn(List.of(alternativeStock));
+        when(stockRepository.findAvailableStocksByProductIdAndZoneForUpdate(10L, Zone.PICKING)).thenReturn(List.of(alternativeStock));
 
         AllocationCompletionResponse response = allocationExecutionService.completeAllocation(50L);
 
@@ -199,7 +199,7 @@ class AllocationExecutionServiceTest {
         when(allocationRepository.save(allocation)).thenReturn(allocation);
         when(workflowService.executeAllocationCompletion(allocation)).thenReturn(new AllocationCompletionResult(AllocationCompletionStatus.COMPLETED, TaskType.REPLENISHMENT, 50L));
 
-        when(stockRepository.findAvailableStocksByProductIdAndZone(10L, Zone.PICKING)).thenReturn(List.of(alternativeStock));
+        when(stockRepository.findAvailableStocksByProductIdAndZoneForUpdate(10L, Zone.PICKING)).thenReturn(List.of(alternativeStock));
 
         AllocationCompletionResponse response = allocationExecutionService.completeAllocation(50L);
 

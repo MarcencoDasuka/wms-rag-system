@@ -39,7 +39,7 @@ public class WorkflowService {
                 + task.getTaskType()));
 
         List<Stock> availableStocks = new ArrayList<>(
-            stockRepository.findAvailableStocksByProductIdAndZone(productId, strategy.getSourceZone())
+            stockRepository.findAvailableStocksByProductIdAndZoneForUpdate(productId, strategy.getSourceZone())
         );
 
         if (availableStocks.isEmpty()) {

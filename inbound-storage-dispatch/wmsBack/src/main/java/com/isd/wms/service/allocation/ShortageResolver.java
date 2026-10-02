@@ -31,7 +31,7 @@ public class ShortageResolver {
         Product product = sourceAllocation.getStock().getProduct()
             .orElseThrow(() -> new InvalidRequestException("Stock has no product"));
 
-        List<Stock> alternativeStocks = stockRepository.findAvailableStocksByProductIdAndZone(
+        List<Stock> alternativeStocks = stockRepository.findAvailableStocksByProductIdAndZoneForUpdate(
                 product.getId(),
                 sourceAllocation.getStock().getLocation().getZone()
             ).stream()

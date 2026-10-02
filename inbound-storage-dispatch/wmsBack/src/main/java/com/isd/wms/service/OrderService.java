@@ -199,7 +199,10 @@ public class OrderService {
     }
 
     private void assignTasks(Order order) {
-        for (OrderLine orderLine : order.getOrderLines()) {
+        List<OrderLine> sortedLines = order.getOrderLines().stream()
+            .sorted(Comparator.comparing(ol -> ol.getProduct().getId(), Comparator.nullsLast(Comparator.naturalOrder())))
+            .toList();
+        for (OrderLine orderLine : sortedLines) {
             Task task = taskService.createTask(
                 TaskType.PICKING_ORDER,
                 orderLine.getRequestedQuantity(),
