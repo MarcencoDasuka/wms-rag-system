@@ -51,7 +51,8 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
         boolean partialPick = pickedQuantity < allocation.getQuantity();
         int shortageQuantity = partialPick ? Math.max(0, allocation.getQuantity() - pickedQuantity) : 0;
 
-        OrderLine orderLine = orderLineRepository.findByTaskId(allocation.getTask().getId())
+        OrderLine orderLine = orderLineRepository.findByTaskIdWithLock(allocation.getTask().getId())
+            .or(() -> orderLineRepository.findByTaskId(allocation.getTask().getId()))
             .orElseThrow(() -> new InvalidRequestException("Order line not found"));
 
         int currentDelivered = Optional.ofNullable(orderLine.getDeliveredQuantity()).orElse(0);

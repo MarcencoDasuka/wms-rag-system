@@ -2,7 +2,9 @@ package com.isd.wms.repository;
 
 import com.isd.wms.entity.OrderLine;
 import com.isd.wms.enums.Status;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -37,6 +39,28 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, Long> {
      * @return an Optional containing the order line, if found
      */
     Optional<OrderLine> findByTaskId(Long taskId);
+
+    /**
+     * Finds the order line associated with a given task using pessimistic write lock.
+     * Prevents concurrent lost updates when multiple allocations for the same task
+     * are completed concurrently.
+     *
+     * @param taskId the task ID
+     * @return an Optional containing the locked order line, if found
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ol FROM OrderLine ol WHERE ol.task.id = :taskId")
+    Optional<OrderLine> findByTaskIdWithLock(@Param("taskId") Long taskId);
+
+    /**
+     * Finds an order line by ID using pessimistic write lock.
+     *
+     * @param id the order line ID
+     * @return an Optional containing the locked order line, if found
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ol FROM OrderLine ol WHERE ol.id = :id")
+    Optional<OrderLine> findByIdWithLock(@Param("id") Long id);
 
     /**
      * Bulk‑updates the status of all non‑canceled order lines for a given order.
