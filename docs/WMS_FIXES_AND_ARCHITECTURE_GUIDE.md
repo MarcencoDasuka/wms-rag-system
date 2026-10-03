@@ -267,7 +267,7 @@
 | **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
 | **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[VERIFIED]` | `interceptors.js` / Предикат `isAuthLoginRequest` исключает 401 при логине из сброса сессии, 4 теста `def01_login_401_interceptor.test.js` |
 | **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
-| **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[CONFIRMED DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
+| **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[VERIFIED]` | `OrderRepository.java`, `ReplenishmentRepository.java` / Явный JPQL `LOWER(logicId) = LOWER(:logicId)` для findBy и existsBy, подтверждено `LogicIdUniquenessIntegrationTest` |
 | **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[VERIFIED]` | `redirectSanitizer.js`, `LoginView.vue` / Канонизация и валидация внутренних путей, отсечение //, схемы, backslash и encoded, 7 тестов `def04_open_redirect.test.js` |
 | **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
 | **GAP-02** | Require secure JWT cookies in production profile | Security | `[VERIFIED]` | `JwtUtil.java`, `AuthController.java` / Fail-fast валидация `wms.jwt.cookie-secure=true` при профилях `prod`/`production`, 16 тестов в `JwtUtilTest` и `AuthControllerTest` |
@@ -462,6 +462,7 @@
 ---
 
 ### 4.3. [DEF-03] Несоответствие регистра функционального индекса (`lower` vs `upper`)
+* **Статус:** `[VERIFIED]`
 * **Критичность:** Medium
 * **Домен:** Backend Performance / Database Optimization
 * **Затронутые компоненты:**  
@@ -472,24 +473,27 @@
   Миграция `V35` создала уникальный функциональный индекс по выражению в **нижнем регистре**:
   ```sql
   CREATE UNIQUE INDEX uk_orders_logic_id_lower ON orders (LOWER(logic_id));
+  CREATE UNIQUE INDEX uk_replenishments_logic_id_lower ON replenishments (LOWER(logic_id));
   ```
-  В то же время в Spring Data JPA репозиториях для регистронезависимого поиска объявлен производный метод:
-  ```java
-  Optional<Order> findByLogicIdIgnoreCase(String logicId);
-  ```
-  По спецификации Hibernate и Spring Data JPA ключевое слово `IgnoreCase` генерирует SQL-предикат с приведением к **верхнему регистру**:
+  В то же время в Spring Data JPA репозиториях для регистронезависимого поиска был объявлен производный метод `findByLogicIdIgnoreCase(String logicId)` и `existsByLogicIdIgnoreCase(String logicId)`. По спецификации Hibernate и Spring Data JPA ключевое слово `IgnoreCase` генерирует SQL-предикат с приведением к **верхнему регистру**:
   ```sql
   WHERE UPPER(orders.logic_id) = UPPER(?)
   ```
-  Оптимизатор запросов PostgreSQL не может сопоставить выражение `UPPER(logic_id)` с индексом, построенным по `LOWER(logic_id)`.
-* **Следствие для системы:**
-  Любой поиск заказа или накладной по номеру игнорирует B-Tree индекс и деградирует до полного последовательного сканирования таблицы (`Seq Scan`), создавая неоправданную нагрузку на CPU при росте архива накладных.
-* **План устранения:**
-  Заменить derived-методы явной аннотацией `@Query`:
-  ```java
-  @Query("SELECT o FROM Order o WHERE LOWER(o.logicId) = LOWER(:logicId)")
-  Optional<Order> findByLogicIdIgnoreCase(@Param("logicId") String logicId);
-  ```
+  Оптимизатор запросов PostgreSQL не мог сопоставить выражение `UPPER(logic_id)` с функциональным индексом, построенным по `LOWER(logic_id)`.
+* **Как устранено:**
+  1. В `OrderRepository` методы `findByLogicIdIgnoreCase` и `existsByLogicIdIgnoreCase` заменены на явные JPQL-запросы:
+     ```java
+     @Query("SELECT o FROM Order o WHERE LOWER(o.logicId) = LOWER(:logicId)")
+     Optional<Order> findByLogicIdIgnoreCase(@Param("logicId") String logicId);
+
+     @Query("SELECT COUNT(o) > 0 FROM Order o WHERE LOWER(o.logicId) = LOWER(:logicId)")
+     boolean existsByLogicIdIgnoreCase(@Param("logicId") String logicId);
+     ```
+  2. В `ReplenishmentRepository` методы `findByLogicIdIgnoreCase` и `existsByLogicIdIgnoreCase` аналогично заменены на явные JPQL-запросы с функцией `LOWER()`.
+  3. Сгенерированный SQL теперь строго формирует предикаты `lower(o.logic_id) = lower(?)`, в точности сопоставимые с выражениями функциональных индексов `uk_orders_logic_id_lower` и `uk_replenishments_logic_id_lower`.
+* **Верификация:**
+  - Системный каталог PostgreSQL (`pg_indexes`) подтверждает наличие индексов `uk_orders_logic_id_lower` и `uk_replenishments_logic_id_lower` по выражению `lower((logic_id)::text)`.
+  - Запущен интеграционный тест `LogicIdUniquenessIntegrationTest`: все 4 теста (проверка уникальности в БД, валидация сервисного слоя, регистронезависимый поиск) успешно пройдены (`4/4 passed`).
 
 ---
 

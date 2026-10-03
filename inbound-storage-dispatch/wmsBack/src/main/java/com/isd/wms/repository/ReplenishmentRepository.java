@@ -178,11 +178,13 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
         @Param("destinationLocationId") Long destinationLocationId
     );
 
-    Optional<Replenishment> findByLogicIdIgnoreCase(String logicId);
+    @Query("SELECT r FROM Replenishment r WHERE LOWER(r.logicId) = LOWER(:logicId)")
+    Optional<Replenishment> findByLogicIdIgnoreCase(@Param("logicId") String logicId);
 
     Optional<Replenishment> findByLogicId(String logicId);
 
-    boolean existsByLogicIdIgnoreCase(String logicId);
+    @Query("SELECT COUNT(r) > 0 FROM Replenishment r WHERE LOWER(r.logicId) = LOWER(:logicId)")
+    boolean existsByLogicIdIgnoreCase(@Param("logicId") String logicId);
 
 }
 

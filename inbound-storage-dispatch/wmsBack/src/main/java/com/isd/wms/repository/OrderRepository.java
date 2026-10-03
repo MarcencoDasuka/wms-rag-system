@@ -198,7 +198,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByLogicId(String logicId);
 
-    boolean existsByLogicIdIgnoreCase(String logicId);
+    @Query("SELECT COUNT(o) > 0 FROM Order o WHERE LOWER(o.logicId) = LOWER(:logicId)")
+    boolean existsByLogicIdIgnoreCase(@Param("logicId") String logicId);
 
     /**
      * Checks whether a specific order is assigned to a given operator.
@@ -252,5 +253,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         """)
     List<String> findSupervisorUsernamesByOrder(@Param("order") Order order);
 
-    Optional<Order> findByLogicIdIgnoreCase(String logicId);
+    @Query("SELECT o FROM Order o WHERE LOWER(o.logicId) = LOWER(:logicId)")
+    Optional<Order> findByLogicIdIgnoreCase(@Param("logicId") String logicId);
 }

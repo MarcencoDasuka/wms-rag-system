@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
 import javax.crypto.SecretKey;
@@ -29,6 +30,7 @@ public class JwtUtil {
     private final long JWT_EXPIRATION_TIME = 86400000; // 24 hours
     private final boolean cookieSecure;
 
+    @Autowired
     public JwtUtil(
         @Value("${wms.jwt.secret}") String secretString,
         @Value("${wms.jwt.cookie-secure:false}") boolean cookieSecure,
