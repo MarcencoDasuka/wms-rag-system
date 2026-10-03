@@ -263,7 +263,7 @@
 | **D-2** | Stock/Location mapping integrity | DB Integrity | `[VERIFIED]` | `53a8803` / Частичный индекс `uk_stocks_active_location` + защита удаления ячейки |
 | **D-3** | `logic_id` uniqueness and integrity | DB Integrity | `[PARTIALLY VERIFIED]` | `f44b0af` / Индекс активен, но несоответствие `lower()` в БД и `upper()` в JPA |
 | **D-4** | Missing FK indexes across warehouse tables | Performance | `[VERIFIED]` | `eb1b6b5` / 100% покрытие (20/20 внешних ключей поддержаны B-Tree индексами) |
-| **D-5** | N+1 query problem | Performance | `[PARTIALLY VERIFIED]` | `5f0f112` / Запросы заказов оптимизированы; скейлинг $O(N/50)$; складские остатки не покрыты |
+| **D-5** | N+1 query problem | Performance | `[VERIFIED]` | `5f0f112`, GAP-03 / Запросы заказов, пополнений, остатков и истории переведены на `@EntityGraph` (1–2 запроса) |
 | **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
 | **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[VERIFIED]` | `interceptors.js` / Предикат `isAuthLoginRequest` исключает 401 при логине из сброса сессии, 4 теста `def01_login_401_interceptor.test.js` |
 | **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
@@ -272,6 +272,7 @@
 | **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
 | **GAP-01** | Map DataIntegrityViolationException (`logic_id`) to HTTP 409 | Backend / API | `[VERIFIED]` | `GlobalExceptionHandler.java` / Маппинг нарушений уникальности `logic_id` в HTTP 409 Conflict вместо 500, 4 теста `GlobalExceptionHandlerTest` |
 | **GAP-02** | Require secure JWT cookies in production profile | Security | `[VERIFIED]` | `JwtUtil.java`, `AuthController.java` / Fail-fast валидация `wms.jwt.cookie-secure=true` при профилях `prod`/`production`, 16 тестов в `JwtUtilTest` и `AuthControllerTest` |
+| **GAP-03** | Missing EntityGraphs in Inventory & History queries | Backend / DB | `[VERIFIED]` | `StockRepository.java`, `InventoryHistoryRepository.java` / `@EntityGraph` на stock (`product`, `location`) и history (`product`, `sourceLocation`, `destinationLocation`, `user`), подтверждено 1 SQL запрос в `NPlusOneQueryPerformanceIntegrationTest` |
 
 ---
 
@@ -381,17 +382,16 @@
 ---
 
 ### 3.7. [D-5] N+1 query problem & batch fetching
-* **Статус аудита:** `[PARTIALLY VERIFIED]`
+* **Статус аудита:** `[VERIFIED]`
 * **Критичность:** Medium
 * **Домен:** Performance / ORM
-* **Где находится:** `OrderService.java`, `ReplenishmentService.java`, `repository/OrderRepository.java`, `application.properties`.
+* **Где находится:** `OrderService.java`, `ReplenishmentService.java`, `InventoryService.java`, `repository/OrderRepository.java`, `repository/StockRepository.java`, `repository/InventoryHistoryRepository.java`, `application.properties`.
 * **Суть проблемы:**
-  Ленивая загрузка (`FetchType.LAZY`) связей `@ManyToOne` и `@OneToMany` при выборке списков заказов или задач приводила к лавинообразному выполнению отдельных SQL-запросов на каждую строку (до 304 запросов на 82 заказа), перегружая пул соединений БД.
-* **Реализация (`5f0f112`):**
-  Включен глобальный батчинг `spring.jpa.properties.hibernate.default_batch_fetch_size=50`. На методы `OrderRepository` и `ReplenishmentRepository` добавлены `@EntityGraph` для предвыборки строк и товаров. Добавлен интеграционный тест `NPlusOneQueryPerformanceIntegrationTest`.
+  Ленивая загрузка (`FetchType.LAZY`) связей `@ManyToOne` и `@OneToMany` при выборке списков заказов, задач, остатков и истории приводила к лавинообразному выполнению отдельных SQL-запросов на каждую строку (до 304 запросов на 82 заказа), перегружая пул соединений БД.
+* **Реализация (`5f0f112`, GAP-03):**
+  Включен глобальный батчинг `spring.jpa.properties.hibernate.default_batch_fetch_size=50`. На методы `OrderRepository`, `ReplenishmentRepository`, `StockRepository` и `InventoryHistoryRepository` добавлены явные `@EntityGraph` для предвыборки связей. Добавлен интеграционный тест `NPlusOneQueryPerformanceIntegrationTest`.
 * **Результаты состязательного аудита и границы гарантий:**
-  - `[VERIFIED]`: Зафиксировано резкое сокращение запросов на эталонном сценарии: для расширенных заказов — с 304 до 7 запросов (-97.7%), для пополнений — с 63 до 2 запросов (-96.8%).
-  - `[RESIDUAL RISK]`: Батчинг снижает число запросов до $O(N / 50)$, но не обеспечивает константный $O(1)$ при росте коллекции до тысяч записей. Кроме того, методы выборки складских остатков (`getAllStock()`) и истории инвентаризации (`getAllHistory()`) не снабжены `@EntityGraph` и продолжают полагаться исключительно на пакетную ленивую загрузку.
+  - `[VERIFIED]`: Зафиксировано резкое сокращение запросов на всех ключевых операциях чтения: для расширенных заказов — с 304 до 9 запросов, для пополнений — с 63 до 2 запросов, для выборки остатков `getAllStock` (154 записи) — ровно 1 SQL запрос, для истории инвентаризации `getAllHistory` (178 записей) — ровно 1 SQL запрос. Все тесты производительности в `NPlusOneQueryPerformanceIntegrationTest` успешно пройдены (`5/5 passed`).
 
 ---
 
@@ -590,3 +590,28 @@
     - `handleDataIntegrityViolation_withLogicIdUniqueConstraint_returnsConflict`: подтвержден возврат статуса 409 и сообщение о конфликте `logic_id`.
     - `handleDataIntegrityViolation_withGenericUniqueConstraint_returnsConflict`: подтвержден возврат 409 для общих констрейнтов уникальности.
   - Все тесты `GlobalExceptionHandlerTest` успешно пройдены (`4/4 passed`).
+
+---
+
+### 4.8. [GAP-03] Оптимизация N+1 запросов для складских остатков и истории инвентаризации
+* **Статус:** `[VERIFIED]`
+* **Критичность:** Medium
+* **Домен:** Performance / Database Query Optimization
+* **Затронутые компоненты:**  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/StockRepository.java`  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/InventoryHistoryRepository.java`  
+  - `inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/NPlusOneQueryPerformanceIntegrationTest.java`
+* **Суть проблемы:**
+  Методы чтения складских остатков (`InventoryService.getAllStock()`) и истории операций (`InventoryService.getAllHistory()`) мапили сущности в DTO (`StockMapper`, `InventoryHistoryMapper`), обращаясь к ленивым ассоциациям:
+  - `Stock`: `product`, `location`
+  - `InventoryHistory`: `product`, `sourceLocation`, `destinationLocation`, `user`
+  В `StockRepository` и `InventoryHistoryRepository` отсутствовали аннотации `@EntityGraph`, из-за чего Hibernate выполнял пакетную ленивую догрузку батчами по 50 записей ($O(N / 50)$ SQL-запросов), создавая избыточную нагрузку на базу данных при росте складских запасов и истории.
+* **Как устранено:**
+  1. В `StockRepository` методы `findAll()`, `findAllByAvailableIsTrue()`, `findByLocationId(Long)` и `findAllByLocationId(Long)` снабжены аннотацией `@EntityGraph(attributePaths = {"product", "location"})`.
+  2. В `InventoryHistoryRepository` методы `findAll()` и `findByProductIdAndSourceLocationIdOrProductIdAndDestinationLocationId(...)` снабжены аннотацией `@EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})`.
+  3. Поскольку все затронутые ассоциации являются `@ManyToOne` (to-one), JPA выполняет жадную выборку связей через `LEFT OUTER JOIN` в рамках единого SQL-запроса без дублирования строк и декартова произведения.
+* **Верификация:**
+  - В `NPlusOneQueryPerformanceIntegrationTest` добавлены два теста со счетчиком подготовленных выражений Hibernate (`Statistics.getPrepareStatementCount()`):
+    - `measureGetAllStockQueries`: выборка 154 активных складских остатков выполнена ровно за **1 SQL запрос** (`queries <= 2`).
+    - `measureGetAllHistoryQueries`: выборка 178 исторических записей инвентаризации выполнена ровно за **1 SQL запрос** (`queries <= 2`).
+  - Все 5 интеграционных тестов производительности успешно пройдены (`5/5 passed`, `BUILD SUCCESS`).

@@ -1,6 +1,7 @@
 package com.isd.wms.repository;
 
 import com.isd.wms.entity.InventoryHistory;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -15,6 +16,10 @@ import java.util.List;
  */
 public interface InventoryHistoryRepository extends JpaRepository<InventoryHistory, Long> {
 
+    @Override
+    @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
+    List<InventoryHistory> findAll();
+
     /**
      * Finds inventory history records that involve a given product and location
      * as either the source or destination.
@@ -25,6 +30,7 @@ public interface InventoryHistoryRepository extends JpaRepository<InventoryHisto
      * @param destinationLocationId location ID for destination side
      * @return list of matching history records
      */
+    @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
     List<InventoryHistory> findByProductIdAndSourceLocationIdOrProductIdAndDestinationLocationId(
         Long sourceProductId,
         Long sourceLocationId,

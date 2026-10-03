@@ -6,6 +6,7 @@ import com.isd.wms.entity.Stock;
 import com.isd.wms.enums.Zone;
 import jakarta.persistence.LockModeType;
 import jakarta.validation.constraints.Min;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -84,10 +85,17 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
      * @param locationId the location ID
      * @return a list of stocks located at the given location
      */
+    @Override
+    @EntityGraph(attributePaths = {"product", "location"})
+    List<Stock> findAll();
+
+    @EntityGraph(attributePaths = {"product", "location"})
     List<Stock> findByLocationId(Long locationId);
 
+    @EntityGraph(attributePaths = {"product", "location"})
     List<Stock> findAllByLocationId(Long locationId);
 
+    @EntityGraph(attributePaths = {"product", "location"})
     List<Stock> findAllByAvailableIsTrue();
 
     boolean existsByLocationAndAvailableIsTrueAndProductIsNot(Location location, Product product);

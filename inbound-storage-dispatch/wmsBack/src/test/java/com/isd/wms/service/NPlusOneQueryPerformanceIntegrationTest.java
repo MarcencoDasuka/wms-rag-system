@@ -1,5 +1,7 @@
 package com.isd.wms.service;
 
+import com.isd.wms.dto.inventory.InventoryHistoryResponse;
+import com.isd.wms.dto.inventory.StockResponse;
 import com.isd.wms.dto.order.ExtendedOrderResponse;
 import com.isd.wms.dto.order.OrderResponse;
 import com.isd.wms.dto.order.OrderSearchRequest;
@@ -27,6 +29,9 @@ class NPlusOneQueryPerformanceIntegrationTest {
 
     @Autowired
     private ReplenishmentService replenishmentService;
+
+    @Autowired
+    private InventoryService inventoryService;
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
@@ -77,5 +82,29 @@ class NPlusOneQueryPerformanceIntegrationTest {
         System.out.println("EXTENDED ORDER COUNT: " + result.size() + ", QUERIES EXECUTED: " + queries);
         assertThat(result).isNotEmpty();
         assertThat(queries).as("Extended orders queries must be batch fetched and <= 10").isLessThanOrEqualTo(10);
+    }
+
+    @Test
+    @Transactional(readOnly = true)
+    @DisplayName("D-5 / GAP-03: Measure queries for getAllStock")
+    void measureGetAllStockQueries() {
+        statistics.clear();
+        List<StockResponse> result = inventoryService.getAllStock();
+        long queries = statistics.getPrepareStatementCount();
+        System.out.println("ALL STOCK COUNT: " + result.size() + ", QUERIES EXECUTED: " + queries);
+        assertThat(result).isNotEmpty();
+        assertThat(queries).as("getAllStock queries must use EntityGraph and execute in <= 2 queries").isLessThanOrEqualTo(2);
+    }
+
+    @Test
+    @Transactional(readOnly = true)
+    @DisplayName("D-5 / GAP-03: Measure queries for getAllHistory")
+    void measureGetAllHistoryQueries() {
+        statistics.clear();
+        List<InventoryHistoryResponse> result = inventoryService.getAllHistory();
+        long queries = statistics.getPrepareStatementCount();
+        System.out.println("ALL HISTORY COUNT: " + result.size() + ", QUERIES EXECUTED: " + queries);
+        assertThat(result).isNotEmpty();
+        assertThat(queries).as("getAllHistory queries must use EntityGraph and execute in <= 2 queries").isLessThanOrEqualTo(2);
     }
 }
