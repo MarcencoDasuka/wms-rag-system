@@ -3,7 +3,7 @@
 import hashlib
 import re
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
 
