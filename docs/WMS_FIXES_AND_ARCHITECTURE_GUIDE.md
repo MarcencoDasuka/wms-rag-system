@@ -1,7 +1,7 @@
 # Архитектурный справочник ядра WMS-системы (inbound-storage-dispatch)
 
-> **Статус документа:** Исчерпывающий реестр **18** базовых архитектурных решений ядра WMS, результаты состязательного аудита **8** ключевых решений (3 `[VERIFIED]`, 5 `[PARTIALLY VERIFIED]`) и реестр **5** новых дефектов (`DEF-01` – `DEF-05`), выявленных в ходе верификации.  
-> **Основание:** Анализ полного графа коммитов Git (`git log`), данных состязательного аудита и верификации на боевом каталоге PostgreSQL 16 (**207 автоматических тестов:** 200 Java 21 бэкенда + 7 Node.js фронтенда).
+> **Статус документа:** Исчерпывающий реестр **18** базовых архитектурных решений ядра WMS, результаты состязательного аудита **8** ключевых решений (4 `[VERIFIED]`, 4 `[PARTIALLY VERIFIED]`), реестр **5** устранённых дефектов (`DEF-01` – `DEF-05`) и **4** архитектурных гэпов (`GAP-01` – `GAP-04`), подготовленный как baseline для независимого сквозного аудита.  
+> **Основание:** Анализ полного графа коммитов Git (`git log`), данных состязательного аудита и верификации на боевом каталоге PostgreSQL 16 (**245 автоматических тестов:** 215 Java 21 бэкенда + 30 Node.js фронтенда).
 
 ---
 
@@ -253,7 +253,7 @@
 | **S-2** | Inactive supervisor self-reactivation via `/register` | Security | `[AWAITING VERIFICATION]` | `2e1f0e9` / `UserServiceReactivationSecurityTest` |
 | **S-3** | Hardcoded credentials and insecure secret fallbacks | Security | `[AWAITING VERIFICATION]` | `79b229b`, `5b445a3` / `JwtUtilTest` |
 | **S-4** | Overly broad CORS trust boundary | Security | `[PARTIALLY VERIFIED]` | `fe04b2f` / Wildcard устранены; порт 80 в дефолтных origins без профилирования |
-| **S-5** | JS-readable access-token storage in `localStorage` | Security | `[PARTIALLY VERIFIED]` | `83a6047` / HttpOnly кука включена; утечка токена в JSON теле и рассинхрон `user_id` |
+| **S-5** | JS-readable access-token storage in `localStorage` | Security | `[PARTIALLY VERIFIED]` | `83a6047` / HttpOnly кука активна; остаточный риск: токен в JSON теле и Bearer заголовке; рассинхрон `user_id` устранен в DEF-02 |
 | **B-1** | Active orders destroyed by scheduled DB cleanup | Data Integrity | `[AWAITING VERIFICATION]` | `d61e887` / `DataCleanupProtectionIntegrationTest` |
 | **B-2** | Lost update during order picking (`OrderLine`) | Concurrency | `[AWAITING VERIFICATION]` | `b131be1` / `OrderLinePickingConcurrencyIntegrationTest` |
 | **B-3** | Cell/location monopoly race | Concurrency | `[AWAITING VERIFICATION]` | `da8d654` / `LocationProductExclusivityConcurrencyIntegrationTest` |
@@ -261,10 +261,10 @@
 | **B-5** | Concurrent stock reservation / allocation integrity | Concurrency | `[VERIFIED]` | `dce5b8c` / Пессимистическая блокировка + канонический порядок + DB CHECK |
 | **D-1** | Destructive Flyway migrations (`TRUNCATE TABLE`) | DB Integrity | `[AWAITING VERIFICATION]` | `ede81dc` / Идемпотентные миграции V19, V31 |
 | **D-2** | Stock/Location mapping integrity | DB Integrity | `[VERIFIED]` | `53a8803` / Частичный индекс `uk_stocks_active_location` + защита удаления ячейки |
-| **D-3** | `logic_id` uniqueness and integrity | DB Integrity | `[PARTIALLY VERIFIED]` | `f44b0af` / Индекс активен, но несоответствие `lower()` в БД и `upper()` в JPA |
+| **D-3** | `logic_id` uniqueness and integrity | DB Integrity | `[PARTIALLY VERIFIED]` | `f44b0af` / Индексы активны; дефекты DEF-03 (case mismatch) и GAP-01 (409 mapping) устранены в baseline; ожидает сквозного аудита |
 | **D-4** | Missing FK indexes across warehouse tables | Performance | `[VERIFIED]` | `eb1b6b5` / 100% покрытие (20/20 внешних ключей поддержаны B-Tree индексами) |
 | **D-5** | N+1 query problem | Performance | `[VERIFIED]` | `5f0f112`, GAP-03 / Запросы заказов, пополнений, остатков и истории переведены на `@EntityGraph` (1–2 запроса) |
-| **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
+| **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; дефекты DEF-01, DEF-04, DEF-05 устранены в baseline; ожидает сквозного E2E-аудита |
 | **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[VERIFIED]` | `interceptors.js` / Предикат `isAuthLoginRequest` исключает 401 при логине из сброса сессии, 4 теста `def01_login_401_interceptor.test.js` |
 | **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[VERIFIED]` | `OrderRepository.java`, `ReplenishmentRepository.java` / Явный JPQL `LOWER(logicId) = LOWER(:logicId)` для findBy и existsBy, подтверждено `LogicIdUniquenessIntegrationTest` |
@@ -411,7 +411,7 @@
 
 ---
 
-# ЧАСТЬ 4. РЕЕСТР НОВЫХ ДЕФЕКТОВ, ВЫЯВЛЕННЫХ СОСТЯЗАТЕЛЬНЫМ АУДИТОМ (DEF-01 – DEF-05)
+# ЧАСТЬ 4. РЕЕСТР ДЕФЕКТОВ И АРХИТЕКТУРНЫХ ГЭПОВ, УСТРАНЁННЫХ В ХОДЕ REMEDIATION (DEF-01 – DEF-05, GAP-01 – GAP-04)
 
 ---
 
