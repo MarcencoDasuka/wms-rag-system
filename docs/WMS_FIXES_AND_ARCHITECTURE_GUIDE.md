@@ -270,6 +270,7 @@
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[VERIFIED]` | `OrderRepository.java`, `ReplenishmentRepository.java` / Явный JPQL `LOWER(logicId) = LOWER(:logicId)` для findBy и existsBy, подтверждено `LogicIdUniquenessIntegrationTest` |
 | **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[VERIFIED]` | `redirectSanitizer.js`, `LoginView.vue` / Канонизация и валидация внутренних путей, отсечение //, схемы, backslash и encoded, 7 тестов `def04_open_redirect.test.js` |
 | **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
+| **GAP-01** | Map DataIntegrityViolationException (`logic_id`) to HTTP 409 | Backend / API | `[VERIFIED]` | `GlobalExceptionHandler.java` / Маппинг нарушений уникальности `logic_id` в HTTP 409 Conflict вместо 500, 4 теста `GlobalExceptionHandlerTest` |
 | **GAP-02** | Require secure JWT cookies in production profile | Security | `[VERIFIED]` | `JwtUtil.java`, `AuthController.java` / Fail-fast валидация `wms.jwt.cookie-secure=true` при профилях `prod`/`production`, 16 тестов в `JwtUtilTest` и `AuthControllerTest` |
 
 ---
@@ -568,3 +569,24 @@
   - `JwtUtilTest`: проверены тесты выброса исключения при `prod + cookieSecure=false`, успешного запуска при `prod + cookieSecure=true`, работы в профиле `dev` при `cookieSecure=false` (все 7 тестов пройдены).
   - `AuthControllerTest`: проверены тесты валидации `prod + cookieSecure=false` и успешного запуска с `cookieSecure=true` (все 9 тестов пройдены).
   - Суммарно 16/16 тестов успешно пройдены за 9 секунд.
+
+---
+
+### 4.7. [GAP-01] Маппинг DataIntegrityViolationException (конфликт logic_id) в HTTP 409 Conflict
+* **Статус:** `[VERIFIED]`
+* **Критичность:** Medium
+* **Домен:** Backend API / Error Handling Integrity
+* **Затронутые компоненты:**  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/exception/GlobalExceptionHandler.java`  
+  - `inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/exception/GlobalExceptionHandlerTest.java`
+* **Суть проблемы:**
+  При параллельной вставке заказов или пополнений с одинаковым `logic_id` сервисный превентивный поиск `findByLogicIdIgnoreCase` мог возвращать `false` в обоих потоках, после чего обе транзакции пытались выполнить `INSERT`. На уровне PostgreSQL функциональный уникальный индекс `uk_orders_logic_id_lower` / `uk_replenishments_logic_id_lower` корректно блокировал дубликат с ошибкой `23505 unique constraint violation`, однако Spring Data выбрасывал неперехваченный `DataIntegrityViolationException`, превращая ошибку для клиента в `HTTP 500 Internal Server Error` вместо семантически корректного `HTTP 409 Conflict`.
+* **Как устранено:**
+  1. В `GlobalExceptionHandler` зарегистрирован обработчик `@ExceptionHandler(DataIntegrityViolationException.class)`.
+  2. Обработчик анализирует `mostSpecificCause` и сопоставляет имена ограничений уникальности `logic_id` (`uk_orders_logic_id_lower`, `uk_replenishments_logic_id_lower`, `logic_id`), формируя ответ `HTTP 409 Conflict` со структурированным телом `ApiErrorResponse` ("A resource with the specified logic_id already exists.").
+  3. Для других нарушений уникальности возвращается `HTTP 409 Conflict` с сообщением о нарушении констрейнта дублирования, исключая непредвиденные 500-е ошибки при гонках вставки.
+* **Верификация:**
+  - Созданы модульные тесты в `GlobalExceptionHandlerTest`:
+    - `handleDataIntegrityViolation_withLogicIdUniqueConstraint_returnsConflict`: подтвержден возврат статуса 409 и сообщение о конфликте `logic_id`.
+    - `handleDataIntegrityViolation_withGenericUniqueConstraint_returnsConflict`: подтвержден возврат 409 для общих констрейнтов уникальности.
+  - Все тесты `GlobalExceptionHandlerTest` успешно пройдены (`4/4 passed`).

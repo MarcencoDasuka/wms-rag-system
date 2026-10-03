@@ -1,6 +1,7 @@
 package com.isd.wms.exception;
 
 import jakarta.persistence.OptimisticLockException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -52,6 +53,27 @@ public class GlobalExceptionHandler {
     })
     public ResponseEntity<ApiErrorResponse> handleOptimisticLocking(Exception exception) {
         return buildResponse(HttpStatus.CONFLICT, "Concurrent modification conflict. The resource was modified by another transaction, please retry.", Map.of());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+        String msg = exception.getMostSpecificCause() != null
+                ? exception.getMostSpecificCause().getMessage()
+                : exception.getMessage();
+
+        if (msg != null && (msg.toLowerCase().contains("logic_id")
+                || msg.contains("uk_orders_logic_id")
+                || msg.contains("uk_replenishments_logic_id"))) {
+            return buildResponse(HttpStatus.CONFLICT, "A resource with the specified logic_id already exists.", Map.of());
+        }
+
+        if (msg != null && (msg.toLowerCase().contains("unique constraint")
+                || msg.toLowerCase().contains("duplicate key")
+                || msg.toLowerCase().contains("unique index"))) {
+            return buildResponse(HttpStatus.CONFLICT, "Database constraint violation: duplicate record already exists.", Map.of());
+        }
+
+        return buildResponse(HttpStatus.CONFLICT, "Data integrity violation: the operation conflicts with current database constraints.", Map.of());
     }
 
     @ExceptionHandler(InvalidRequestException.class)
