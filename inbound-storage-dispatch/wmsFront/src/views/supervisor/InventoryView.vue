@@ -241,12 +241,14 @@ import Tag from 'primevue/tag'
 import StockActionDialog from '@/components/inventory/StockActionDialog.vue'
 import { inventoryApi } from '@/api/inventoryApi'
 import { useAuthStore } from '@/stores/auth'
+import { useCurrentUserId } from '@/composables/useCurrentUserId'
 import UploadFile from '@/components/UploadFile.vue'
 
 const importDialogVisible = ref(false)
 const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
+const currentUserId = useCurrentUserId(authStore)
 
 const stockItems = ref([])
 const originalStockItems = ref([])
@@ -297,16 +299,6 @@ const getErrorMessage = (error) => {
     error.message ||
     'Request failed.'
   )
-}
-
-const currentUserId = () => {
-  if (authStore.user?.id) return authStore.user.id
-  const storedUserId = localStorage.getItem('user_id')
-  if (storedUserId) return Number(storedUserId)
-  if (authStore.role === 'ROLE_DEV') return 1
-  if (authStore.role === 'ROLE_SUPERVISOR') return 2
-  if (authStore.role === 'ROLE_OPERATOR') return 3
-  return null
 }
 
 const loadInventoryData = async () => {

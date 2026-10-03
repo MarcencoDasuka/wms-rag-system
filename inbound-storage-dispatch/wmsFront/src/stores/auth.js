@@ -13,10 +13,10 @@ if (typeof window !== 'undefined' && window.localStorage) {
   localStorage.removeItem(TOKEN_KEY)
 }
 
-const seededUsers = {
-  dev: { id: 1, role: 'ROLE_DEV' },
-  supervisor: { id: 2, role: 'ROLE_SUPERVISOR' },
-  operator: { id: 3, role: 'ROLE_OPERATOR' }
+const defaultRolesByUsername = {
+  dev: 'ROLE_DEV',
+  supervisor: 'ROLE_SUPERVISOR',
+  operator: 'ROLE_OPERATOR'
 }
 
 const decodeJwtPayload = (token) => {
@@ -42,7 +42,7 @@ const normalizeRole = (role) => {
 }
 
 const inferRoleFromUsername = (username) => {
-  return normalizeRole(seededUsers[username]?.role)
+  return normalizeRole(defaultRolesByUsername[username])
 }
 
 const safeDashboardForRole = (role) => {
@@ -90,21 +90,38 @@ export const useAuthStore = defineStore('auth', () => {
 
     const claims = decodeJwtPayload(responseToken)
     const authenticatedUsername = claims.sub || username
-    const seededUser = seededUsers[authenticatedUsername]
     const detectedRole = normalizeRole(response.data?.role || claims.role || claims.authorities?.[0] || inferRoleFromUsername(authenticatedUsername))
 
     if (!detectedRole) {
       throw new Error('Authenticated role is not available in the backend response.')
     }
 
-    const authUser = response.data?.user || {
-      id: response.data?.userId || seededUser?.id || null,
-      username: authenticatedUsername
+    token.value = responseToken
+    role.value = detectedRole
+
+    let authUser = response.data?.user || (response.data?.userId ? { id: response.data.userId, username: authenticatedUsername } : null)
+
+    // Authoritative user profile resolution: fetch real database user ID from /api/auth/me
+    if (!authUser?.id) {
+      try {
+        const meResponse = await authApi.getMe()
+        if (meResponse?.data) {
+          authUser = {
+            id: meResponse.data.id,
+            username: meResponse.data.username || authenticatedUsername
+          }
+          if (meResponse.data.role) {
+            role.value = normalizeRole(meResponse.data.role)
+          }
+        }
+      } catch {
+        // Fail closed: do not substitute seeded or mock user IDs
+      }
     }
 
-    persistAuth({ token: responseToken, role: detectedRole, user: authUser })
+    persistAuth({ token: responseToken, role: role.value, user: authUser })
 
-    return { token: responseToken, role: detectedRole, user: authUser }
+    return { token: responseToken, role: role.value, user: authUser }
   }
 
   const fetchCurrentUser = async () => {

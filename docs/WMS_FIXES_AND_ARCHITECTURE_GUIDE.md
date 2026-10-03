@@ -266,7 +266,7 @@
 | **D-5** | N+1 query problem | Performance | `[PARTIALLY VERIFIED]` | `5f0f112` / Запросы заказов оптимизированы; скейлинг $O(N/50)$; складские остатки не покрыты |
 | **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
 | **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[CONFIRMED DEFECT]` | `interceptors.js` / При ошибке 401 на `/auth/login` вызывается `logout()` и ложный редирект |
-| **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[CONFIRMED DEFECT]` | `OrderWithLinesForm.vue`, `InventoryView.vue` / Чтение из `localStorage` дает fallback на 1, 2, 3 |
+| **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[CONFIRMED DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
 | **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[CONFIRMED DEFECT]` | `LoginView.vue` / `route.query.redirect` не проверяется на протокольно-относительные URL |
 | **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
@@ -440,25 +440,28 @@
 ---
 
 ### 4.2. [DEF-02] Рассинхронизация хранилища `user_id` и подстановка сид-пользователей
+* **Статус:** `[VERIFIED]`
 * **Критичность:** High
 * **Домен:** Frontend Data Integrity / Audit Trail
 * **Затронутые компоненты:**  
-  - `inbound-storage-dispatch/wmsFront/src/views/supervisor/OrderWithLinesForm.vue` (строка 121)  
-  - `inbound-storage-dispatch/wmsFront/src/views/supervisor/InventoryView.vue` (строка 304)
+  - `inbound-storage-dispatch/wmsFront/src/composables/useCurrentUserId.js`
+  - `inbound-storage-dispatch/wmsFront/src/components/OrderWithLinesForm.vue`
+  - `inbound-storage-dispatch/wmsFront/src/views/supervisor/InventoryView.vue`
+  - `inbound-storage-dispatch/wmsFront/src/stores/auth.js`
 * **Суть проблемы:**
-  В рамках задачи S-5 (`83a6047`) данные пользователя и JWT были удалены из `localStorage` и перенесены в реактивное хранилище Pinia (`sessionStorage`). Однако в представлениях `OrderWithLinesForm.vue` и `InventoryView.vue` остался устаревший синхронный вызов чтения `localStorage`:
-  ```javascript
-  // OrderWithLinesForm.vue (строка 121):
-  userId: Number(localStorage.getItem('user_id')) || 1,
-
-  // InventoryView.vue (строка 304):
-  userId: Number(localStorage.getItem('user_id')) || 2,
-  ```
-  Поскольку ключ `user_id` в `localStorage` теперь всегда отсутствует (`null`), выражение всегда вычисляет fallback-значение: `1` (в форме заказов) или `2` (в форме инвентаризации).
-* **Следствие для системы:**
-  Все создаваемые супервайзерами заказы и проводки по инвентаризации неявно привязываются к тестовым пользователям с ID 1 или 2, полностью нарушая аудиторский след (Audit Trail) и искажая авторство операций в БД.
-* **План устранения:**
-  Заменить чтение `localStorage.getItem('user_id')` на обращение к реактивному хранилищу аутентификации: `authStore.user?.id`.
+  В рамках задачи S-5 (`83a6047`) данные пользователя и JWT были удалены из `localStorage` и перенесены в реактивное хранилище Pinia (`sessionStorage`). Однако в представлениях `OrderWithLinesForm.vue` и `InventoryView.vue` оставался устаревший синхронный вызов чтения `localStorage.getItem('user_id')` с fallback на 1, 2, 3 при отсутствии значения в `localStorage`.
+* **Как устранено:**
+  1. Создан composable `useCurrentUserId.js` (`resolveCurrentUserId`), извлекающий валидный целочисленный ID строго из `authStore.user.id`.
+  2. В `InventoryView.vue` и `OrderWithLinesForm.vue` удалены все обращения к `localStorage.getItem('user_id')` и исключены fallback-значения (`|| 1`, `|| 2`, `|| 3`).
+  3. В `OrderWithLinesForm.vue` и `InventoryView.vue` внедрена строгая fail-closed проверка: при отсутствии авторизованного ID выполнение прерывается с выводом ошибки Toast без отправки HTTP-запроса.
+  4. В `auth.js` устранены сид-пользователи (`seededUsers`) с моковыми ID. При логине выполняется автори авторитетный запрос к эндпоинту `/api/auth/me` для извлечения реального ID пользователя из БД.
+* **Верификация:**
+  Создан состязательный тестовый набор `test/def02_user_id_dataflow.test.js` (8 тестов):
+  - Проверена сквозная передача `userId = X` (42) и `userId = Y` (99) в payload корректировки и добавления остатков.
+  - Проверена блокировка запросов при отсутствии `user` или невалидном `user.id`.
+  - Проверено полное игнорирование `localStorage.user_id`.
+  - Статический анализ подтвердил отсутствие вызовов `localStorage.getItem('user_id')` и fallback ID в кодовой базе.
+  - Все 15 тестов фронтенда (`interceptors.test.js` + `def02_user_id_dataflow.test.js`) успешно пройдены.
 
 ---
 

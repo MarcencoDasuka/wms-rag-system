@@ -99,9 +99,11 @@ import { useToast } from 'primevue/usetoast'
 import { useRouter } from 'vue-router'
 import { orderApi } from '@/api/orderApi.js'
 import { useAuthStore } from '@/stores/auth'
+import { useCurrentUserId } from '@/composables/useCurrentUserId'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const currentUserId = useCurrentUserId(authStore)
 
 const products = ref([])
 const locations = ref([])
@@ -114,16 +116,6 @@ const getErrorMessage = (error) => {
     error.message ||
     'Request failed.'
   )
-}
-
-const currentUserId = () => {
-  if (authStore.user?.id) return authStore.user.id
-  const storedUserId = localStorage.getItem('user_id')
-  if (storedUserId) return Number(storedUserId)
-  if (authStore.role === 'ROLE_DEV') return 1
-  if (authStore.role === 'ROLE_SUPERVISOR') return 2
-  if (authStore.role === 'ROLE_OPERATOR') return 3
-  return null
 }
 
 const loadOrderCreateData = async () => {
@@ -178,6 +170,17 @@ const submitted = ref(false)
 
 const onSubmit = async () => {
   submitted.value = true
+
+  const userId = currentUserId()
+  if (!userId) {
+    toast.add({
+      severity: 'error',
+      summary: 'Authentication error',
+      detail: 'Authenticated user ID is required to create an order.',
+      life: 4000,
+    })
+    return
+  }
 
   const isTopValid = !!formData.logicId && !!formData.location
 
