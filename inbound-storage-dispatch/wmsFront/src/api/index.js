@@ -1,22 +1,29 @@
 import axios from 'axios'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
+import * as notificationService from '@/services/notificationService'
+import {
+  setupInterceptors,
+  handle401Unauthorized,
+  handle403Forbidden,
+  handle409Conflict
+} from './interceptors.js'
 
-const currentHostname = window.location.hostname;
+const currentHostname = typeof window !== 'undefined' && window.location ? window.location.hostname : 'localhost'
 
-const API_BASE_URL = `http://${currentHostname}:8080/api`;
+const API_BASE_URL = `http://${currentHostname}:8080/api`
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true
-});
+})
 
 apiClient.interceptors.request.use((config) => {
   // If in-memory token is available, pass it in Authorization header;
   // otherwise, the browser transmits the HttpOnly cookie automatically via withCredentials: true.
   try {
     const authStore = useAuthStore()
-    if (authStore.token) {
+    if (authStore && authStore.token) {
       config.headers.Authorization = `Bearer ${authStore.token}`
     }
   } catch {
@@ -25,26 +32,19 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-apiClient.interceptors.response.use(
-  (response) => {
-    return response
-  },
-  async (error) => {
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      try {
-        const authStore = useAuthStore()
-        await authStore.logout()
-      } catch {
-        // ignore
-      }
-
-      if (router.currentRoute.value.name !== 'login') {
-        router.push('/login?loggedOut=true')
-      }
+setupInterceptors(apiClient, {
+  getAuthStore: () => {
+    try {
+      return useAuthStore()
+    } catch {
+      return null
     }
+  },
+  router,
+  notifyError: notificationService.notifyError,
+  notifyWarning: notificationService.notifyWarning
+})
 
-    return Promise.reject(error)
-  }
-)
-
+export { handle401Unauthorized, handle403Forbidden, handle409Conflict }
 export default apiClient
+

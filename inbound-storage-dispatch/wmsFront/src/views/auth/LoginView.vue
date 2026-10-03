@@ -135,7 +135,14 @@ const handleLogin = async () => {
 }
 
 onMounted(() => {
-  if (route.query.loggedOut) {
+  if (route.query.sessionExpired) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Session Expired',
+      detail: 'Your session has expired. Please log in again.',
+      life: 4000,
+    })
+  } else if (route.query.loggedOut) {
     toast.add({
       severity: 'success',
       summary: 'Logged out',
