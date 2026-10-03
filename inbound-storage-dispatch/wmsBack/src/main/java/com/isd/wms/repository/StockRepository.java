@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +25,31 @@ import java.util.Optional;
  * </p>
  */
 public interface StockRepository extends JpaRepository<Stock, Long> {
+
+    /**
+     * Finds a single stock by ID with PESSIMISTIC_WRITE lock.
+     *
+     * @param id the stock ID
+     * @return Optional containing the locked stock, if found
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Stock s WHERE s.id = :id")
+    Optional<Stock> findByIdWithLock(@Param("id") Long id);
+
+    /**
+     * Finds and locks multiple stocks by their IDs with PESSIMISTIC_WRITE (SELECT FOR UPDATE)
+     * in deterministic ID order (ORDER BY s.id ASC) to prevent overselling race conditions and concurrency deadlocks.
+     *
+     * @param ids collection of stock IDs to lock
+     * @return list of locked stocks ordered by ID ascending
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT s FROM Stock s
+        WHERE s.id IN :ids
+        ORDER BY s.id ASC
+        """)
+    List<Stock> findAllByIdInWithLock(@Param("ids") Collection<Long> ids);
 
     /**
      * Finds stock for a specific product and location by their IDs.

@@ -45,14 +45,36 @@ public class InventoryAdjustmentApplier {
 
     public Long applyAdjustmentPlan(InventoryAdjustmentPlan plan) {
         InventoryAdjustmentContext context = plan.context();
-        Stock stock = context.stock();
+
+        List<Long> alternativeStockIds = plan.affectedTasks().stream()
+            .flatMap(task -> task.reallocationPlan().stream())
+            .map(ReallocationPlanItem::stockId)
+            .distinct()
+            .toList();
+
+        List<Long> allStockIdsToLock = java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(context.stockId()),
+                alternativeStockIds.stream()
+            )
+            .distinct()
+            .sorted()
+            .toList();
+
+        Map<Long, Stock> stocksById = new LinkedHashMap<>();
+        stockRepository.findAllByIdInWithLock(allStockIdsToLock)
+            .forEach(s -> stocksById.put(s.getId(), s));
+
+        Stock stock = stocksById.get(context.stockId());
+        if (stock == null) {
+            throw new StockNotFoundException(context.stockId());
+        }
+
         stock.setQuantity(context.newQuantity());
         stock.setReservedQuantity(plan.preservedQuantityOnAdjustedStock());
         stock.updateDate(context.request().manufactureDate(), context.request().expirationDate());
         stockRepository.save(stock);
 
         List<Allocation> allocationsToSave = updateAdjustedStockAllocations(context);
-        Map<Long, Stock> stocksById = loadStocksById(plan);
         List<Stock> stocksToSave = new ArrayList<>();
         List<OrderLine> linesToSave = new ArrayList<>();
         List<Task> tasksToSave = new ArrayList<>();
@@ -132,18 +154,6 @@ public class InventoryAdjustmentApplier {
             allocationsToSave.add(allocation);
         }
         return allocationsToSave;
-    }
-
-    private Map<Long, Stock> loadStocksById(InventoryAdjustmentPlan plan) {
-        List<Long> stockIds = plan.affectedTasks().stream()
-            .flatMap(task -> task.reallocationPlan().stream())
-            .map(ReallocationPlanItem::stockId)
-            .distinct()
-            .toList();
-
-        Map<Long, Stock> stocksById = new LinkedHashMap<>();
-        stockRepository.findAllById(stockIds).forEach(stock -> stocksById.put(stock.getId(), stock));
-        return stocksById;
     }
 
     private void updateOrderLine(AffectedTaskAdjustment affectedTask) {

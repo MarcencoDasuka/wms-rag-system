@@ -150,7 +150,7 @@ public class InventoryService {
         log.info("Removing stock: stockId={}, quantity={}, userId={}",
             request.getStockId(), request.getQuantity(), request.getUserId());
 
-        Stock stock = getStock(request.getStockId());
+        Stock stock = getStockWithLock(request.getStockId());
         User user = getUser(request.getUserId());
 
         int availableQuantity = stock.getQuantity() - stock.getReservedQuantity();
@@ -293,6 +293,14 @@ public class InventoryService {
 
     private Stock getStock(Long stockId) {
         return stockRepository.findById(stockId)
+            .orElseThrow(() -> {
+                log.warn("Stock not found: stockId={}", stockId);
+                return new StockNotFoundException(stockId);
+            });
+    }
+
+    private Stock getStockWithLock(Long stockId) {
+        return stockRepository.findByIdWithLock(stockId)
             .orElseThrow(() -> {
                 log.warn("Stock not found: stockId={}", stockId);
                 return new StockNotFoundException(stockId);

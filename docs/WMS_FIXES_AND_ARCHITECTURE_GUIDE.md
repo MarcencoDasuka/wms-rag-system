@@ -273,6 +273,7 @@
 | **GAP-01** | Map DataIntegrityViolationException (`logic_id`) to HTTP 409 | Backend / API | `[VERIFIED]` | `GlobalExceptionHandler.java` / Маппинг нарушений уникальности `logic_id` в HTTP 409 Conflict вместо 500, 4 теста `GlobalExceptionHandlerTest` |
 | **GAP-02** | Require secure JWT cookies in production profile | Security | `[VERIFIED]` | `JwtUtil.java`, `AuthController.java` / Fail-fast валидация `wms.jwt.cookie-secure=true` при профилях `prod`/`production`, 16 тестов в `JwtUtilTest` и `AuthControllerTest` |
 | **GAP-03** | Missing EntityGraphs in Inventory & History queries | Backend / DB | `[VERIFIED]` | `StockRepository.java`, `InventoryHistoryRepository.java` / `@EntityGraph` на stock (`product`, `location`) и history (`product`, `sourceLocation`, `destinationLocation`, `user`), подтверждено 1 SQL запрос в `NPlusOneQueryPerformanceIntegrationTest` |
+| **GAP-04** | Consistent pessimistic resource lock ordering (Stock Lock Ordering) | Concurrency / DB | `[VERIFIED]` | `StockRepository.java`, `InventoryService.java`, `InventoryAdjustmentApplier.java` / Внедрены `findByIdWithLock` и `findAllByIdInWithLock` с каноническим `ORDER BY s.id ASC`, исключающим взаимоблокировки при параллельных списаниях и переаллокациях; 7 тестов в `StockLockOrderingConcurrencyIntegrationTest`, `StockReservationConcurrencyIntegrationTest`, `AllocationAdjustmentConcurrencyIntegrationTest` |
 
 ---
 
@@ -630,3 +631,57 @@
     - `measureGetAllStockQueries`: выборка 154 активных складских остатков выполнена ровно за **1 SQL запрос** (`queries <= 2`).
     - `measureGetAllHistoryQueries`: выборка 178 исторических записей инвентаризации выполнена ровно за **1 SQL запрос** (`queries <= 2`).
   - Все 5 интеграционных тестов производительности успешно пройдены (`5/5 passed`, `BUILD SUCCESS`).
+
+---
+
+### 4.9. [GAP-04] Унификация порядка пессимистических блокировок ресурсов (Stock Lock Ordering)
+* **Статус:** `[VERIFIED]`
+* **Критичность:** High
+* **Домен:** Concurrency / Database Lock Ordering Integrity
+* **Затронутые компоненты:**  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/StockRepository.java`  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/InventoryService.java`  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/inventoryadjustment/InventoryAdjustmentApplier.java`  
+  - `inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/allocation/StockLockOrderingConcurrencyIntegrationTest.java`
+* **Суть проблемы:**
+  В ядре WMS присутствовала архитектурная асимметрия в механизмах пессимистической синхронизации остатков:
+  1. `WorkflowService` и `ShortageResolver` выполняли блокировку строк `Stock` в каноническом порядке возрастания идентификаторов (`ORDER BY s.id ASC`) через метод `findAvailableStocksByProductIdAndZoneForUpdate`.
+  2. В `InventoryService.removeStock()` чтение остатка выполнялось через обычный `stockRepository.findById(...)` без захвата `PESSIMISTIC_WRITE`, что создавало риск состояния гонки (lost update и overselling) при одновременных списаниях или параллельном выполнении заказов.
+  3. В `InventoryAdjustmentApplier.applyAdjustmentPlan()` загрузка альтернативных остатков для переаллокации производилась методом `stockRepository.findAllById(stockIds)` без пессимистической блокировки и без детерминированного порядка блокировок. При одновременном выполнении корректировки инвентаризации и аллокации заказов, затрагивающих пересекающиеся наборы ячеек/остатков, возникал прямой риск циклической взаимоблокировки (deadlock, когда транзакция A удерживает остаток 10 и запрашивает 5, а транзакция B удерживает 5 и запрашивает 10).
+* **Как устранено:**
+  1. В `StockRepository` добавлены методы пессимистической блокировки:
+     ```java
+     @Lock(LockModeType.PESSIMISTIC_WRITE)
+     @Query("SELECT s FROM Stock s WHERE s.id = :id")
+     Optional<Stock> findByIdWithLock(@Param("id") Long id);
+
+     @Lock(LockModeType.PESSIMISTIC_WRITE)
+     @Query("""
+         SELECT s FROM Stock s
+         WHERE s.id IN :ids
+         ORDER BY s.id ASC
+         """)
+     List<Stock> findAllByIdInWithLock(@Param("ids") Collection<Long> ids);
+     ```
+  2. В `InventoryService.removeStock()` загрузка списываемого остатка переведена на `stockRepository.findByIdWithLock(...)`, что гарантирует строгую сериализацию параллельных списаний и предотвращает потерю обновлений.
+  3. В `InventoryAdjustmentApplier.applyAdjustmentPlan()` внедрен сбор всех затрагиваемых операцией идентификаторов остатков (целевой остаток плюс все альтернативные остатки из плана переаллокации):
+     ```java
+     List<Long> allStockIdsToLock = Stream.concat(
+             Stream.of(context.stockId()),
+             alternativeStockIds.stream()
+         )
+         .distinct()
+         .sorted()
+         .toList();
+     ```
+     Все остатки блокируются единым запросом `stockRepository.findAllByIdInWithLock(allStockIdsToLock)` строго в порядке возрастания `s.id ASC`. Это гарантирует строгое соблюдение иерархии ресурсов Дейкстры/Хавендера и математически исключает циклические взаимные блокировки с аллокацией заказов (`WorkflowService`).
+* **Верификация:**
+  - Разработан состязательный многопоточный интеграционный тест `StockLockOrderingConcurrencyIntegrationTest`:
+    - `concurrentRemoveStock_serializesAndPreventsOverselling`: два параллельных потока пытаются одновременно списать по 7 единиц товара из остатка с количеством 10 (суммарный спрос 14 > 10). Проверено, что ровно одна операция завершается успешно, вторая детерминированно получает `InsufficientStockException`, а итоговое количество в БД составляет ровно 3 (0 потерянных обновлений, 0 отрицательных остатков).
+    - `concurrentMultiStockOperations_orderedAscending_doesNotDeadlock`: два параллельных потока выполняют встречные корректировки остатков с обратным порядком идентификаторов. Проверено, что благодаря канонической сортировке блокировок обе операции успешно завершаются за доли секунды без единого deadlock (`errorCount == 0`).
+  - Проверено совместное прохождение полного набора интеграционных тестов конкурентности:
+    - `StockLockOrderingConcurrencyIntegrationTest`: 2/2 пройдены.
+    - `StockReservationConcurrencyIntegrationTest`: 2/2 пройдены.
+    - `AllocationAdjustmentConcurrencyIntegrationTest`: 3/3 пройдены.
+    - Суммарно 7/7 тестов конкурентности успешно пройдены без ошибок (`BUILD SUCCESS`).
+
