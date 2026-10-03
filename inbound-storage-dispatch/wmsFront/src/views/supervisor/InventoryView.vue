@@ -242,6 +242,7 @@ import StockActionDialog from '@/components/inventory/StockActionDialog.vue'
 import { inventoryApi } from '@/api/inventoryApi'
 import { useAuthStore } from '@/stores/auth'
 import { useCurrentUserId } from '@/composables/useCurrentUserId'
+import { useConflictListener } from '@/composables/useConflictListener'
 import UploadFile from '@/components/UploadFile.vue'
 
 const importDialogVisible = ref(false)
@@ -624,6 +625,7 @@ const getOrderSeverity = (status) => {
   return 'secondary'
 }
 
+useConflictListener(loadInventoryData)
 onMounted(loadInventoryData)
 </script>
 

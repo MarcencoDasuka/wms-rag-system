@@ -314,6 +314,7 @@ import { orderApi } from '@/api/orderApi.js'
 import { inventoryApi } from '@/api/inventoryApi.js'
 import { userApi } from '@/api/userApi'
 import { productApi } from '@/api/productApi'
+import { useConflictListener } from '@/composables/useConflictListener'
 import UploadFile from '@/components/UploadFile.vue'
 
 const route = useRoute()
@@ -716,6 +717,8 @@ const onSubmit = async () => {
 watch(() => route.query.id, () => {
   loadOrders()
 })
+
+useConflictListener(loadOrders)
 
 onMounted(async () => {
   await loadOrderCreateData()

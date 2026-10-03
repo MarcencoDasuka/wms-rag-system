@@ -269,7 +269,7 @@
 | **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[VERIFIED]` | `OrderRepository.java`, `ReplenishmentRepository.java` / Явный JPQL `LOWER(logicId) = LOWER(:logicId)` для findBy и existsBy, подтверждено `LogicIdUniquenessIntegrationTest` |
 | **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[VERIFIED]` | `redirectSanitizer.js`, `LoginView.vue` / Канонизация и валидация внутренних путей, отсечение //, схемы, backslash и encoded, 7 тестов `def04_open_redirect.test.js` |
-| **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
+| **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[VERIFIED]` | `useConflictListener.js`, `InventoryView.vue`, `OrderView.vue` / Подписка на CustomEvent `wms:conflict` с авто-перезагрузкой данных и жизненным циклом отписки, 4 теста `def05_conflict_event.test.js` |
 | **GAP-01** | Map DataIntegrityViolationException (`logic_id`) to HTTP 409 | Backend / API | `[VERIFIED]` | `GlobalExceptionHandler.java` / Маппинг нарушений уникальности `logic_id` в HTTP 409 Conflict вместо 500, 4 теста `GlobalExceptionHandlerTest` |
 | **GAP-02** | Require secure JWT cookies in production profile | Security | `[VERIFIED]` | `JwtUtil.java`, `AuthController.java` / Fail-fast валидация `wms.jwt.cookie-secure=true` при профилях `prod`/`production`, 16 тестов в `JwtUtilTest` и `AuthControllerTest` |
 | **GAP-03** | Missing EntityGraphs in Inventory & History queries | Backend / DB | `[VERIFIED]` | `StockRepository.java`, `InventoryHistoryRepository.java` / `@EntityGraph` на stock (`product`, `location`) и history (`product`, `sourceLocation`, `destinationLocation`, `user`), подтверждено 1 SQL запрос в `NPlusOneQueryPerformanceIntegrationTest` |
@@ -532,19 +532,34 @@
 ---
 
 ### 4.5. [DEF-05] Мёртвый код генерации CustomEvent `wms:conflict` без слушателей во фронтенде
+* **Статус:** `[VERIFIED]`
 * **Критичность:** Low
 * **Домен:** Frontend Architecture
-* **Затронутые компоненты:** `inbound-storage-dispatch/wmsFront/src/api/interceptors.js` (строка 80).
+* **Затронутые компоненты:**  
+  - `inbound-storage-dispatch/wmsFront/src/api/interceptors.js`
+  - `inbound-storage-dispatch/wmsFront/src/composables/useConflictListener.js`
+  - `inbound-storage-dispatch/wmsFront/src/views/supervisor/InventoryView.vue`
+  - `inbound-storage-dispatch/wmsFront/src/views/supervisor/OrderView.vue`
+  - `inbound-storage-dispatch/wmsFront/test/def05_conflict_event.test.js`
 * **Суть проблемы:**
   При получении ошибки `409 Conflict` перехватчик Axios генерирует кастомное событие на глобальном объекте окна браузера:
   ```javascript
   window.dispatchEvent(new CustomEvent('wms:conflict', { detail: errorPayload }))
   ```
-  Однако поиск по всей кодовой базе фронтенда показывает, что ни один компонент или сервис не подписывается на событие (`window.addEventListener('wms:conflict', ...)`).
-* **Следствие для системы:**
-  Событие является мертвым кодом. Таблицы заказов, списки задач и карточки складских остатков не обновляют свое реактивное состояние при возникновении конфликта версий данных, оставляя пользователя с устаревшим представлением на экране до ручной перезагрузки страницы (F5).
-* **План устранения:**
-  Добавить обработчик события `wms:conflict` в базовый макет приложения (`App.vue` или композицию табличных представлений) для автоматической тихой перезагрузки активного набора данных при получении конфликта от сервера.
+  Однако ранее ни один компонент не подписывался на данное событие (`window.addEventListener('wms:conflict', ...)`). Таблицы заказов и остатков не обновляли реактивное состояние при возникновении конфликта версий данных, оставляя пользователя с устаревшим представлением на экране до ручной перезагрузки страницы (F5).
+* **Как устранено:**
+  1. Разработан composable `useConflictListener.js`, регистрирующий подписку на событие `wms:conflict` на глобальном объекте `window` с гарантированной отпиской в `onUnmounted` для предотвращения утечек памяти.
+  2. Реализована идемпотентная регистрация слушателей и изоляция исключений callback, гарантирующая надежность event loop браузера.
+  3. В `InventoryView.vue` зарегистрирован слушатель `useConflictListener(loadInventoryData)`, инициирующий автоматическую перезагрузку остатков при возникновении коллизий.
+  4. В `OrderView.vue` зарегистрирован слушатель `useConflictListener(loadOrders)`, выполняющий синхронизацию таблиц заказов при получении сигнала 409 Conflict.
+* **Верификация:**
+  Создан состязательный тестовый набор `test/def05_conflict_event.test.js` (4 теста):
+  - Проверена диспетчеризация события `wms:conflict` с деталями ошибки и кодом 409 перехватчиком `handle409Conflict`.
+  - Проверена реактивная доставка события в callback слушателя `useConflictListener`.
+  - Проверена изоляция ошибок (исключения в callback не прерывают выполнение).
+  - Проверена корректная отписка слушателя при завершении жизненного цикла (`stopListening`/`onUnmounted`) и игнорирование последующих событий.
+  - Подтверждена статическая интеграция `useConflictListener` в `InventoryView.vue` и `OrderView.vue`.
+  - Все 30 тестов фронтенда успешно пройдены (`30/30 passed`).
 
 ---
 
