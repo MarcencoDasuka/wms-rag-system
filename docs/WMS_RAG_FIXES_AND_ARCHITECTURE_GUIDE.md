@@ -557,18 +557,18 @@
 | **S-1** | Inactive users authentication bypass | Security | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `b1169d5` / `AuthServiceTest` |
 | **S-2** | Inactive supervisor self-reactivation via `/register` | Security | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `2e1f0e9` / `UserServiceReactivationSecurityTest` |
 | **S-3** | Hardcoded credentials and insecure secret fallbacks | Security | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `79b229b`, `5b445a3` / `JwtUtilTest` |
-| **S-4** | Overly broad CORS trust boundary (`allowedOriginPatterns("*")`) | Security | High | `[BACKLOG] PENDING` | Ограничение списком явных доверенных origins |
-| **S-5** | JS-readable access-token storage in `localStorage` | Security | Medium | `[BACKLOG] PENDING` | Ревизия auth-flow и отказ от JS-доступного storage |
+| **S-4** | Overly broad CORS trust boundary (`allowedOriginPatterns("*")`) | Security | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `fe04b2f` / `CorsSecurityIntegrationTest` |
+| **S-5** | JS-readable access-token storage in `localStorage` | Security | Medium | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `83a6047` / `JwtCookieAuthIntegrationTest` |
 | **B-1** | Active orders destroyed by scheduled DB cleanup | Data Integrity | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `d61e887` / `DataCleanupProtectionIntegrationTest` |
 | **B-2** | Lost update during order picking (`OrderLine`) | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `b131be1` / `OrderLinePickingConcurrencyIntegrationTest` |
 | **B-3** | Cell/location monopoly race | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `da8d654` / `LocationProductExclusivityConcurrencyIntegrationTest` |
 | **B-4** | Allocation vs inventory adjustment race | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `edb5a9b` / `AllocationAdjustmentConcurrencyIntegrationTest` |
-| **B-5** | Concurrent stock reservation / allocation integrity | Concurrency | High | `[BACKLOG] PENDING` | Анализ конкурентных путей резервации/аллокации остатков |
+| **B-5** | Concurrent stock reservation / allocation integrity | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `dce5b8c` / `StockReservationConcurrencyIntegrationTest` |
 | **D-1** | Destructive Flyway migrations (`TRUNCATE TABLE ... CASCADE`) | DB Integrity | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `ede81dc` / Идемпотентные миграции V19, V31 |
-| **D-2** | Stock/Location mapping integrity | DB Integrity | Medium | `[BACKLOG] PENDING` | Аудит маппинга сущностей Stock/Location и консистентности JPA |
-| **D-3** | `logic_id` uniqueness | DB Integrity | Medium | `[BACKLOG] PENDING` | Обеспечение уникальности логических бизнес-идентификаторов |
-| **D-4** | Missing FK indexes | Performance | Medium | `[BACKLOG] PENDING` | Индексация внешних ключей для ликвидации Seq Scan |
-| **D-5** | N+1 query problem | Performance | Medium | `[BACKLOG] PENDING` | Оптимизация fetch-стратегий и ликвидация N+1 в запросах JPA |
+| **D-2** | Stock/Location mapping integrity | DB Integrity | Medium | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `53a8803` / `StockLocationMappingIntegrityIntegrationTest` |
+| **D-3** | `logic_id` uniqueness | DB Integrity | Medium | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `f44b0af` / `LogicIdUniquenessIntegrationTest` |
+| **D-4** | Missing FK indexes | Performance | Medium | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `eb1b6b5` / `ForeignKeyIndexesIntegrationTest` |
+| **D-5** | N+1 query problem | Performance | Medium | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `5f0f112` / `NPlusOneQueryPerformanceIntegrationTest` |
 | **AI-1** | Authorization boundary & confirmation for mutating AI tools | AI Security | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `6ceb759` / `AiToolSecurityBoundaryTest` |
 | **AI-2** | Object-level authorization (BOLA/IDOR) in AI tools | AI Security | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `75cc3fa` / `AiToolObjectLevelAuthorizationTest` |
 | **F-1** | Missing centralized 401/403/409 interceptors in frontend | Frontend UX | Medium | `[BACKLOG] PENDING` | Централизованные интерцепторы Axios во фронтенде |
@@ -578,74 +578,74 @@
 ### 3.2. Детальный реестр дефектов в бэклоге (Roadmap)
 
 #### 3.2.1. [S-4] Overly broad CORS trust boundary (`allowedOriginPatterns("*")`)
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** High
 * **Домен:** Security / Network Boundary
 * **Где находится:** `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/config/WebConfig.java`, `SecurityConfig.java`.
 * **Суть проблемы:**
   `allowedOriginPatterns("*")` combined with credentials creates an overly broad cross-origin trust boundary and must be restricted to explicit trusted origins. Конфигурация с wildcard-паттерном при разрешенной передаче учетных данных (`allowCredentials(true)`) динамически отражает заголовок `Origin` клиента в `Access-Control-Allow-Origin`, открывая возможность межсайтовых запросов из недоверенных источников.
-* **Целевое решение:**
-  Перевести список разрешенных origins на строго типизированное свойство конфигурации окружения (`wms.cors.allowed-origins`) с валидацией доверенных хостов (localhost для разработки, конкретный FQDN домен для продакшена).
+* **Реализация (`fe04b2f`):**
+  Настроен строгий список доверенных origins через свойство `wms.cors.allowed-origins` (`http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost`, `http://127.0.0.1`), поддержаны credentials и preflight-запросы OPTIONS. Добавлен интеграционный тест `CorsSecurityIntegrationTest`.
 
 #### 3.2.2. [S-5] JS-readable access-token storage in `localStorage`
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** Medium
 * **Домен:** Frontend Security / Session Management
 * **Где находится:** `inbound-storage-dispatch/wmsFront/src/` (хранилища Pinia, модули авторизации).
 * **Суть проблемы:**
-  Фронтенд сохраняет JWT-токен в постоянном хранилище браузера `localStorage.setItem("token", ...)`. При возникновении XSS-уязвимости в сторонних NPM-зависимостях или UI-компонентах токен доступа может быть прочитан скриптом злоумышленника.
-* **Целевое решение:**
-  *Target architecture: migrate away from JS-readable persistent access-token storage; exact mechanism to be selected after auth-flow review.* Перед реализацией требуется комплексный анализ auth flow: жизненный цикл access/refresh токенов, влияние на CORS, CSRF-последствия при использовании кук и требования API-клиентов.
+  Фронтенд сохранял JWT-токен в постоянном хранилище браузера `localStorage.setItem("token", ...)`. При возникновении XSS-уязвимости в сторонних NPM-зависимостях или UI-компонентах токен доступа мог быть прочитан скриптом злоумышленника.
+* **Реализация (`83a6047`):**
+  Реализована гибридная аутентификация: для браузерных клиентов бэкенд выставляет HttpOnly-куку `wms_token` с флагами `HttpOnly`, `SameSite=Lax`, `Path=/`, защищённую от чтения JavaScript. Фронтенд переведён на хранение токена исключительно в оперативной памяти Pinia (`token.value`) без записи в `localStorage`. Сохранена обратная совместимость с заголовком `Authorization: Bearer` для внешних API/curl-клиентов. Добавлен тест `JwtCookieAuthIntegrationTest`.
 
 #### 3.2.3. [B-5] Concurrent stock reservation / allocation integrity
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** High
 * **Домен:** Business Logic Concurrency
 * **Где находится:** Сервисы аллокации и резервации стока (`AllocationService.java`, `StockRepository.java`).
 * **Суть проблемы:**
   Потенциальная уязвимость к состоянию гонки при одновременной резервации остатков под несколько крупных заказов: риск оверселлинга (overselling) или отрицательного доступного остатка (`quantity - reservedQuantity < 0`), если проверка доступного остатка и его резервирование не сериализованы атомарно.
-* **Целевое решение:**
-  Аудит путей резервирования, оценка применения пессимистической блокировки `PESSIMISTIC_WRITE` на записи `Stock` при поиске доступных партий либо атомарного DB-уровневого декремента с проверкой констрейнтов.
+* **Реализация (`dce5b8c`):**
+  Введён метод `findAvailableStocksByProductIdAndZoneForUpdate` с пессимистической блокировкой `LockModeType.PESSIMISTIC_WRITE` на уровне записей `stocks`. В `OrderService.assignTasks` добавлена каноническая сортировка строк заказа по ID продукта для предотвращения взаимных блокировок (deadlocks). Введена строгая проверка доступного остатка (`availableQuantity >= requestedQuantity`). Добавлен многопоточный интеграционный тест `StockReservationConcurrencyIntegrationTest`.
 
 #### 3.2.4. [D-2] Stock/Location mapping integrity
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** Medium
 * **Домен:** Database Schema / Entity Mapping
 * **Где находится:** `Stock.java`, `Location.java`, JPA репозитории и схема PostgreSQL.
 * **Суть проблемы:**
   Несоответствие и расхождения между JPA-маппингом сущностей `Stock` и `Location` и реальными реляционными связями в схеме БД. Риск рассинхронизации ссылок при удалении или изменении статуса локаций.
-* **Целевое решение:**
-  Аудит реляционных связей, валидация внешних ключей и консистентности каскадных политик (`CascadeType`, `orphanRemoval`) на уровне ORM и DDL.
+* **Реализация (`53a8803`):**
+  Сущность `Stock` связана с `Location` через JPA-ассоциацию `@ManyToOne(fetch = FetchType.LAZY)` с внешним ключом `location_id`. Все репозиторные методы переведены на типобезопасные запросы по `location.id`. Добавлен жизненный цикл проверки и очистки ссылок при удалении ячеек склада. Добавлен интеграционный тест `StockLocationMappingIntegrityIntegrationTest`.
 
 #### 3.2.5. [D-3] `logic_id` uniqueness
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** Medium
 * **Домен:** Data Integrity
 * **Где находится:** Схема базы данных, сущности со сквозной логической идентификацией.
 * **Суть проблемы:**
-  Отсутствие уникальных ограничений (UNIQUE constraints) на колонках `logic_id` в таблицах WMS, что создает риск появления записей-дубликатов с одинаковым бизнес-идентификатором в рамках одного склада.
-* **Целевое решение:**
-  Анализ использования `logic_id` в предметной области WMS, добавление уникальных индексов Flyway и валидация на уровне сервисного слоя.
+  Отсутствие уникальных ограничений (UNIQUE constraints) на колонках `logic_id` в таблицах WMS, что создавало риск появления записей-дубликатов с одинаковым бизнес-идентификатором в рамках одного склада.
+* **Реализация (`f44b0af`):**
+  Разработана идемпотентная миграция Flyway `V35__enforce_logic_id_uniqueness.sql`, заполнившая пропуски дефолтными префиксами, установившая `NOT NULL` и создавшая case-insensitive уникальные индексы `LOWER(logic_id)` на таблицах `replenishments` и `orders`. В `OrderService` и `ReplenishmentService` добавлена строгая валидация и генерация уникальных бизнес-идентификаторов. Добавлен интеграционный тест `LogicIdUniquenessIntegrationTest`.
 
 #### 3.2.6. [D-4] Missing FK indexes
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** Medium
 * **Домен:** Performance / Database
 * **Где находится:** Миграции Flyway (`db/migration`), внешние ключи таблиц `orders`, `order_lines`, `allocations`, `stocks`, `replenishments`.
 * **Суть проблемы:**
-  В PostgreSQL создание внешнего ключа (`FOREIGN KEY`) автоматически не создает B-Tree индекс на дочерней таблице. При выполнении JOIN-запросов и каскадных проверках целостности СУБД вынуждена выполнять полное последовательное сканирование (Sequential Scan), что приводит к резкому росту задержек при увеличении объема записей.
-* **Целевое решение:**
-  Формирование миграции Flyway для создания покрывающих индексов на всех внешних ключах WMS-схемы.
+  В PostgreSQL создание внешнего ключа (`FOREIGN KEY`) автоматически не создаёт B-Tree индекс на дочерней таблице. При выполнении JOIN-запросов и каскадных проверках целостности СУБД была вынуждена выполнять полное последовательное сканирование (Sequential Scan), что приводило к резкому росту задержек при увеличении объёма записей.
+* **Реализация (`eb1b6b5`):**
+  Создана миграция Flyway `V36__add_missing_foreign_key_indexes.sql`, добавившая 19 B-Tree индексов для всех внешних ключей в базе данных (`idx_fk_allocations_stock`, `idx_fk_orders_destination`, `idx_fk_stocks_location` и др.). Добавлен интеграционный тест `ForeignKeyIndexesIntegrationTest`, проверяющий системный каталог PostgreSQL `pg_index` и подтверждающий 100% покрытие FK-индексами.
 
 #### 3.2.7. [D-5] N+1 query problem
-* **Статус:** `[BACKLOG] PENDING`
+* **Статус:** `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]`
 * **Критичность:** Medium
 * **Домен:** Performance / ORM
-* **Где находится:** REST контроллеры и сервисы выборки заказов, строк заказов и задач (`OrderService`, `AllocationExecutionService`).
+* **Где находится:** REST контроллеры и сервисы выборки заказов, строк заказов и задач (`OrderService`, `ReplenishmentService`).
 * **Суть проблемы:**
-  Ленивая загрузка (`FetchType.LAZY`) связей `@ManyToOne` и `@OneToMany` при выборке списков заказов или задач приводит к лавинообразному выполнению отдельных SQL-запросов на каждую строку (классический дефект N+1), многократно перегружая пул соединений с БД.
-* **Целевое решение:**
-  Профилирование SQL-логов, применение `JOIN FETCH` в запросах Spring Data JPA или использование `@EntityGraph` для пакетной загрузки связанных сущностей в одном запросе.
+  Ленивая загрузка (`FetchType.LAZY`) связей `@ManyToOne` и `@OneToMany` при выборке списков заказов или задач приводила к лавинообразному выполнению отдельных SQL-запросов на каждую строку (до 304 запросов на 82 заказа), перегружая пул соединений с БД.
+* **Реализация (`5f0f112`):**
+  Включён батчинг Hibernate `spring.jpa.properties.hibernate.default_batch_fetch_size=50`. На ключевые методы репозиториев (`OrderRepository`, `ReplenishmentRepository`, `OrderLineRepository`) добавлены `@EntityGraph` для предвыборки связанных сущностей. Добавлены пакетные методы резолвинга операторов и штрихкодов транспортных единиц за 1 SQL-запрос на всю коллекцию. Число SQL-запросов при выборке расширенных заказов сокращено с 304 до 7 (-97.7%), а при выборке пополнений с 63 до 2 (-96.8%). Добавлен интеграционный тест `NPlusOneQueryPerformanceIntegrationTest`.
 
 #### 3.2.8. [F-1] Missing centralized 401/403/409 interceptors in frontend
 * **Статус:** `[BACKLOG] PENDING`
