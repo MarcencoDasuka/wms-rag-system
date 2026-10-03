@@ -270,6 +270,7 @@
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[CONFIRMED DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
 | **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[VERIFIED]` | `redirectSanitizer.js`, `LoginView.vue` / Канонизация и валидация внутренних путей, отсечение //, схемы, backslash и encoded, 7 тестов `def04_open_redirect.test.js` |
 | **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
+| **GAP-02** | Require secure JWT cookies in production profile | Security | `[VERIFIED]` | `JwtUtil.java`, `AuthController.java` / Fail-fast валидация `wms.jwt.cookie-secure=true` при профилях `prod`/`production`, 16 тестов в `JwtUtilTest` и `AuthControllerTest` |
 
 ---
 
@@ -539,3 +540,27 @@
   Событие является мертвым кодом. Таблицы заказов, списки задач и карточки складских остатков не обновляют свое реактивное состояние при возникновении конфликта версий данных, оставляя пользователя с устаревшим представлением на экране до ручной перезагрузки страницы (F5).
 * **План устранения:**
   Добавить обработчик события `wms:conflict` в базовый макет приложения (`App.vue` или композицию табличных представлений) для автоматической тихой перезагрузки активного набора данных при получении конфликта от сервера.
+
+---
+
+### 4.6. [GAP-02] Fail-fast проверка флага wms.jwt.cookie-secure в production профиле
+* **Статус:** `[VERIFIED]`
+* **Критичность:** High
+* **Домен:** Web Security / Session Integrity
+* **Затронутые компоненты:**  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/security/JwtUtil.java`  
+  - `inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/AuthController.java`  
+  - `inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/security/JwtUtilTest.java`  
+  - `inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/controller/AuthControllerTest.java`
+* **Суть проблемы:**
+  По умолчанию флаг `wms.jwt.cookie-secure` выставлен в `false` для удобства локальной разработки через HTTP (`http://localhost:8080`). В производственном окружении выпуск авторизационных cookies без атрибута `Secure` подвергает сессию риску перехвата (man-in-the-middle) при передаче по незащищенным каналам.
+* **Как устранено:**
+  1. В `JwtUtil` внедрен параметр `@Value("${wms.jwt.cookie-secure:false}") boolean cookieSecure` и валидация активных профилей Spring (`Profiles.of("prod", "production")`).
+  2. При активном профиле `prod` / `production` и значении `cookieSecure == false` приложение аварийно прерывает запуск с `IllegalStateException("Production startup aborted: wms.jwt.cookie-secure must be true in production profile. Set WMS_JWT_COOKIE_SECURE=true.")`.
+  3. В `AuthController` внедрена аналогичная защита при инициализации контроллера.
+  4. Для дев/тест окружений сохранена возможность работы с `cookieSecure == false`.
+  5. `JwtUtilTest` переведен на `MockEnvironment` (POJO) для исключения накладных расходов динамических Java-агентов.
+* **Верификация:**
+  - `JwtUtilTest`: проверены тесты выброса исключения при `prod + cookieSecure=false`, успешного запуска при `prod + cookieSecure=true`, работы в профиле `dev` при `cookieSecure=false` (все 7 тестов пройдены).
+  - `AuthControllerTest`: проверены тесты валидации `prod + cookieSecure=false` и успешного запуска с `cookieSecure=true` (все 9 тестов пройдены).
+  - Суммарно 16/16 тестов успешно пройдены за 9 секунд.

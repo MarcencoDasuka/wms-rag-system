@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +24,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
@@ -150,6 +153,34 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.username").value("current_tester"))
                 .andExpect(jsonPath("$.role").value("ROLE_SUPERVISOR"))
                 .andExpect(jsonPath("$.email").value("tester@isd.com"));
+    }
+
+    @Test
+    void constructor_inProductionProfileWithCookieSecureFalse_throwsIllegalStateException() {
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
+
+        assertThatThrownBy(() -> new AuthController(authService, userService, securityFacade, false, env))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Production startup aborted: wms.jwt.cookie-secure must be true in production profile");
+    }
+
+    @Test
+    void constructor_inProductionProfileWithCookieSecureTrue_succeeds() {
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
+
+        AuthController controller = new AuthController(authService, userService, securityFacade, true, env);
+        assertThat(controller).isNotNull();
+    }
+
+    @Test
+    void constructor_inDevProfileWithCookieSecureFalse_succeeds() {
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("dev");
+
+        AuthController controller = new AuthController(authService, userService, securityFacade, false, env);
+        assertThat(controller).isNotNull();
     }
 
     @Configuration

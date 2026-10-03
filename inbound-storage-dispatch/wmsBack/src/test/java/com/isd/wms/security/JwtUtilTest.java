@@ -1,14 +1,10 @@
 package com.isd.wms.security;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
+import org.springframework.mock.env.MockEnvironment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class JwtUtilTest {
 
@@ -17,21 +13,32 @@ class JwtUtilTest {
 
     @Test
     void constructor_inProductionProfileWithDefaultSecret_throwsIllegalStateException() {
-        Environment env = mock(Environment.class);
-        when(env.acceptsProfiles(any(Profiles.class))).thenReturn(true);
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
 
-        assertThatThrownBy(() -> new JwtUtil(JwtUtil.DEFAULT_DEV_SECRET, env))
+        assertThatThrownBy(() -> new JwtUtil(JwtUtil.DEFAULT_DEV_SECRET, true, env))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("Production startup aborted");
+            .hasMessageContaining("Production startup aborted: default JWT secret key cannot be used in production profile");
     }
 
     @Test
-    void constructor_inProductionProfileWithSecureSecret_succeeds() {
-        Environment env = mock(Environment.class);
-        when(env.acceptsProfiles(any(Profiles.class))).thenReturn(true);
+    void constructor_inProductionProfileWithCookieSecureFalse_throwsIllegalStateException() {
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
 
-        JwtUtil jwtUtil = new JwtUtil(SECURE_PROD_SECRET, env);
+        assertThatThrownBy(() -> new JwtUtil(SECURE_PROD_SECRET, false, env))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Production startup aborted: wms.jwt.cookie-secure must be true in production profile");
+    }
+
+    @Test
+    void constructor_inProductionProfileWithSecureSecretAndCookieSecureTrue_succeeds() {
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
+
+        JwtUtil jwtUtil = new JwtUtil(SECURE_PROD_SECRET, true, env);
         assertThat(jwtUtil).isNotNull();
+        assertThat(jwtUtil.isCookieSecure()).isTrue();
 
         String token = jwtUtil.generateToken("admin", "ROLE_DEV");
         assertThat(jwtUtil.extractUsername(token)).isEqualTo("admin");
@@ -40,12 +47,13 @@ class JwtUtilTest {
     }
 
     @Test
-    void constructor_inDevProfileWithDefaultSecret_succeeds() {
-        Environment env = mock(Environment.class);
-        when(env.acceptsProfiles(any(Profiles.class))).thenReturn(false);
+    void constructor_inDevProfileWithCookieSecureFalse_succeeds() {
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("dev");
 
-        JwtUtil jwtUtil = new JwtUtil(JwtUtil.DEFAULT_DEV_SECRET, env);
+        JwtUtil jwtUtil = new JwtUtil(JwtUtil.DEFAULT_DEV_SECRET, false, env);
         assertThat(jwtUtil).isNotNull();
+        assertThat(jwtUtil.isCookieSecure()).isFalse();
 
         String token = jwtUtil.generateToken("user1", "ROLE_OPERATOR");
         assertThat(jwtUtil.extractUsername(token)).isEqualTo("user1");
@@ -54,34 +62,34 @@ class JwtUtilTest {
 
     @Test
     void constructor_withCompromisedHistoricalSecret_throwsIllegalStateException() {
-        Environment env = mock(Environment.class);
+        MockEnvironment env = new MockEnvironment();
         String compromisedSecret = new String(
             java.util.Base64.getDecoder().decode("ZjhnSDlzSzJtTjVwUThyVjF2VzR4WjdhQmNEZUZnSGlKa0xtTm9QcVJzVHVWd1h5WjAxMjM0NTY3ODlhQmNEZUY="),
             java.nio.charset.StandardCharsets.UTF_8
         );
 
-        assertThatThrownBy(() -> new JwtUtil(compromisedSecret, env))
+        assertThatThrownBy(() -> new JwtUtil(compromisedSecret, false, env))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("known compromised historical key fingerprint");
     }
 
     @Test
     void constructor_withShortSecret_throwsIllegalStateException() {
-        Environment env = mock(Environment.class);
+        MockEnvironment env = new MockEnvironment();
 
-        assertThatThrownBy(() -> new JwtUtil("short-secret-under-32-bytes", env))
+        assertThatThrownBy(() -> new JwtUtil("short-secret-under-32-bytes", false, env))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("at least 32 bytes");
     }
 
     @Test
     void constructor_withNullOrBlankSecret_throwsIllegalStateException() {
-        Environment env = mock(Environment.class);
+        MockEnvironment env = new MockEnvironment();
 
-        assertThatThrownBy(() -> new JwtUtil(null, env))
+        assertThatThrownBy(() -> new JwtUtil(null, false, env))
             .isInstanceOf(IllegalStateException.class);
 
-        assertThatThrownBy(() -> new JwtUtil("   ", env))
+        assertThatThrownBy(() -> new JwtUtil("   ", false, env))
             .isInstanceOf(IllegalStateException.class);
     }
 }

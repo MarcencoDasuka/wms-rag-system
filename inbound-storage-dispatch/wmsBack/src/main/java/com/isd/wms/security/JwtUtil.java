@@ -27,9 +27,11 @@ public class JwtUtil {
 
     private final SecretKey SECRET_KEY;
     private final long JWT_EXPIRATION_TIME = 86400000; // 24 hours
+    private final boolean cookieSecure;
 
     public JwtUtil(
         @Value("${wms.jwt.secret}") String secretString,
+        @Value("${wms.jwt.cookie-secure:false}") boolean cookieSecure,
         Environment environment
     ) {
         if (secretString == null || secretString.isBlank()) {
@@ -51,11 +53,19 @@ public class JwtUtil {
             );
         }
 
+        this.cookieSecure = cookieSecure;
+
         if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "production"))) {
             if (DEFAULT_DEV_SECRET.equals(secretString)) {
                 throw new IllegalStateException(
                     "Production startup aborted: default JWT secret key cannot be used in production profile. " +
                     "Set a secure JWT_SECRET environment variable."
+                );
+            }
+            if (!cookieSecure) {
+                throw new IllegalStateException(
+                    "Production startup aborted: wms.jwt.cookie-secure must be true in production profile. " +
+                    "Set WMS_JWT_COOKIE_SECURE=true."
                 );
             }
         } else if (DEFAULT_DEV_SECRET.equals(secretString)) {
@@ -64,6 +74,14 @@ public class JwtUtil {
 
         this.SECRET_KEY = Keys.hmacShaKeyFor(secretBytes);
         log.info("JwtUtil initialized. Secret key loaded successfully.");
+    }
+
+    public JwtUtil(String secretString, Environment environment) {
+        this(secretString, false, environment);
+    }
+
+    public boolean isCookieSecure() {
+        return cookieSecure;
     }
 
     private static String computeSha256Hex(byte[] inputBytes) {

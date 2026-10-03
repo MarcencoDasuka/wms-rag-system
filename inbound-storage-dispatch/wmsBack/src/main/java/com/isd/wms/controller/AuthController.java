@@ -6,7 +6,10 @@ import com.isd.wms.service.UserService;
 import com.isd.wms.service.validation.SecurityFacade;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -37,15 +40,32 @@ public class AuthController {
     private final SecurityFacade securityFacade;
     private final boolean cookieSecure;
 
+    @Autowired
     public AuthController(
             AuthService authService,
             UserService userService,
             SecurityFacade securityFacade,
-            @Value("${wms.jwt.cookie-secure:false}") boolean cookieSecure) {
+            @Value("${wms.jwt.cookie-secure:false}") boolean cookieSecure,
+            Environment environment) {
         this.authService = authService;
         this.userService = userService;
         this.securityFacade = securityFacade;
         this.cookieSecure = cookieSecure;
+
+        if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "production")) && !cookieSecure) {
+            throw new IllegalStateException(
+                "Production startup aborted: wms.jwt.cookie-secure must be true in production profile. " +
+                "Set WMS_JWT_COOKIE_SECURE=true."
+            );
+        }
+    }
+
+    public AuthController(
+            AuthService authService,
+            UserService userService,
+            SecurityFacade securityFacade,
+            boolean cookieSecure) {
+        this(authService, userService, securityFacade, cookieSecure, null);
     }
 
     /**
