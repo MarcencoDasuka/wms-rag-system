@@ -106,7 +106,7 @@ The core WMS backend enforces strict transactional and concurrency invariants:
 5. **AI Tool Security Boundaries:** Mutating AI tools require two-phase confirmation tokens, enforce `ROLE_SUPERVISOR` / `ROLE_DEV`, and validate object-level access boundaries (`enforceOrderAccess`, `enforceReplenishmentAccess`, `enforceTargetOperator`).
 6. **Account Lifecycle & Security:** Inactive accounts are denied authentication across all endpoints, reactivation is blocked through registration, and credentials must not match known compromised secrets.
 
-For full architectural details and code snippets, see the [Architecture and Fixes Guide](../docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md).
+For full architectural details and code snippets, see the [WMS Architecture and Fixes Guide](../docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md).
 
 ---
 

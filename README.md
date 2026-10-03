@@ -91,9 +91,10 @@ docker compose up -d
 
 ## 4. Документация проекта
 
-* [`docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — сквозной архитектурный реестр 29 решений (18 в ядре WMS + 11 в RAG) и дорожная карта (Roadmap) из 8 открытых дефектов аудита.
+* [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md) — архитектурный реестр решений, состязательный аудит (S-4..F-1), метрики (207 тестов) и открытые дефекты ядра WMS.
+* [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — архитектурный реестр решений, AST-парсинг и безопасность подсистемы Code RAG (29 тестов).
 * [`docs/RAG_POST_FIX_EVALUATION.md`](docs/RAG_POST_FIX_EVALUATION.md) — итоговый эмпирический отчёт верификации качества поиска (1,261 чанк, Hit@1 83.3%).
-* [`docs/archive/`](docs/archive/README.md) — архив завершённых технических аудитов и первичных замеров.
+* [`docs/archive/`](docs/archive/README.md) — архив завершённых технических аудитов, исторического объединённого реестра и первичных замеров.
 * [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — спецификация домена и REST API склада WMS.
 * [`wms-code-rag/README.md`](wms-code-rag/README.md) — автономное руководство по RAG MCP сервису.
 
