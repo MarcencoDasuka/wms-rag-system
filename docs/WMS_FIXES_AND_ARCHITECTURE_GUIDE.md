@@ -268,7 +268,7 @@
 | **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[CONFIRMED DEFECT]` | `interceptors.js` / При ошибке 401 на `/auth/login` вызывается `logout()` и ложный редирект |
 | **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[CONFIRMED DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
-| **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[CONFIRMED DEFECT]` | `LoginView.vue` / `route.query.redirect` не проверяется на протокольно-относительные URL |
+| **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[VERIFIED]` | `redirectSanitizer.js`, `LoginView.vue` / Канонизация и валидация внутренних путей, отсечение //, схемы, backslash и encoded, 7 тестов `def04_open_redirect.test.js` |
 | **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
 
 ---
@@ -498,25 +498,35 @@
 ---
 
 ### 4.4. [DEF-04] Невалидируемый параметр редиректа в форме аутентификации (Open Redirect)
+* **Статус:** `[VERIFIED]`
 * **Критичность:** Medium
 * **Домен:** Web Security / Navigation Integrity
-* **Затронутые компоненты:** `inbound-storage-dispatch/wmsFront/src/views/auth/LoginView.vue` (строка 118).
+* **Затронутые компоненты:**  
+  - `inbound-storage-dispatch/wmsFront/src/utils/redirectSanitizer.js`
+  - `inbound-storage-dispatch/wmsFront/src/views/auth/LoginView.vue` (строки 82, 118)
 * **Суть проблемы:**
-  После успешного входа пользователя в систему компонент `LoginView.vue` выполняет безусловный переход по адресу, переданному в query-параметре:
+  После успешного входа пользователя в систему компонент `LoginView.vue` выполнял безусловный переход по адресу, переданному в `route.query.redirect`:
   ```javascript
   const redirect = route.query.redirect || '/'
   router.push(redirect)
   ```
-  Значение параметра `redirect` никак не санитизируется. Злоумышленник может сформировать фишинговую ссылку вида:
-  `http://wms.local/login?redirect=//attacker-controlled.site` или `http://wms.local/login?redirect=https://evil.com`.
-  В зависимости от резолвера маршрутизатора Vue и браузера переход по протокольно-относительному URL (`//...`) приведет к незаметной переадресации авторизованного складского сотрудника на внешний вредоносный ресурс.
-* **План устранения:**
-  Внедрить строгую валидацию URL перед вызовом `router.push`:
-  ```javascript
-  const isValidRedirect = (url) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
-  const target = isValidRedirect(route.query.redirect) ? route.query.redirect : '/'
-  router.push(target)
-  ```
+  Это открывало уязвимость Open Redirect через фишинговые ссылки с `//evil.com`, `https://evil.com`, `/\evil.com` или закодированными URL (`%2f%2fevil.com`).
+* **Как устранено:**
+  1. Разработан модуль `redirectSanitizer.js` (`sanitizeRedirect`), реализующий строгую валидацию и канонизацию URL.
+  2. Разрешаются исключительно безопасные относительные внутренние пути (начинающиеся с одиночного `/`, без backslash, без control characters, без внешних схем `javascript:`, `http:`, `https:`).
+  3. Проводится итеративное декодирование для отсечения обхода через URL-encoding (`%2f`, `%5c`, `%252f`).
+  4. Проводится верификация через спецификацию WHATWG URL parser с проверкой происхождения `origin === 'http://localhost'`.
+  5. В `LoginView.vue` вызов `router.push` обернут в `sanitizeRedirect(route.query.redirect, authStore.dashboardPath)`.
+* **Верификация:**
+  Создан состязательный тестовый набор `test/def04_open_redirect.test.js` (7 тестов):
+  - Проверена корректность перехода на легитимные пути (`/orders`, `/inventory`, `/foo?x=1`, `/supervisor/dashboard`).
+  - Проверено отклонение протокольно-относительных URL (`//evil.example`, `///evil.example`).
+  - Проверено отклонение абсолютных схем (`https://`, `http://`, `javascript:`, `data:`).
+  - Проверено отклонение всех вариантов с обратными слэшами (`/\evil`, `\\evil`, `\orders`).
+  - Проверено отклонение закодированных атак (`%2f%2fevil`, `/%5cevil`, `%00/orders`).
+  - Проверена обработка `null`, `undefined`, чисел, массивов и пустых строк.
+  - Статический анализ подтвердил обязательную санитизацию в `LoginView.vue`.
+  - Все тесты успешно пройдены.
 
 ---
 

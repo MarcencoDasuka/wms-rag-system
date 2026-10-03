@@ -79,6 +79,7 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Toast from 'primevue/toast'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import { sanitizeRedirect } from '@/utils/redirectSanitizer'
 
 const router = useRouter()
 const route = useRoute()
@@ -115,7 +116,7 @@ const handleLogin = async () => {
 
   try {
     await authStore.login(username.value, password.value)
-    router.push(route.query.redirect || authStore.dashboardPath)
+    router.push(sanitizeRedirect(route.query.redirect, authStore.dashboardPath))
   } catch (error) {
     if (error.response?.status === 401) {
       errorMessage.value = 'Incorrect username or password.'
