@@ -247,29 +247,29 @@
 
 # ЧАСТЬ 2. СВОДНАЯ МАТРИЦА ТРАССИРУЕМОСТИ АУДИТА WMS
 
-| Код | Исходное наименование finding | Домен | Критичность | Статус верификации аудита | Подтверждающий коммит / Примечание |
-| :---: | :--- | :---: | :---: | :---: | :--- |
-| **S-1** | Inactive users authentication bypass | Security | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `b1169d5` / `AuthServiceTest` |
-| **S-2** | Inactive supervisor self-reactivation via `/register` | Security | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `2e1f0e9` / `UserServiceReactivationSecurityTest` |
-| **S-3** | Hardcoded credentials and insecure secret fallbacks | Security | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `79b229b`, `5b445a3` / `JwtUtilTest` |
-| **S-4** | Overly broad CORS trust boundary | Security | High | `[PARTIALLY VERIFIED]` | `fe04b2f` / Wildcard устранены; порт 80 в дефолтных origins без профилирования |
-| **S-5** | JS-readable access-token storage in `localStorage` | Security | Medium | `[PARTIALLY VERIFIED]` | `83a6047` / HttpOnly кука включена; утечка токена в JSON теле и рассинхрон `user_id` |
-| **B-1** | Active orders destroyed by scheduled DB cleanup | Data Integrity | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `d61e887` / `DataCleanupProtectionIntegrationTest` |
-| **B-2** | Lost update during order picking (`OrderLine`) | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `b131be1` / `OrderLinePickingConcurrencyIntegrationTest` |
-| **B-3** | Cell/location monopoly race | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `da8d654` / `LocationProductExclusivityConcurrencyIntegrationTest` |
-| **B-4** | Allocation vs inventory adjustment race | Concurrency | High | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `edb5a9b` / `AllocationAdjustmentConcurrencyIntegrationTest` |
-| **B-5** | Concurrent stock reservation / allocation integrity | Concurrency | High | `[VERIFIED]` | `dce5b8c` / Пессимистическая блокировка + канонический порядок + DB CHECK |
-| **D-1** | Destructive Flyway migrations (`TRUNCATE TABLE`) | DB Integrity | Critical | `[IMPLEMENTED — AWAITING ADVERSARIAL VERIFICATION]` | `ede81dc` / Идемпотентные миграции V19, V31 |
-| **D-2** | Stock/Location mapping integrity | DB Integrity | Medium | `[VERIFIED]` | `53a8803` / Частичный индекс `uk_stocks_active_location` + защита удаления ячейки |
-| **D-3** | `logic_id` uniqueness and integrity | DB Integrity | Medium | `[PARTIALLY VERIFIED]` | `f44b0af` / Индекс активен, но несоответствие `lower()` в БД и `upper()` в JPA |
-| **D-4** | Missing FK indexes across warehouse tables | Performance | Medium | `[VERIFIED]` | `eb1b6b5` / 100% покрытие (20/20 внешних ключей поддержаны B-Tree индексами) |
-| **D-5** | N+1 query problem | Performance | Medium | `[PARTIALLY VERIFIED]` | `5f0f112` / Запросы заказов оптимизированы; скейлинг $O(N/50)$; складские остатки не покрыты |
-| **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | Medium | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
-| **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | Medium | `[CONFIRMED AUDIT DEFECT]` | `interceptors.js` / При ошибке 401 на `/auth/login` вызывается `logout()` и ложный редирект |
-| **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | High | `[CONFIRMED AUDIT DEFECT]` | `OrderWithLinesForm.vue`, `InventoryView.vue` / Чтение из `localStorage` дает fallback на 1, 2, 3 |
-| **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | Medium | `[CONFIRMED AUDIT DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
-| **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | Medium | `[CONFIRMED AUDIT DEFECT]` | `LoginView.vue` / `route.query.redirect` не проверяется на протокольно-относительные URL |
-| **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | Low | `[CONFIRMED AUDIT DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
+| Код | Дефект / Инвариант | Домен | Статус верификации | Подтверждение / Примечание аудита |
+|-----|--------------------|-------|--------------------|-----------------------------------|
+| **S-1** | Inactive users authentication bypass | Security | `[AWAITING VERIFICATION]` | `b1169d5` / `AuthServiceTest` |
+| **S-2** | Inactive supervisor self-reactivation via `/register` | Security | `[AWAITING VERIFICATION]` | `2e1f0e9` / `UserServiceReactivationSecurityTest` |
+| **S-3** | Hardcoded credentials and insecure secret fallbacks | Security | `[AWAITING VERIFICATION]` | `79b229b`, `5b445a3` / `JwtUtilTest` |
+| **S-4** | Overly broad CORS trust boundary | Security | `[PARTIALLY VERIFIED]` | `fe04b2f` / Wildcard устранены; порт 80 в дефолтных origins без профилирования |
+| **S-5** | JS-readable access-token storage in `localStorage` | Security | `[PARTIALLY VERIFIED]` | `83a6047` / HttpOnly кука включена; утечка токена в JSON теле и рассинхрон `user_id` |
+| **B-1** | Active orders destroyed by scheduled DB cleanup | Data Integrity | `[AWAITING VERIFICATION]` | `d61e887` / `DataCleanupProtectionIntegrationTest` |
+| **B-2** | Lost update during order picking (`OrderLine`) | Concurrency | `[AWAITING VERIFICATION]` | `b131be1` / `OrderLinePickingConcurrencyIntegrationTest` |
+| **B-3** | Cell/location monopoly race | Concurrency | `[AWAITING VERIFICATION]` | `da8d654` / `LocationProductExclusivityConcurrencyIntegrationTest` |
+| **B-4** | Allocation vs inventory adjustment race | Concurrency | `[AWAITING VERIFICATION]` | `edb5a9b` / `AllocationAdjustmentConcurrencyIntegrationTest` |
+| **B-5** | Concurrent stock reservation / allocation integrity | Concurrency | `[VERIFIED]` | `dce5b8c` / Пессимистическая блокировка + канонический порядок + DB CHECK |
+| **D-1** | Destructive Flyway migrations (`TRUNCATE TABLE`) | DB Integrity | `[AWAITING VERIFICATION]` | `ede81dc` / Идемпотентные миграции V19, V31 |
+| **D-2** | Stock/Location mapping integrity | DB Integrity | `[VERIFIED]` | `53a8803` / Частичный индекс `uk_stocks_active_location` + защита удаления ячейки |
+| **D-3** | `logic_id` uniqueness and integrity | DB Integrity | `[PARTIALLY VERIFIED]` | `f44b0af` / Индекс активен, но несоответствие `lower()` в БД и `upper()` в JPA |
+| **D-4** | Missing FK indexes across warehouse tables | Performance | `[VERIFIED]` | `eb1b6b5` / 100% покрытие (20/20 внешних ключей поддержаны B-Tree индексами) |
+| **D-5** | N+1 query problem | Performance | `[PARTIALLY VERIFIED]` | `5f0f112` / Запросы заказов оптимизированы; скейлинг $O(N/50)$; складские остатки не покрыты |
+| **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
+| **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[CONFIRMED DEFECT]` | `interceptors.js` / При ошибке 401 на `/auth/login` вызывается `logout()` и ложный редирект |
+| **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[CONFIRMED DEFECT]` | `OrderWithLinesForm.vue`, `InventoryView.vue` / Чтение из `localStorage` дает fallback на 1, 2, 3 |
+| **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[CONFIRMED DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
+| **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[CONFIRMED DEFECT]` | `LoginView.vue` / `route.query.redirect` не проверяется на протокольно-относительные URL |
+| **DEF-05** | Dead code `wms:conflict` event dispatch | Frontend / Arch | `[CONFIRMED DEFECT]` | `interceptors.js` / Событие диспатчится в `window`, но нет ни одного слушателя во фронтенде |
 
 ---
 

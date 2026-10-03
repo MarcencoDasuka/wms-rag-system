@@ -97,14 +97,17 @@ The system supports three primary user roles:
 
 ## Concurrency, Data Integrity & Security Architecture
 
-The core WMS backend enforces strict transactional and concurrency invariants:
+The core WMS backend enforces strict transactional, concurrency, and security invariants:
 
-1. **Order Picking Concurrency:** Pessimistic write locking on `OrderLine` (`findByTaskIdWithLock`) serializes concurrent allocation completions, preventing lost updates on `deliveredQuantity`.
-2. **Location Monopoly:** A partial unique index (`uk_stocks_active_location` on `stocks (location_id) WHERE available = true`, Flyway `V34`) combined with pessimistic row-locking on `Location` guarantees that a single warehouse location can never hold multiple distinct product types.
-3. **Allocation vs Adjustment Race Protection:** Stock adjustments and operator picking executions serialize via pessimistic write locks (`findByIdWithLock`, `findActiveByStockIdWithLock`), preventing phantom picks on canceled allocations.
-4. **Data Cleanup Safety:** `DataCleanupJob` strictly deletes records in terminal statuses (`COMPLETED`, `CANCELED`), never deleting active orders or allocations.
-5. **AI Tool Security Boundaries:** Mutating AI tools require two-phase confirmation tokens, enforce `ROLE_SUPERVISOR` / `ROLE_DEV`, and validate object-level access boundaries (`enforceOrderAccess`, `enforceReplenishmentAccess`, `enforceTargetOperator`).
-6. **Account Lifecycle & Security:** Inactive accounts are denied authentication across all endpoints, reactivation is blocked through registration, and credentials must not match known compromised secrets.
+| Invariant | Enforcement Mechanism | Architectural Guarantee |
+|-----------|-----------------------|-------------------------|
+| **Order Picking Concurrency** | Pessimistic write locking on `OrderLine` (`findByTaskIdWithLock`) | Serializes concurrent allocation completions, preventing lost updates on `deliveredQuantity` |
+| **Location Monopoly** | Partial unique index (`uk_stocks_active_location`) + row lock on `Location` | Guarantees that a single warehouse location can never hold multiple distinct product types |
+| **Allocation vs Adjustment Race Protection** | Pessimistic write locks (`findByIdWithLock`, `findActiveByStockIdWithLock`) | Prevents phantom picks on canceled allocations during stock adjustments |
+| **Data Cleanup Safety** | Terminal status restriction (`COMPLETED`, `CANCELED`) in cleanup queries | Protects active orders, lines, and allocations from premature deletion by background cron job |
+| **AI Tool Security Boundaries** | Two-phase confirmation tokens + role check (`ROLE_SUPERVISOR` / `ROLE_DEV`) | Prevents unconfirmed or unauthorized state mutations via AI assistant tools |
+| **Object-Level Access (BOLA/IDOR)** | Ownership validation (`enforceOrderAccess`, `enforceReplenishmentAccess`) | Restricts supervisor AI operations strictly to their authorized orders and operators |
+| **Account Lifecycle & Security** | Active flag enforcement in `CustomUserDetailsService` + SHA-256 fingerprint check | Denies authentication to deactivated users, blocks self-reactivation via `/register`, rejects compromised secrets |
 
 For full architectural details and code snippets, see the [WMS Architecture and Fixes Guide](../docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md).
 
