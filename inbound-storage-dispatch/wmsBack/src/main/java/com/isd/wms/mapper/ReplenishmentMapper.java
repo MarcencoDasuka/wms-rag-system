@@ -4,6 +4,7 @@ import com.isd.wms.dto.replenishment.ReplenishmentResponse;
 import com.isd.wms.entity.*;
 import com.isd.wms.repository.TransportUnitRepository;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -12,17 +13,13 @@ public class ReplenishmentMapper {
 
     private final TransportUnitRepository transportUnitRepository;
 
-    public ReplenishmentResponse toResponse(Replenishment replenishment) {
+    public ReplenishmentResponse toResponse(Replenishment replenishment, @Nullable String tuBarcode) {
         Product product = replenishment.getProduct();
         Location destinationLocation = replenishment.getDestinationLocation();
 
         Long operatorId = replenishment.getTask()
             .flatMap(Task::getOperator)
             .map(User::getId)
-            .orElse(null);
-
-        String tuBarcode = transportUnitRepository.findFirstByReplenishmentOrderByCreatedAtAscIdAsc(replenishment)
-            .map(TransportUnit::getBarcode)
             .orElse(null);
 
         return new ReplenishmentResponse(
@@ -39,5 +36,13 @@ public class ReplenishmentMapper {
             tuBarcode,
             replenishment.getCreatedAt()
         );
+    }
+
+    public ReplenishmentResponse toResponse(Replenishment replenishment) {
+        String tuBarcode = transportUnitRepository.findFirstByReplenishmentOrderByCreatedAtAscIdAsc(replenishment)
+            .map(TransportUnit::getBarcode)
+            .orElse(null);
+
+        return toResponse(replenishment, tuBarcode);
     }
 }

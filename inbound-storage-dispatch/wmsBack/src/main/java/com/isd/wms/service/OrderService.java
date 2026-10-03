@@ -174,11 +174,15 @@ public class OrderService {
     }
 
     public List<OrderResponse> getAllOrders() {
-        return orderRepository.findAllByCreatedByUsername(securityFacade.getCurrentUsername()).stream()
-            .map(order -> {
-                Long operatorId = orderRepository.findOperatorIdByOrderId(order.getId()).orElse(null);
-                return orderMapper.toResponse(order, operatorId);
-            })
+        List<Order> orders = orderRepository.findAllByCreatedByUsername(securityFacade.getCurrentUsername());
+        if (orders.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
+        Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
+        return orders.stream()
+            .map(order -> orderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
             .toList();
     }
 
@@ -296,27 +300,34 @@ public class OrderService {
     }
 
     public List<OrderResponse> searchOrders(OrderSearchRequest request) {
-        return orderRepository.filter(
+        List<Order> orders = orderRepository.filter(
                 request.logicId(),
                 request.destinationLocationId(),
                 request.status(),
                 request.createdAt(),
                 request.updatedAt()
-            ).stream()
-            .map(order -> {
-                Long operatorId = orderRepository.findOperatorIdByOrderId(order.getId()).orElse(null);
-                return orderMapper.toResponse(order, operatorId);
-            })
+            );
+        if (orders.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
+        Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
+        return orders.stream()
+            .map(order -> orderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
             .toList();
     }
 
     public List<ExtendedOrderResponse> getAllExtendedOrders() {
         List<Order> orders = orderRepository.findAll();
+        if (orders.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
+        Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
         return orders.stream()
-            .map(order -> {
-                Long operatorId = orderRepository.findOperatorIdByOrderId(order.getId()).orElse(null);
-                return extendedOrderMapper.toResponse(order, operatorId);
-            })
+            .map(order -> extendedOrderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
             .toList();
     }
 
@@ -410,7 +421,7 @@ public class OrderService {
     }
 
     private boolean isShortageOrder(Order order) {
-        List<OrderLine> lines = orderLineRepository.findAllByOrderId(order.getId());
+        List<OrderLine> lines = order.getOrderLines();
         boolean allCanceled = !lines.isEmpty() && lines.stream()
             .allMatch(line -> line.getStatus() == Status.CANCELED);
         boolean hasShortage = lines.stream().anyMatch(line ->
@@ -427,7 +438,7 @@ public class OrderService {
     }
 
     private ShortageOrderResponse toShortageOrderResponse(Order order) {
-        List<OrderLine> lines = orderLineRepository.findAllByOrderId(order.getId());
+        List<OrderLine> lines = order.getOrderLines();
         long shortageLines = lines.stream()
             .filter(line -> line.getStatus() == Status.PARTIALLY_COMPLETED
                 || line.getStatus() == Status.SHORTAGE
@@ -516,5 +527,33 @@ public class OrderService {
             .filter(allocation -> allocation.getStatus() != Status.CANCELED)
             .mapToInt(allocation -> Optional.ofNullable(allocation.getQuantity()).orElse(0))
             .sum();
+    }
+
+    private Map<Long, Long> resolveOrderOperatorIds(Collection<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<com.isd.wms.repository.projections.OrderOperatorProjection> list = orderRepository.findOperatorIdsByOrderIds(orderIds);
+        Map<Long, Long> map = new HashMap<>();
+        for (var proj : list) {
+            if (proj.getOrderId() != null && proj.getOperatorId() != null) {
+                map.putIfAbsent(proj.getOrderId(), proj.getOperatorId());
+            }
+        }
+        return map;
+    }
+
+    private Map<Long, String> resolveOrderTuBarcodes(Collection<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<TransportUnit> tus = transportUnitRepository.findAllByOrderIds(orderIds);
+        Map<Long, String> map = new HashMap<>();
+        for (TransportUnit tu : tus) {
+            if (tu.getOrder() != null && tu.getOrder().getId() != null) {
+                map.putIfAbsent(tu.getOrder().getId(), tu.getBarcode());
+            }
+        }
+        return map;
     }
 }

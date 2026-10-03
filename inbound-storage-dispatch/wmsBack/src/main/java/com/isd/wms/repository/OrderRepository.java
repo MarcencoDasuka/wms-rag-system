@@ -3,6 +3,8 @@ package com.isd.wms.repository;
 import com.isd.wms.entity.Order;
 import com.isd.wms.entity.Task;
 import com.isd.wms.enums.OrderStatus;
+import com.isd.wms.repository.projections.OrderOperatorProjection;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -10,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,6 +28,10 @@ import java.util.Optional;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
+    @Override
+    @EntityGraph(attributePaths = {"destinationLocation"})
+    List<Order> findAll();
+
     /**
      * Filters orders by optional criteria: logic ID, destination location,
      * status, and creation/update timestamps.
@@ -36,16 +43,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * @param updatedAt      exact update timestamp
      * @return list of matching orders
      */
+    @EntityGraph(attributePaths = {"destinationLocation"})
     @Query("""
-        SELECT o FROM Order o
+        SELECT DISTINCT o FROM Order o
         JOIN OrderLine ol ON ol.order = o
         JOIN Task t ON t = ol.task
         JOIN User u ON u = t.supervisor
         WHERE (:logicId IS NULL OR o.logicId = :logicId)
         AND (:destinationId IS NULL OR o.destinationLocation.id = :destinationId)
         AND (:status IS NULL OR o.status = :status)
-        AND (:createdAt IS NULL OR o.createdAt = :createdAt)
-        AND (:updatedAt IS NULL OR o.updatedAt = :updatedAt)
+        AND (cast(:createdAt as timestamp) IS NULL OR o.createdAt = :createdAt)
+        AND (cast(:updatedAt as timestamp) IS NULL OR o.updatedAt = :updatedAt)
         """)
     List<Order> filter(
         @Param("logicId") String logicId,
@@ -70,6 +78,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * @param username the supervisor's username
      * @return list of orders
      */
+    @EntityGraph(attributePaths = {"destinationLocation"})
     @Query("""
         SELECT DISTINCT o FROM Order o
         JOIN OrderLine ol ON ol.order = o
@@ -78,6 +87,22 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         WHERE u.username = :username
         """)
     List<Order> findAllByCreatedByUsername(@Param("username") String username);
+
+    /**
+     * Finds operator IDs assigned to orders in a single batch query.
+     *
+     * @param orderIds collection of order IDs
+     * @return list of order-to-operator projections
+     */
+    @Query("""
+        SELECT DISTINCT o.id AS orderId, u.id AS operatorId
+        FROM Order o
+        JOIN o.orderLines ol
+        JOIN ol.task t
+        JOIN t.operator u
+        WHERE o.id IN :orderIds
+    """)
+    List<OrderOperatorProjection> findOperatorIdsByOrderIds(@Param("orderIds") Collection<Long> orderIds);
 
     /**
      * Finds the oldest PICKED or PARTIALLY_COMPLETED order for an operator.

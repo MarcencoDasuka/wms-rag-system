@@ -15,12 +15,16 @@ public class ExtendedOrderMapper {
     private final OrderMapper orderMapper;
     private final OrderLineMapper orderLineMapper;
 
-    public ExtendedOrderResponse toResponse(Order order, @Nullable Long operatorId) {
+    public ExtendedOrderResponse toResponse(Order order, @Nullable Long operatorId, @Nullable String tuBarcode) {
         return new ExtendedOrderResponse(
-            orderMapper.toResponse(order, operatorId),
+            orderMapper.toResponse(order, operatorId, tuBarcode),
             order.getOrderLines().stream().map(orderLineMapper::toResponse).toList(),
             resolveTotalDeliveredQuantity(order)
         );
+    }
+
+    public ExtendedOrderResponse toResponse(Order order, @Nullable Long operatorId) {
+        return toResponse(order, operatorId, null);
     }
 
     private int resolveTotalDeliveredQuantity(Order order) {

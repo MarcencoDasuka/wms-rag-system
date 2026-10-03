@@ -3,6 +3,7 @@ package com.isd.wms.repository;
 import com.isd.wms.entity.OrderLine;
 import com.isd.wms.enums.Status;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -30,6 +31,7 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, Long> {
      * @param orderId the order ID
      * @return list of order lines
      */
+    @EntityGraph(attributePaths = {"product", "task"})
     List<OrderLine> findAllByOrderId(Long orderId);
 
     /**

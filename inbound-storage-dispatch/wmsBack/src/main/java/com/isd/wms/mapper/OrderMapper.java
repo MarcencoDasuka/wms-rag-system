@@ -14,11 +14,7 @@ public class OrderMapper {
 
     private final TransportUnitRepository transportUnitRepository;
 
-    public OrderResponse toResponse(Order order, @Nullable Long operatorId) {
-        String tuBarcode = transportUnitRepository.findByOrder(order)
-            .map(TransportUnit::getBarcode)
-            .orElse(null);
-
+    public OrderResponse toResponse(Order order, @Nullable Long operatorId, @Nullable String tuBarcode) {
         return new OrderResponse(
             order.getId(),
             order.getLogicId(),
@@ -29,5 +25,13 @@ public class OrderMapper {
             order.getCreatedAt(),
             order.getUpdatedAt()
         );
+    }
+
+    public OrderResponse toResponse(Order order, @Nullable Long operatorId) {
+        String tuBarcode = transportUnitRepository.findByOrder(order)
+            .map(TransportUnit::getBarcode)
+            .orElse(null);
+
+        return toResponse(order, operatorId, tuBarcode);
     }
 }

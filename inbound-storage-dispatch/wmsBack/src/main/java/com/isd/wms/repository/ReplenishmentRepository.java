@@ -3,6 +3,7 @@ package com.isd.wms.repository;
 import com.isd.wms.entity.Replenishment;
 import com.isd.wms.entity.Task;
 import com.isd.wms.enums.Status;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -24,6 +25,10 @@ import java.util.Optional;
  */
 @Repository
 public interface ReplenishmentRepository extends JpaRepository<Replenishment, Long> {
+
+    @Override
+    @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
+    List<Replenishment> findAll();
 
     /**
      * Finds all replenishments with a given status.
@@ -51,6 +56,7 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
      * @param destinationLocationId destination location ID
      * @return list of matching replenishments
      */
+    @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
     @Query("""
         SELECT r FROM Replenishment r
         LEFT JOIN r.task t
@@ -132,6 +138,7 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
      * @param username the supervisor's username
      * @return list of replenishments
      */
+    @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
     @Query("""
         SELECT r FROM Replenishment r
         JOIN r.task t
@@ -151,6 +158,7 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
      * @param destinationLocationId destination location ID
      * @return list of matching replenishments
      */
+    @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
     @Query("""
         SELECT r FROM Replenishment r
         LEFT JOIN r.task t

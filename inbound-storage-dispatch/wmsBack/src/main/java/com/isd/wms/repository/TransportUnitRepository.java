@@ -62,4 +62,10 @@ public interface TransportUnitRepository extends JpaRepository<TransportUnit, Lo
     List<TransportUnit> findAllByReplenishment(Replenishment replenishment);
 
     Optional<TransportUnit> findFirstByReplenishmentOrderByCreatedAtAscIdAsc(Replenishment replenishment);
+
+    @org.springframework.data.jpa.repository.Query("SELECT tu FROM TransportUnit tu JOIN FETCH tu.order o WHERE o.id IN :orderIds")
+    List<TransportUnit> findAllByOrderIds(@org.springframework.data.repository.query.Param("orderIds") java.util.Collection<Long> orderIds);
+
+    @org.springframework.data.jpa.repository.Query("SELECT tu FROM TransportUnit tu JOIN FETCH tu.replenishment r WHERE r.id IN :replenishmentIds ORDER BY tu.createdAt ASC, tu.id ASC")
+    List<TransportUnit> findAllByReplenishmentIds(@org.springframework.data.repository.query.Param("replenishmentIds") java.util.Collection<Long> replenishmentIds);
 }

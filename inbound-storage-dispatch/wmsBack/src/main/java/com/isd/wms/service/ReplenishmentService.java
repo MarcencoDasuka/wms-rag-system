@@ -30,9 +30,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.UUID;
 
 /**
@@ -278,8 +276,14 @@ public class ReplenishmentService {
     }
 
     public List<ReplenishmentResponse> getAllReplenishments() {
-        return replenishmentRepository.findAll().stream()
-            .map(replenishmentMapper::toResponse)
+        List<Replenishment> replenishments = replenishmentRepository.findAll();
+        if (replenishments.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> replIds = replenishments.stream().map(Replenishment::getId).toList();
+        Map<Long, String> tuBarcodeMap = resolveReplenishmentTuBarcodes(replIds);
+        return replenishments.stream()
+            .map(r -> replenishmentMapper.toResponse(r, tuBarcodeMap.get(r.getId())))
             .toList();
     }
 
@@ -292,8 +296,14 @@ public class ReplenishmentService {
             request.status(),
             request.destinationLocationId()
         );
-
-        return tasks.stream().map(replenishmentMapper::toResponse).toList();
+        if (tasks.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> replIds = tasks.stream().map(Replenishment::getId).toList();
+        Map<Long, String> tuBarcodeMap = resolveReplenishmentTuBarcodes(replIds);
+        return tasks.stream()
+            .map(r -> replenishmentMapper.toResponse(r, tuBarcodeMap.get(r.getId())))
+            .toList();
     }
 
     public List<ShortageReplenishmentResponse> getShortageReplenishments() {
@@ -326,7 +336,7 @@ public class ReplenishmentService {
 
     private boolean isShortageReplenishment(Replenishment replenishment) {
         List<Allocation> allocations = replenishment.getTask()
-            .map(task -> allocationRepository.findAllByTaskId(task.getId()))
+            .map(Task::getAllocations)
             .orElse(List.of());
 
         boolean hasShortage = allocations.stream().anyMatch(allocation ->
@@ -458,5 +468,19 @@ public class ReplenishmentService {
             }
         }
         return "REPL-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase();
+    }
+
+    private Map<Long, String> resolveReplenishmentTuBarcodes(Collection<Long> replenishmentIds) {
+        if (replenishmentIds == null || replenishmentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<TransportUnit> tus = transportUnitRepository.findAllByReplenishmentIds(replenishmentIds);
+        Map<Long, String> map = new HashMap<>();
+        for (TransportUnit tu : tus) {
+            if (tu.getReplenishment() != null && tu.getReplenishment().getId() != null) {
+                map.putIfAbsent(tu.getReplenishment().getId(), tu.getBarcode());
+            }
+        }
+        return map;
     }
 }
