@@ -265,18 +265,18 @@ All 9 established security invariants were verified via code inspection and test
 
 ### Final Verdict on the 4 Questions:
 
-1. **Исправлены ли подтверждённые parser/indexing blind spots?**  
-   **ДА, ПОЛНОСТЬЮ `[VERIFIED]`.**  
-   100% методов интерфейсов (39/39), 100% методов Spring Data JPA репозиториев (78/78) и 100% вложенных типов (13/13) теперь индексируются. Общее количество чанков выросло с 1,163 до 1,261 (+98 чанков).
+1. **Have the confirmed parser/indexing blind spots been resolved?**  
+   **YES, FULLY `[VERIFIED]`.**  
+   100% of interface methods (39/39), 100% of Spring Data JPA repository methods (78/78), and 100% of inner types (13/13) are now indexed. Total chunk count increased from 1,163 to 1,261 (+98 chunks).
 
-2. **Работает ли exact symbol existence lookup корректно?**  
-   **ДА, ПОЛНОСТЬЮ `[VERIFIED]`.**  
-   Инструмент `find_symbol_declaration` продемонстрировал 100% точность обнаружения существующих символов (8/8), 100% точность отклонения несуществующих (9/9), 100% точность отклонения near-miss идентификаторов (2/2) и 100% корректность разрешения неоднозначных и перегруженных методов (5/5).
+2. **Does exact symbol existence lookup work correctly?**  
+   **YES, FULLY `[VERIFIED]`.**  
+   The `find_symbol_declaration` tool demonstrated 100% accuracy in detecting existing symbols (8/8), 100% accuracy in rejecting nonexistent symbols (9/9), 100% accuracy in rejecting near-miss identifiers (2/2), and 100% correctness in resolving ambiguous and overloaded methods (5/5).
 
-3. **Сохранился ли semantic retrieval без регрессии?**  
-   **ДА, БЕЗ РЕГРЕССИИ `[VERIFIED]`.**  
-   Метрика Hit@1 (Strict) выросла с 70.0% до 83.3%, Hit@5 достигла 100.0%, а MRR увеличился с 0.767 до 0.894. Прирост обусловлен физическим появлением в индексе ранее пропущенных чанков без изменения ранжирующего пайплайна.
+3. **Has semantic retrieval been preserved without regression?**  
+   **YES, WITHOUT REGRESSION `[VERIFIED]`.**  
+   Hit@1 (Strict) metric increased from 70.0% to 83.3%, Hit@5 reached 100.0%, and MRR increased from 0.767 to 0.894. The improvement is driven by the physical addition of previously missed chunks to the index without altering the ranking pipeline.
 
-4. **Есть ли теперь доказательства необходимости следующего retrieval improvement, или текущий baseline следует зафиксировать?**  
-   **ТЕКУЩИЙ BASELINE СЛЕДУЕТ ЗАФИКСИРОВАТЬ `[VERIFIED]`.**  
-   Разделение обязанностей между семантическим поиском (`search_wms_code`) и детерминированной верификацией объявлений (`find_symbol_declaration`) устранило ключевую причину галлюцинаций наличия символов в проиндексированном коде WMS (с сохранением зафиксированных границ: внешние зависимости Maven/NPM и динамические прокси вне зоны видимости AST-индекса). Внедрение BM25, RRF или усложнение эмбеддингов на данном этапе избыточно и не обосновано эмпирическими данными.
+4. **Is there evidence requiring a next retrieval improvement, or should the current baseline be locked?**  
+   **CURRENT BASELINE SHOULD BE LOCKED `[VERIFIED]`.**  
+   The separation of concerns between semantic search (`search_wms_code`) and deterministic declaration verification (`find_symbol_declaration`) eliminated the primary cause of symbol presence hallucinations in indexed WMS code (preserving documented boundaries: external Maven/NPM dependencies and dynamic proxies remain outside AST index scope). Introducing BM25, RRF, or complex embedding pipelines at this stage is redundant and unsupported by empirical evidence.
