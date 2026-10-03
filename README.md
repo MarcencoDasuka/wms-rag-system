@@ -1,42 +1,42 @@
 # Warehouse Management System (WMS) & Codebase RAG Platform
 
-Комплексный проект современной системы управления складом (WMS) со встроенной автономной подсистемой семантического анализа кодовой базы (Codebase RAG) через протокол Model Context Protocol (MCP).
+A comprehensive enterprise Warehouse Management System (WMS) featuring an integrated, autonomous Codebase Retrieval-Augmented Generation (Codebase RAG) subsystem communicating via the Model Context Protocol (MCP).
 
 ---
 
-## Архитектура репозитория
+## Repository Architecture
 
 ```text
 .
-├── inbound-storage-dispatch/           # Ядро WMS-системы (Clean Copy)
-│   ├── wmsBack/                        # Spring Boot 3 бэкенд (Java 21, JPA, Flyway, PostgreSQL)
-│   └── wmsFront/                       # Vue 3 фронтенд (Vite, PrimeVue, Pinia, TypeScript)
+├── inbound-storage-dispatch/           # WMS Core Subsystem
+│   ├── wmsBack/                        # Spring Boot 3 backend (Java 21, JPA, Flyway, PostgreSQL)
+│   └── wmsFront/                       # Vue 3 frontend (Vite, PrimeVue, Pinia, JavaScript)
 │
-├── wms-code-rag/                       # Контейнеризированный сервис Codebase RAG + MCP
-│   ├── src/                            # Движок RAG: AST-чанкинг, ONNX-эмбеддер, ChromaDB, реранкер
-│   ├── Dockerfile                      # Легковесный образ (Python 3.11-slim, ONNX runtime)
-│   ├── docker-compose.yml              # Запуск с volume-маунтом WMS в режиме :ro
-│   ├── requirements.txt                # Зависимости сервиса
-│   └── config.yaml                     # Настройки моделей, векторов и сервера
+├── wms-code-rag/                       # Containerized Codebase RAG + MCP Service
+│   ├── src/                            # RAG Engine: AST chunking, ONNX embedder, ChromaDB, reranker
+│   ├── Dockerfile                      # Lightweight container image (Python 3.11-slim, ONNX runtime)
+│   ├── docker-compose.yml              # Service orchestration with read-only (:ro) volume mount of WMS
+│   ├── requirements.txt                # Python package dependencies
+│   └── config.yaml                     # Model, vector, and server configuration
 │
-└── .gitignore                          # Правила исключения временных файлов и сборки
+└── .gitignore                          # Build artifacts and temporary file exclusions
 ```
 
 ---
 
-## 1. Подсистема WMS (`inbound-storage-dispatch`)
+## 1. WMS Subsystem (`inbound-storage-dispatch`)
 
-* **Backend:** Java 21, Spring Boot, Spring Data JPA, Flyway-миграции, PostgreSQL.
-* **Frontend:** Vue 3 Composition API, Vite, PrimeVue.
-* **Функционал:** Управление процессами приемки (Inbound), хранения и аллокации (Storage), комплектации и отгрузки (Dispatch).
+* **Backend:** Java 21, Spring Boot 3.4, Spring Data JPA, Flyway migrations, PostgreSQL 16.
+* **Frontend:** Vue 3 Composition API, Vite, PrimeVue, Pinia.
+* **Core Workflows:** Inbound receiving, storage allocation, auto-replenishment, order picking, and dispatch.
 
-### Запуск WMS локально
-* **Бэкенд:**
+### Running WMS Locally
+* **Backend:**
   ```bash
   cd "inbound-storage-dispatch/wmsBack"
   ./mvnw clean spring-boot:run
   ```
-* **Фронтенд:**
+* **Frontend:**
   ```bash
   cd "inbound-storage-dispatch/wmsFront"
   npm install
@@ -45,30 +45,30 @@
 
 ---
 
-## 2. Подсистема Codebase RAG & MCP (`wms-code-rag`)
+## 2. Codebase RAG & MCP Subsystem (`wms-code-rag`)
 
-Автономный сервис семантического поиска и индексации кодовой базы, разработанный в качестве внешнего когнитивного слоя (Capability Boundary) для AI-агента Antigravity.
+An autonomous semantic code search and indexing service engineered as an external cognitive capability layer (Capability Boundary) for AI development agents (e.g., Antigravity).
 
-* **Чанкинг:** С сохранением структуры классов/методов Java, блоков `<script>/<template>` Vue и DDL-миграций SQL.
-* **Эмбеддер:** `sentence-transformers/all-MiniLM-L6-v2` через оптимизированный ONNX-рантайм (CPU, ~100 МБ RAM).
-* **Векторное хранилище:** ChromaDB с косинусным расстоянием.
-* **Реранкинг:** Cross-Encoder (`ms-marco-MiniLM-L-6-v2`).
-* **Протокол:** FastMCP / Streamable HTTP (спецификация 2024-11-05).
+* **Chunking:** Syntax-aware splitting preserving Java class/method structures, Vue `<script>/<template>` blocks, and SQL DDL migrations.
+* **Embedder:** `sentence-transformers/all-MiniLM-L6-v2` executed via optimized ONNX Runtime (CPU, ~100 MB RAM footprint).
+* **Vector Store:** ChromaDB with persistent HNSW index and cosine distance metric.
+* **Reranking:** Cross-Encoder (`ms-marco-MiniLM-L-6-v2`).
+* **Protocol:** FastMCP / Streamable HTTP (spec version 2024-11-05).
 
-### Запуск RAG-контейнера
+### Running the RAG Container
 ```bash
 cd wms-code-rag
 docker compose up -d
 ```
-Сервер поднимается на порту `8000` и доступен по адресу:
+The server binds to port `8000`:
 * Healthcheck: `http://localhost:8000/health`
 * MCP Streamable HTTP: `http://localhost:8000/sse`
 
 ---
 
-## 3. Подключение к AI-агенту (Antigravity)
+## 3. Connecting to AI Agent (Antigravity)
 
-Сервер регистрируется в конфигурации MCP (`~/.gemini/config/mcp_config.json`):
+Register the MCP server in `~/.gemini/config/mcp_config.json`:
 ```json
 {
   "mcpServers": {
@@ -79,22 +79,21 @@ docker compose up -d
 }
 ```
 
-### Доступные MCP-инструменты агента
-* `search_wms_code(query, top_n)` — семантический поиск по Java и Vue коду.
-* `find_symbol_declaration(symbol_name)` — детерминированная проверка объявления точного символа в проиндексированном коде (классы, интерфейсы, методы, рекорды, вложенные типы).
-* `get_entity_and_schema(table_or_entity)` — получение структуры таблиц, DDL и JPA-сущностей.
-* `search_wms_security(topic)` — специализированный поиск по безопасности (JWT, PreAuthorize, роли).
-* `get_rag_status()` — метрики и статус векторного хранилища.
-* `reindex_wms_codebase()` — полная переиндексация кодовой базы.
+### Available Agent MCP Tools
+* `search_wms_code(query, top_n)` — Semantic search across Java and Vue codebases.
+* `find_symbol_declaration(symbol_name)` — Deterministic verification of exact symbol declarations (classes, interfaces, methods, records, inner types) without fuzzy matching.
+* `get_entity_and_schema(table_or_entity)` — Retrieve table DDL schemas, Flyway migrations, and JPA entity definitions.
+* `search_wms_security(topic)` — Targeted security search (`@PreAuthorize`, JWT filters, role checks, CORS).
+* `get_rag_status()` — Vector database metrics, indexed chunk counts, and model status.
+* `reindex_wms_codebase()` — Trigger full reindexing of the WMS codebase after modifications.
 
 ---
 
-## 4. Документация проекта
+## 4. Project Documentation
 
-* [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md) — архитектурный реестр решений, состязательный аудит (S-4..F-1), метрики (207 тестов) и открытые дефекты ядра WMS.
-* [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — архитектурный реестр решений, AST-парсинг и безопасность подсистемы Code RAG (29 тестов).
-* [`docs/RAG_POST_FIX_EVALUATION.md`](docs/RAG_POST_FIX_EVALUATION.md) — итоговый эмпирический отчёт верификации качества поиска (1,261 чанк, Hit@1 83.3%).
-* [`docs/archive/`](docs/archive/README.md) — архив завершённых технических аудитов, исторического объединённого реестра и первичных замеров.
-* [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — спецификация домена и REST API склада WMS.
-* [`wms-code-rag/README.md`](wms-code-rag/README.md) — автономное руководство по RAG MCP сервису.
-
+* [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md) — Architectural registry, adversarial audit verification (S-4..F-1), test metrics (245 automated tests), and remediated core defects/gaps (DEF-01..05, GAP-01..04).
+* [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — Architecture registry, AST parsing, and security boundary of the Code RAG subsystem (29 tests).
+* [`docs/RAG_POST_FIX_EVALUATION.md`](docs/RAG_POST_FIX_EVALUATION.md) — Empirical retrieval evaluation benchmark (1,261 chunks, Hit@1 83.3%).
+* [`docs/archive/`](docs/archive/README.md) — Archive of historical technical audits, unified registers, and initial evaluation benchmarks.
+* [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — Domain specification, entity lifecycle, and REST API documentation for WMS.
+* [`wms-code-rag/README.md`](wms-code-rag/README.md) — Standalone guide for the RAG MCP service.

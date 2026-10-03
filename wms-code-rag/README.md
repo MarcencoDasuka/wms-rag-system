@@ -1,14 +1,14 @@
 # WMS Codebase RAG MCP Server
 
-Интеллектуальная система семантического поиска и индексации кодовой базы WMS (`inbound-storage-dispatch`) через протокол **Model Context Protocol (MCP)** для AI-агентов разработки.
+An intelligent semantic code search and indexing system for the WMS codebase (`inbound-storage-dispatch`), communicating via the **Model Context Protocol (MCP)** for AI developer agents.
 
 ---
 
-## 1. Архитектура и поток данных
+## 1. Architecture & Data Flow
 
 ```mermaid
 flowchart TD
-    subgraph Host["Среда разработки (Antigravity / IDE)"]
+    subgraph Host["Host Environment (Antigravity / IDE)"]
         Agent["AI Coding Agent (Antigravity)"]
     end
 
@@ -16,7 +16,7 @@ flowchart TD
         Agent <-->|Tools: search_wms_code, get_entity_and_schema| MCPServer["FastMCP Server (src/mcp_server.py)"]
     end
 
-    subgraph DockerContainer["Docker Контейнер: wms-code-rag-server"]
+    subgraph DockerContainer["Docker Container: wms-code-rag-server"]
         MCPServer --> Retriever["CodeRetriever (src/retriever.py)"]
         Retriever --> Embedder["Embedder: all-MiniLM-L6-v2 (src/embedder.py)"]
         Retriever --> VectorDB[("ChromaDB HNSW Index (data/chroma)")]
@@ -27,7 +27,7 @@ flowchart TD
         Embedder --> VectorDB
     end
 
-    subgraph Codebase["Целевой репозиторий WMS (/workspace/wms)"]
+    subgraph Codebase["Target WMS Repository (/workspace/wms)"]
         Java["wmsBack: Java Services, Controllers, Entities"]
         SQL["Flyway Migrations (db/migration/*.sql)"]
         Vue["wmsFront: Vue 3 Components, Pinia, API"]
@@ -42,60 +42,60 @@ flowchart TD
 
 ---
 
-## 2. Структура проекта и назначение файлов
+## 2. Project Structure & File Index
 
-```
+```text
 wms-code-rag/
-├── Dockerfile                   # Сборка контейнера на базе python:3.11-slim (non-root appuser)
-├── docker-compose.yml           # Декларация сервиса с volume-монтированием WMS кодовой базы
-├── requirements.txt             # Зависимости: mcp, chromadb, sentence-transformers, torch, pydantic
-├── config.yaml                  # Конфигурация путей, моделей эмбеддингов, реранкера и портов
-├── run_docker.bat               # Запуск в Docker в один клик
-├── run_local_sse.bat            # Запуск локально по HTTP/SSE
-├── run_local_stdio.bat          # Запуск локально через stdio
+├── Dockerfile                   # Container build based on python:3.11-slim (non-root appuser)
+├── docker-compose.yml           # Service orchestration with read-only WMS codebase volume mount
+├── requirements.txt             # Dependencies: mcp, chromadb, sentence-transformers, torch, pydantic
+├── config.yaml                  # Configuration for paths, embedding models, reranker, and network ports
+├── run_docker.bat               # One-click Docker container launcher
+├── run_local_sse.bat            # Local execution launcher over HTTP/SSE
+├── run_local_stdio.bat          # Local execution launcher over stdio
 └── src/
     ├── __init__.py
-    ├── config.py                # Pydantic-модели валидации настроек + env overrides
-    ├── chunker.py               # Интеллектуальный чанкер для кода (Java, SQL, Vue, Markdown)
-    ├── embedder.py              # Векторизация текста (SentenceTransformers + потокобезопасный LRU-кэш)
-    ├── vector_store.py          # Интеграция с постоянным хранилищем ChromaDB (HNSW, косинусная метрика)
-    ├── reranker.py              # Кросс-энкодер для переранжирования кандидатов (высокая точность)
-    ├── indexer.py               # Сканер кодовой базы (парсинг файлов, генерация чанков и сохранение)
-    ├── retriever.py             # Оркестратор: Запрос -> Векторный поиск -> Фильтры -> Реранкинг
-    └── mcp_server.py            # FastMCP сервер с регистрацией инструментов для AI-агента
+    ├── config.py                # Pydantic validation models for settings + env overrides
+    ├── chunker.py               # Syntax-aware code chunker (Java, SQL, Vue, Markdown)
+    ├── embedder.py              # Text vectorization (SentenceTransformers + thread-safe LRU cache)
+    ├── vector_store.py          # Persistent ChromaDB integration (HNSW index, cosine distance)
+    ├── reranker.py              # Cross-Encoder for candidate reranking (high-precision ranking)
+    ├── indexer.py               # Codebase scanner (file parsing, chunk generation, and persistence)
+    ├── retriever.py             # Orchestrator: Query -> Vector Search -> Filters -> Reranking
+    └── mcp_server.py            # FastMCP server with tool registrations for AI agents
 ```
 
 ---
 
-## 3. Доступные MCP-инструменты (Tools)
+## 3. Available MCP Tools
 
-AI-агент вызывает эти инструменты в фоне при решении задач:
+AI agents invoke these tools in the background during coding and inspection tasks:
 
 1. `search_wms_code(query: str, top_n: int = 4)`  
-   Семантический поиск по Java-сервисам, контроллерам, Vue-компонентам и конфигурациям. Возвращает точный файл, строки и исходный код.
+   Semantic search across Java services, controllers, Vue components, and configurations. Returns exact file path, line numbers, and relevant code chunk.
 2. `find_symbol_declaration(symbol_name: str)`  
-   Детерминированная проверка объявления точного символа в проиндексированном коде (интерфейсы, классы, методы, рекорды, вложенные типы). Не использует нечеткое сопоставление (fuzzy) и защищен от галлюцинаций существования.
+   Deterministic verification of exact symbol declarations in indexed code (interfaces, classes, methods, records, inner types). Avoids fuzzy false positives and protects against existence hallucinations.
 3. `get_entity_and_schema(table_or_entity: str)`  
-   Поиск DDL-схемы, миграций Flyway и связей таблиц для конкретной сущности базы данных.
+   Retrieves DDL table schemas, Flyway migrations, and relational mappings for a specific database entity.
 4. `search_wms_security(topic: str)`  
-   Специализированный поиск по безопасности: `@PreAuthorize`, фильтры JWT, проверка ролей, загрузка файлов, CORS.
+   Targeted security search: `@PreAuthorize`, JWT filters, role validations, file uploads, CORS configuration.
 5. `get_rag_status()`  
-   Возвращает текущую статистику индекса (количество проиндексированных чанков, путь, статус моделей).
+   Returns live vector index metrics (indexed chunk counts, database path, active model status).
 6. `reindex_wms_codebase()`  
-   Принудительное полное переиндексирование репозитория WMS при внесении масштабных изменений.
+   Forces full reindexing of the WMS repository after major codebase modifications.
 
 ---
 
-## 4. Как запустить
+## 4. How to Run
 
-### Вариант 1: В Docker (Рекомендуемый)
-Дважды кликните по `run_docker.bat` или выполните:
+### Option 1: In Docker (Recommended)
+Double-click `run_docker.bat` or execute:
 ```powershell
 docker compose up -d --build
 ```
-Сервер запустится в изолированном контейнере на порту `8000`. При первом запуске он автоматически проиндексирует репозиторий WMS.
+The server starts inside an isolated container on port `8000`. On first launch, it automatically indexes the target WMS repository.
 
-### Вариант 2: Локально через Python
+### Option 2: Locally via Python
 ```powershell
 pip install -r requirements.txt
 python src/mcp_server.py --transport sse --host 127.0.0.1 --port 8000 --auto-index
@@ -103,17 +103,17 @@ python src/mcp_server.py --transport sse --host 127.0.0.1 --port 8000 --auto-ind
 
 ---
 
-## 5. Руководство по анализу чужого RAG / MCP кода
+## 5. Architectural Guide for Auditing External RAG / MCP Code
 
-Когда вы открываете любой чужой проект с RAG или MCP, используйте следующий чек-лист:
+When inspecting an external RAG or MCP implementation, use this reference checklist:
 
-1. **Где точка входа (Entrypoint)?**
-   * В MCP-проектах ищите инициализацию `FastMCP(...)` или `Server(...)` — там зарегистрированы функции с декоратором `@mcp.tool()`. Именно они определяют возможности сервера.
-2. **Как устроен чанкинг (Chunking Strategy)?**
-   * Обычный `RecursiveCharacterTextSplitter` ломает код. В зрелых проектах ищите специализированные сплиттеры по AST, регуляркам или сигнатурам функций (`chunker.py`).
-3. **Какая модель эмбеддингов (Embeddings)?**
-   * Обращайте внимание на размерность векторов (dimension) и поддерживаемые языки. Для кода отлично подходят `sentence-transformers/all-MiniLM-L6-v2` или `bge-m3`.
-4. **Есть ли реранкер (Reranker)?**
-   * Простой векторный поиск часто выдает шум. Наличие Cross-Encoder (`reranker.py`) — признак качественного Production-grade RAG.
-5. **Где хранятся векторы (Persistence)?**
-   * Проверьте, персистентна ли база (например, `ChromaDB PersistentClient` с папкой на диске или `pgvector`), иначе при перезапуске контейнера придется заново эмбеддить весь код.
+1. **Where is the entrypoint?**
+   * In MCP projects, locate the `FastMCP(...)` or `Server(...)` initialization — look for functions decorated with `@mcp.tool()`. These define the server's capability boundaries.
+2. **What is the chunking strategy?**
+   * Generic `RecursiveCharacterTextSplitter` breaks code syntax boundaries. Production-grade projects use AST, regex tokenizers, or signature-preserving splitters (`chunker.py`).
+3. **Which embedding model is used?**
+   * Check embedding dimensionality and supported languages. For source code, `sentence-transformers/all-MiniLM-L6-v2` or `bge-m3` offer solid accuracy-to-latency ratios.
+4. **Is a reranker included?**
+   * Dense vector search alone frequently introduces noise. A Cross-Encoder reranker (`reranker.py`) is standard for high-precision retrieval.
+5. **Where are embeddings persisted?**
+   * Ensure vector storage is persisted to disk (e.g., `ChromaDB PersistentClient` with a dedicated directory or `pgvector`), otherwise restarting the process requires re-indexing the entire codebase.

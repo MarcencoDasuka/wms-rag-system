@@ -101,6 +101,7 @@ The core WMS backend enforces strict transactional, concurrency, and security in
 
 | Invariant | Enforcement Mechanism | Architectural Guarantee |
 |-----------|-----------------------|-------------------------|
+| **Stock Reservation & Lock Ordering** | Pessimistic write locking (`findByIdWithLock`, `findAllByIdInWithLock` with `ORDER BY s.id ASC`) + DB check | Eliminates deadlocks between allocations and inventory adjustments, prevents over-reservation |
 | **Order Picking Concurrency** | Pessimistic write locking on `OrderLine` (`findByTaskIdWithLock`) | Serializes concurrent allocation completions, preventing lost updates on `deliveredQuantity` |
 | **Location Monopoly** | Partial unique index (`uk_stocks_active_location`) + row lock on `Location` | Guarantees that a single warehouse location can never hold multiple distinct product types |
 | **Allocation vs Adjustment Race Protection** | Pessimistic write locks (`findByIdWithLock`, `findActiveByStockIdWithLock`) | Prevents phantom picks on canceled allocations during stock adjustments |
@@ -151,49 +152,49 @@ For full architectural details and code snippets, see the [WMS Architecture and 
 ## Project Structure
 
 ```text
-inbound-storage-dispatch/                       # Root-ul proiectului (Sistem WMS)
-├── wmsBack/                                    # Aplicația Backend (Spring Boot)
-│   ├── src/                                    # Codul sursă al backend-ului
-│   │   ├── main/                               # Codul de producție al aplicației
-│   │   │   ├── java/com/isd/wms/               # Pachetul principal Java
-│   │   │   │   ├── config/                     # Configurări sistem (CORS, Swagger, Beans)
-│   │   │   │   ├── controller/                 # Endpoint-urile REST expuse către frontend
-│   │   │   │   ├── dto/                        # Obiecte pentru transferul de date (DTO)
-│   │   │   │   ├── entity/                     # Modelele bazei de date (Entități JPA)
-│   │   │   │   ├── enums/                      # Enumerări globale (Role, TaskStatus, etc.)
-│   │   │   │   ├── exception/                  # Managementul erorilor și excepții custom
-│   │   │   │   ├── job/                        # Task-uri programate automat (CRON jobs)
-│   │   │   │   ├── mapper/                     # Conversii Entități ↔ DTO-uri (MapStruct)
-│   │   │   │   ├── repository/                 # Interfețe pentru baza de date (Spring Data JPA)
-│   │   │   │   ├── security/                   # Autentificare, autorizare, JWT și config securitate
-│   │   │   │   └── service/                    # Logica de business centrală a backend-ului
-│   │   │   └── resources/                      # Fișiere de configurare și resurse statice
-│   │   │       ├── application.properties      # Proprietățile principale Spring Boot
-│   │   │       ├── logback-spring.xml          # Configurarea nivelelor de logging
-│   │   │       └── db/migration/               # Scripturile pentru baza de date (Flyway)
-│   │   └── test/                               # Testele unitare (JUnit/Mockito)
-│   ├── pom.xml                                 # Fișierul de configurare Maven (dependențe)
-│   └── mvnw                                    # Scriptul Maven Wrapper pentru Linux/macOS
+inbound-storage-dispatch/                       # Project root (WMS System)
+├── wmsBack/                                    # Backend application (Spring Boot)
+│   ├── src/                                    # Backend source code
+│   │   ├── main/                               # Production application code
+│   │   │   ├── java/com/isd/wms/               # Main Java package
+│   │   │   │   ├── config/                     # System configuration (CORS, Swagger, Beans)
+│   │   │   │   ├── controller/                 # REST endpoints exposed to frontend
+│   │   │   │   ├── dto/                        # Data Transfer Objects (DTO)
+│   │   │   │   ├── entity/                     # Database models (JPA Entities)
+│   │   │   │   ├── enums/                      # Global enumerations (Role, TaskStatus, etc.)
+│   │   │   │   ├── exception/                  # Error handling and custom exceptions
+│   │   │   │   ├── job/                        # Scheduled tasks (CRON jobs)
+│   │   │   │   ├── mapper/                     # Entity ↔ DTO mappings (MapStruct)
+│   │   │   │   ├── repository/                 # Database repositories (Spring Data JPA)
+│   │   │   │   ├── security/                   # Authentication, authorization, JWT, and security config
+│   │   │   │   └── service/                    # Core business logic services
+│   │   │   └── resources/                      # Configuration files and static resources
+│   │   │       ├── application.properties      # Main Spring Boot properties
+│   │   │       ├── logback-spring.xml          # Logging level configuration
+│   │   │       └── db/migration/               # Database migration scripts (Flyway)
+│   │   └── test/                               # Unit & integration tests (JUnit, Mockito)
+│   ├── pom.xml                                 # Maven configuration file (dependencies)
+│   └── mvnw                                    # Maven Wrapper script for Linux/macOS
 │
-├── wmsFront/                                   # Aplicația Frontend (Vue 3 + Vite)
-│   ├── src/                                    # Codul sursă al interfeței grafice
-│   │   ├── api/                                # Instanțele Axios și apelurile HTTP
-│   │   ├── assets/                             # Resurse statice (imagini, stiluri CSS)
-│   │   ├── components/                         # Componente Vue reutilizabile
-│   │   ├── composables/                        # Funcții reutilizabile (Composition API)
-│   │   ├── layouts/                            # Structurile de pagină (Supervisor / Operator)
-│   │   ├── router/                             # Configurarea rutelor (Vue Router)
-│   │   ├── services/                           # Servicii frontend (procesarea datelor din API)
-│   │   ├── stores/                             # Managementul stării globale (Pinia / Vuex)
-│   │   ├── utils/                              # Funcții utilitare (formatări, validări)
-│   │   └── views/                              # Paginile principale (Dashboard, Inventory, etc.)
-│   ├── package.json                            # Dependențele NPM și scripturile de pornire
-│   └── vite.config.js                          # Configurarea tool-ului de build Vite
+├── wmsFront/                                   # Frontend application (Vue 3 + Vite)
+│   ├── src/                                    # Frontend source code
+│   │   ├── api/                                # Axios instances and HTTP interceptors
+│   │   ├── assets/                             # Static assets (images, CSS styles)
+│   │   ├── components/                         # Reusable Vue components
+│   │   ├── composables/                        # Reusable composable functions (Composition API)
+│   │   ├── layouts/                            # Page layout structures (Supervisor / Operator)
+│   │   ├── router/                             # Route configuration (Vue Router)
+│   │   ├── services/                           # Frontend services (API data processing)
+│   │   ├── stores/                             # Global state management (Pinia)
+│   │   ├── utils/                              # Utility functions (formatting, validation, sanitization)
+│   │   └── views/                              # Main views/pages (Dashboard, Inventory, Orders, etc.)
+│   ├── package.json                            # NPM dependencies and scripts
+│   └── vite.config.js                          # Vite build tool configuration
 │
-├── logs/                                       # Logurile aplicației generate la rulare
-├── .env                                        # Fișierul pentru variabilele de mediu (parole, chei)
-├── docker-compose.yaml                         # Configurarea Docker pentru ridicarea containerelor
-└── README.md                                   # Documentația principală a proiectului
+├── logs/                                       # Application runtime logs
+├── .env                                        # Environment variables file (passwords, secrets)
+├── docker-compose.yaml                         # Docker container orchestration configuration
+└── README.md                                   # Main WMS documentation
 ```
 
 ---
@@ -409,18 +410,26 @@ Swagger UI: http://localhost:8080/swagger-ui/index.html
 
 ## Testing
 
-### Run all tests:
+### Backend Tests:
 
-```text
+```bash
 cd wmsBack
 ./mvnw test
 ```
 
+### Frontend Tests:
+
+```bash
+cd wmsFront
+node --test test/*.test.js
+```
+
 ### Test Categories
-- **Service Layer**: `ProductServiceTest`, `InventoryServiceTest`, `TaskServiceTest`
-- **Controller Layer**: `ProductControllerTest`, `AuthControllerTest`
-- **Repository Layer**: `ProductRepositoryTest`, `InventoryRepositoryTest`
-- **Integration Tests**: `WarehouseWorkflowIntegrationTest`
+- **Service Layer**: `ProductServiceTest`, `InventoryServiceTest`, `TaskServiceTest`, `JwtUtilTest`
+- **Controller Layer**: `ProductControllerTest`, `AuthControllerTest`, `GlobalExceptionHandlerTest`
+- **Repository Layer**: `ProductRepositoryTest`, `InventoryRepositoryTest`, `StockRepositoryTest`
+- **Integration & Concurrency Tests**: `StockReservationConcurrencyIntegrationTest`, `StockLockOrderingConcurrencyIntegrationTest`, `AllocationAdjustmentConcurrencyIntegrationTest`, `LogicIdUniquenessIntegrationTest`, `NPlusOneQueryPerformanceIntegrationTest`
+- **Frontend Adversarial Tests**: `def01_login_401_interceptor.test.js`, `def02_user_id_dataflow.test.js`, `def04_open_redirect.test.js`, `def05_conflict_event.test.js`, `interceptors.test.js`, `notificationService.test.js`
 
 ---
 
@@ -464,7 +473,7 @@ cd wmsBack
 1. User registers
 2. System sends email with token
 3. User clicks confirmation link
-4. User confirm a valid strong password
+4. User confirms a valid strong password
 5. Account activated (redirect to login page)
 
 ---

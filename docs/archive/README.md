@@ -1,26 +1,26 @@
-# Archive Documentation / Архив документации
+# Archive Documentation
 
-Этот каталог содержит исторические аналитические и верификационные артефакты, созданные в ходе разработки, аудита безопасности и первичной оценки качества системы WMS Codebase RAG.
+This directory contains historical analytical and verification artifacts produced during the initial development, security audit, and retrieval evaluation of the WMS Codebase RAG system.
 
-Данные документы сохранены для обеспечения воспроизводимости, истории аудита (compliance) и ретроспективного анализа. Для работы с актуальным состоянием проекта используйте ссылки ниже.
+These documents are preserved to maintain reproducibility, compliance audit history, and retrospective analysis. For the current active project state, refer to the links below.
 
 ---
 
-## Связь с актуальной документацией
+## Relationship to Active Documentation
 
-| Архивный документ | Назначение / Описание | Актуальный документ взамен |
+| Archived Document | Purpose / Description | Active Replacement |
 | :--- | :--- | :--- |
-| [`WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) | Исторический объединенный реестр 29 решений и Roadmap 8 дефектов аудита. Разделен на два специализированных руководства. | [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](../WMS_FIXES_AND_ARCHITECTURE_GUIDE.md),<br>[`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](../RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) |
-| [`WMS_CODE_RAG_TECHNICAL_AUDIT.md`](WMS_CODE_RAG_TECHNICAL_AUDIT.md) | Первичный архитектурный и security-аудит (дефекты 01–11). Все замечания устранены и покрыты тестами. | [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](../RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) |
-| [`RAG_RETRIEVAL_EVALUATION.md`](RAG_RETRIEVAL_EVALUATION.md) | Первый замер качества поиска на 36 запросах (индекс 1,163 чанка, до AST-парсера Java). | [`docs/RAG_POST_FIX_EVALUATION.md`](../RAG_POST_FIX_EVALUATION.md) |
-| [`RAG_RETRIEVAL_EVALUATION_REVIEW.md`](RAG_RETRIEVAL_EVALUATION_REVIEW.md) | Методологический аудит («Adversarial Review») первого замера, обосновавший разделение Strict/Lenient метрик. | [`docs/RAG_POST_FIX_EVALUATION.md`](../RAG_POST_FIX_EVALUATION.md) |
+| [`WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](WMS_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) | Historical unified registry of 29 decisions and 8 audit defect roadmaps. Deprecated and split into two specialized guides. | [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](../WMS_FIXES_AND_ARCHITECTURE_GUIDE.md),<br>[`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](../RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) |
+| [`WMS_CODE_RAG_TECHNICAL_AUDIT.md`](WMS_CODE_RAG_TECHNICAL_AUDIT.md) | Initial architectural and security audit (Defects 01–11). All findings remediated and covered by tests. | [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](../RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) |
+| [`RAG_RETRIEVAL_EVALUATION.md`](RAG_RETRIEVAL_EVALUATION.md) | First search retrieval benchmark across 36 queries (1,163 chunks index, prior to Java AST parser). | [`docs/RAG_POST_FIX_EVALUATION.md`](../RAG_POST_FIX_EVALUATION.md) |
+| [`RAG_RETRIEVAL_EVALUATION_REVIEW.md`](RAG_RETRIEVAL_EVALUATION_REVIEW.md) | Methodological adversarial review of the first evaluation, establishing Strict vs. Lenient metric separation. | [`docs/RAG_POST_FIX_EVALUATION.md`](../RAG_POST_FIX_EVALUATION.md) |
 
 ---
 
-## Актуальный контур документации
-1. [`README.md`](../../README.md) — обзор монорепозитория и точка входа.
-2. [`wms-code-rag/README.md`](../../wms-code-rag/README.md) — руководство по MCP-серверу RAG, инструменты и запуск.
-3. [`inbound-storage-dispatch/README.md`](../../inbound-storage-dispatch/README.md) — спецификация целевой системы WMS (доменные процессы, REST API, миграции).
-4. [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](../WMS_FIXES_AND_ARCHITECTURE_GUIDE.md) — актуальный реестр архитектурных решений, верификация глобального аудита, метрики и новые дефекты ядра WMS.
-5. [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](../RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — актуальный реестр архитектурных решений, безопасность и AST-парсинг подсистемы Code RAG.
-6. [`docs/RAG_POST_FIX_EVALUATION.md`](../RAG_POST_FIX_EVALUATION.md) — подтвержденный верификационный baseline качества поиска (1,261 чанк, Hit@1 83.3%).
+## Active Documentation Index
+1. [`README.md`](../../README.md) — Monorepo overview and root entry point.
+2. [`wms-code-rag/README.md`](../../wms-code-rag/README.md) — RAG MCP server guide, tools, and execution workflows.
+3. [`inbound-storage-dispatch/README.md`](../../inbound-storage-dispatch/README.md) — WMS domain specification (workflows, REST API, migrations).
+4. [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](../WMS_FIXES_AND_ARCHITECTURE_GUIDE.md) — Active architectural decision registry, global audit verification, test metrics, and remediated core defects/gaps.
+5. [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](../RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — Active architectural decision registry, AST parsing, and security boundary for Code RAG.
+6. [`docs/RAG_POST_FIX_EVALUATION.md`](../RAG_POST_FIX_EVALUATION.md) — Verified post-fix retrieval quality benchmark (1,261 chunks, Hit@1 83.3%).
