@@ -265,7 +265,7 @@
 | **D-4** | Missing FK indexes across warehouse tables | Performance | `[VERIFIED]` | `eb1b6b5` / 100% покрытие (20/20 внешних ключей поддержаны B-Tree индексами) |
 | **D-5** | N+1 query problem | Performance | `[PARTIALLY VERIFIED]` | `5f0f112` / Запросы заказов оптимизированы; скейлинг $O(N/50)$; складские остатки не покрыты |
 | **F-1** | Centralized 401/403/409 interceptors in frontend | Frontend UX | `[PARTIALLY VERIFIED]` | `aed97d3` / Интерцепторы активны; ложный логаут на 401 логина, двойной Toast, Open Redirect |
-| **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[CONFIRMED DEFECT]` | `interceptors.js` / При ошибке 401 на `/auth/login` вызывается `logout()` и ложный редирект |
+| **DEF-01** | False session expiry on bad login credentials | Frontend / Auth | `[VERIFIED]` | `interceptors.js` / Предикат `isAuthLoginRequest` исключает 401 при логине из сброса сессии, 4 теста `def01_login_401_interceptor.test.js` |
 | **DEF-02** | User ID storage desync & fallback to mock IDs | Frontend / Data | `[VERIFIED]` | `useCurrentUserId.js`, `OrderWithLinesForm.vue`, `InventoryView.vue`, `auth.js` / Legacy localStorage и mock ID устранены, fail-closed валидация, 8 тестов `def02_user_id_dataflow.test.js` |
 | **DEF-03** | Index case mismatch (`lower` vs `upper`) | Backend / DB | `[CONFIRMED DEFECT]` | `V35` / Hibernate генерирует `upper(logic_id)`, приводя к Seq Scan мимо индекса БД |
 | **DEF-04** | Unvalidated open redirect in LoginView | Frontend / Sec | `[VERIFIED]` | `redirectSanitizer.js`, `LoginView.vue` / Канонизация и валидация внутренних путей, отсечение //, схемы, backslash и encoded, 7 тестов `def04_open_redirect.test.js` |
@@ -413,29 +413,24 @@
 ---
 
 ### 4.1. [DEF-01] Ложное истечение сессии при неверных учетных данных в форме логина
+* **Статус:** `[VERIFIED]`
 * **Критичность:** Medium
 * **Домен:** Frontend UX / Authentication
-* **Затронутые компоненты:** `inbound-storage-dispatch/wmsFront/src/api/interceptors.js` (строки 46–60), `src/views/auth/LoginView.vue`.
+* **Затронутые компоненты:** `inbound-storage-dispatch/wmsFront/src/api/interceptors.js` (строки 16–50, 125–135), `src/views/auth/LoginView.vue`.
 * **Суть проблемы:**
-  Глобальный перехватчик ответов Axios перехватывает **любой** статус `401 Unauthorized` без проверки URL запроса. Когда неавторизованный пользователь вводит неверный пароль на странице логина (`POST /api/auth/login`), бэкенд возвращает `401 Unauthorized`. Перехватчик интерпретирует это как протухшую сессию ранее авторизованного пользователя:
-  1. Вызывает `authStore.logout()`, пытаясь очистить несуществующую сессию.
-  2. Выполняет `router.push('/login?sessionExpired=true')`.
-  3. Выводит ложное системное уведомление «Session expired. Please log in again».
-  В результате ошибка валидации формы («Неверный логин или пароль») затирается сообщением об истечении сессии, дезориентируя пользователя.
-* **Ошибочный код (`interceptors.js`):**
-  ```javascript
-  if (status === 401) {
-    if (!isRedirectingToLogin) {
-      isRedirectingToLogin = true
-      authStore.logout() // Ложный вызов на странице логина
-      notify.warn('Session expired. Please log in again.', 'Unauthorized')
-      router.push({ path: '/login', query: { sessionExpired: 'true' } })
-    }
-    return Promise.reject(error)
-  }
-  ```
-* **План устранения:**
-  Добавить проверку URL входящего запроса: если `error.config.url` содержит `/auth/login`, пропускать вызов `authStore.logout()` и редирект, позволяя форме `LoginView.vue` штатно отобразить сообщение об ошибке аутентификации.
+  Глобальный перехватчик ответов Axios перехватывал **любой** статус `401 Unauthorized` без проверки URL запроса. Когда неавторизованный пользователь вводил неверный пароль на странице логина (`POST /api/auth/login`), бэкенд возвращал `401 Unauthorized`. Перехватчик вызывал `authStore.logout()`, показывал сообщение «Session expired. Please log in again» и редиректил на `/login?sessionExpired=true`, затирая сообщение об ошибке аутентификации формы логина.
+* **Как устранено:**
+  1. Реализована функция `isAuthLoginRequest(config)`, надежно идентифицирующая запросы аутентификации на эндпоинт входа (`POST /auth/login`, `POST /api/auth/login`, абсолютные URL).
+  2. В `handle401Unauthorized` и `setupInterceptors` внедрена защита: при `isAuthLoginRequest(...) === true` обработчик немедленно возвращает управление, не вызывая `logout()`, не выводя ложный Toast «Session Expired» и не выполняя редирект.
+  3. Ошибка `401` беспрепятственно передается в компонент `LoginView.vue`, где штатно отображается понятное пользователю сообщение («Incorrect username or password»).
+  4. Для защищенных эндпоинтов (`/orders`, `/inventory`, `/auth/me` и др.) полностью сохранен существующий механизм инвалидации протухшей сессии.
+* **Верификация:**
+  Создан регрессионный тестовый набор `test/def01_login_401_interceptor.test.js` (4 теста):
+  - Проверена точная идентификация запросов через `isAuthLoginRequest` (POST, пути, query params, регистры, защита от ложных срабатываний на `/auth/me`, `/auth/logout`, `/auth/verify`).
+  - Проверено отсутствие вызова `authStore.logout()`, уведомлений и навигации при 401 на `/auth/login`.
+  - Проверена корректная работа сессионного сброса при 401 на защищенных эндпоинтах (`/v1/orders/extended`, `/inventory`, `/auth/me`, `/inventory/add`).
+  - Проверена интеграция с интерцептором Axios `setupInterceptors`.
+  - Все тесты успешно пройдены.
 
 ---
 

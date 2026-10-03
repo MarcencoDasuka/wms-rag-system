@@ -6,7 +6,43 @@ let isHandling401 = false
 let last401Timestamp = 0
 const DEBOUNCE_401_MS = 2000
 
+export const _reset401Debounce = () => {
+  isHandling401 = false
+  last401Timestamp = 0
+}
+
+/**
+ * Determines if a request was an authentication attempt to the login endpoint.
+ * Remediates DEF-01: prevents credential rejection from triggering session expiry flow.
+ *
+ * @param {object} [config]
+ * @returns {boolean}
+ */
+export const isAuthLoginRequest = (config) => {
+  if (!config || !config.url) return false
+  const method = (config.method || 'get').toLowerCase()
+  if (method !== 'post') return false
+
+  try {
+    if (/^https?:\/\//i.test(config.url)) {
+      const parsed = new URL(config.url)
+      const pathname = parsed.pathname.replace(/\/+$/, '')
+      return pathname.endsWith('/auth/login')
+    }
+  } catch {
+    // Ignore URL parse error and fall back to string parsing
+  }
+
+  const cleanPath = config.url.split('?')[0].split('#')[0].replace(/\/+$/, '')
+  return cleanPath.endsWith('/auth/login') || cleanPath === 'auth/login'
+}
+
 export const handle401Unauthorized = async (error, { getAuthStore, router, notifyError } = {}) => {
+  // DEF-01: Rejecting invalid login credentials must NOT trigger session expiration or logout
+  if (isAuthLoginRequest(error?.config)) {
+    return
+  }
+
   const now = Date.now()
   if (isHandling401 && now - last401Timestamp < DEBOUNCE_401_MS) {
     return
@@ -94,7 +130,9 @@ export const setupInterceptors = (apiClient, { getAuthStore, router, notifyError
       if (error && error.response) {
         const status = error.response.status
         if (status === 401) {
-          await handle401Unauthorized(error, { getAuthStore, router, notifyError })
+          if (!isAuthLoginRequest(error.config)) {
+            await handle401Unauthorized(error, { getAuthStore, router, notifyError })
+          }
         } else if (status === 403) {
           handle403Forbidden(error, { notifyError })
         } else if (status === 409) {
