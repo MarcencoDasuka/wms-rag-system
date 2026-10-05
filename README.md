@@ -91,9 +91,10 @@ Register the MCP server in `~/.gemini/config/mcp_config.json`:
 
 ## 4. Project Documentation
 
-* [`docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md) — Architectural registry, adversarial audit verification (S-4..F-1), test metrics (245 automated tests), and remediated core defects/gaps (DEF-01..05, GAP-01..04).
+* [`docs/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](docs/WMS_ADVERSARIAL_VERIFICATION_REPORT.md) — **Primary Source of Truth:** Independent adversarial findings verification pass over DEF-01..DEF-26 and baseline remediation items.
+* [`docs/WMS_REMEDIATION_ROADMAP.md`](docs/WMS_REMEDIATION_ROADMAP.md) — Active prioritized implementation roadmap across 4 remediation waves.
 * [`docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — Architecture registry, AST parsing, and security boundary of the Code RAG subsystem (29 tests).
 * [`docs/RAG_POST_FIX_EVALUATION.md`](docs/RAG_POST_FIX_EVALUATION.md) — Empirical retrieval evaluation benchmark (1,261 chunks, Hit@1 83.3%).
-* [`docs/archive/`](docs/archive/README.md) — Archive of historical technical audits, unified registers, and initial evaluation benchmarks.
+* [`docs/archive/`](docs/archive/README.md) — Archive of historical technical audits, pre-audit guides, unified registers, and initial benchmarks.
 * [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — Domain specification, entity lifecycle, and REST API documentation for WMS.
 * [`wms-code-rag/README.md`](wms-code-rag/README.md) — Standalone guide for the RAG MCP service.
