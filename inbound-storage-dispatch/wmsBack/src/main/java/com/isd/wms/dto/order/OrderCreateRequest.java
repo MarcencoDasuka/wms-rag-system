@@ -1,9 +1,10 @@
 package com.isd.wms.dto.order;
 
-import lombok.NonNull;
+import jakarta.validation.constraints.NotNull;
 
 public record OrderCreateRequest(
     String logicId,
-    @NonNull Long destinationLocationId
+    @NotNull(message = "Destination location id is required")
+    Long destinationLocationId
 ) {
 }

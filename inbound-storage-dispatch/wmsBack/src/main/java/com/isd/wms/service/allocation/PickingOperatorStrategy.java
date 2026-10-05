@@ -124,12 +124,26 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
             a.getStatus() == Status.COMPLETED || a.getStatus() == Status.PARTIALLY_COMPLETED || a.getStatus() == Status.CANCELED);
 
         if (processingFinished) {
-            boolean allCanceled = orderLineRepository.findAllByOrderId(order.getId()).stream().allMatch(l -> l.getStatus() == Status.CANCELED);
+            List<OrderLine> lines = orderLineRepository.findAllByOrderId(order.getId());
+            boolean allCanceled = !lines.isEmpty() && lines.stream().allMatch(l -> l.getStatus() == Status.CANCELED);
             if (allCanceled) {
                 releaseTuForOrder(order);
                 order.setStatus(OrderStatus.CANCELED);
             } else {
-                order.setStatus(OrderStatus.PARTIALLY_COMPLETED);
+                boolean hasIncompleteOrPartial = lines.stream().anyMatch(l ->
+                    l.getStatus() == Status.CANCELED
+                        || l.getStatus() == Status.SHORTAGE
+                        || l.getStatus() == Status.PARTIALLY_COMPLETED
+                        || (l.getShortageQuantity() != null && l.getShortageQuantity() > 0)
+                        || (l.getDeliveredQuantity() != null && l.getRequestedQuantity() != null && l.getDeliveredQuantity() < l.getRequestedQuantity())
+                );
+                boolean allCompleted = !lines.isEmpty() && lines.stream().allMatch(l -> l.getStatus() == Status.COMPLETED);
+
+                if (allCompleted && !hasIncompleteOrPartial) {
+                    order.setStatus(OrderStatus.COMPLETED);
+                } else {
+                    order.setStatus(OrderStatus.PARTIALLY_COMPLETED);
+                }
             }
             orderRepository.save(order);
         }

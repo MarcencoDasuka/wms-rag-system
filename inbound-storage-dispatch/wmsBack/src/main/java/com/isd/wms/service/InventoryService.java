@@ -83,7 +83,7 @@ public class InventoryService {
 
         Product product = getProduct(request.productId());
         Location location = getLocation(request.locationId());
-        User user = getUser(request.userId());
+        User user = securityFacade.getCurrentUser();
 
         if (!Boolean.TRUE.equals(location.getIsActive()) || !Boolean.TRUE.equals(location.getAvailable())) {
             throw new InvalidRequestException("Cannot add stock to an inactive or unavailable location: " + location.getBarcode());
@@ -151,7 +151,7 @@ public class InventoryService {
             request.getStockId(), request.getQuantity(), request.getUserId());
 
         Stock stock = getStockWithLock(request.getStockId());
-        User user = getUser(request.getUserId());
+        User user = securityFacade.getCurrentUser();
 
         int availableQuantity = stock.getQuantity() - stock.getReservedQuantity();
 

@@ -9,8 +9,10 @@ public record InventoryAdjustmentRequest(
         @NotNull(message = "New quantity is required")
         @Min(value = 0, message = "New quantity must be greater than or equal to 0")
         Integer newQuantity,
-        @NotNull(message = "User id is required")
+
+        // Deprecated for audit attribution; actor is strictly derived from SecurityContext
         Long userId,
+
         @NotNull(message = "Adjustment reason is required")
         InventoryAdjustmentReason reason,
         String comment,

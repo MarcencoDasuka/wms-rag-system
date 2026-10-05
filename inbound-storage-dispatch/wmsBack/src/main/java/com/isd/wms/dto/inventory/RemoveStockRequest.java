@@ -19,6 +19,6 @@ public class RemoveStockRequest {
     @Min(value = 1, message = "Quantity must be greater than 0")
     private Integer quantity;
 
-    @NotNull(message = "User id is required")
+    // Deprecated for audit attribution; actor is strictly derived from SecurityContext
     private Long userId;
 }

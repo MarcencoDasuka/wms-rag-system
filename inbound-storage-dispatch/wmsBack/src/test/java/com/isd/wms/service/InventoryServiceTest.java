@@ -15,98 +15,152 @@ import com.isd.wms.exception.InvalidRequestException;
 import com.isd.wms.mapper.InventoryHistoryMapper;
 import com.isd.wms.mapper.StockMapper;
 import com.isd.wms.repository.*;
-import com.isd.wms.service.imports.ImportService;
+import com.isd.wms.service.validation.SecurityFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Proxy;
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class InventoryServiceTest {
 
-    @Mock private StockRepository stockRepository;
-    @Mock private InventoryHistoryRepository inventoryHistoryRepository;
-    @Mock private ProductRepository productRepository;
-    @Mock private LocationRepository locationRepository;
-    @Mock private UserRepository userRepository;
-    @Mock private ApplicationEventPublisher eventPublisher;
-    @Mock private InventoryAdjustmentService inventoryAdjustmentService;
-    @Mock private ImportService importService;
+    private StockRepository stockRepository;
+    private InventoryHistoryRepository inventoryHistoryRepository;
+    private ProductRepository productRepository;
+    private LocationRepository locationRepository;
+    private UserRepository userRepository;
+    private SecurityFacade securityFacade;
 
-    @Spy private StockMapper stockMapper = new StockMapper();
-    @Spy private InventoryHistoryMapper historyMapper = new InventoryHistoryMapper();
+    private StockMapper stockMapper = new StockMapper();
+    private InventoryHistoryMapper historyMapper = new InventoryHistoryMapper();
 
-    @InjectMocks
     private InventoryService inventoryService;
 
     private Product product;
     private Location location;
     private User user;
 
+    private final AtomicReference<InventoryHistory> savedHistoryRef = new AtomicReference<>();
+    private final AtomicReference<Boolean> existsDifferentProduct = new AtomicReference<>(false);
+    private final AtomicReference<Stock> stockFindResult = new AtomicReference<>(null);
+
+    @SuppressWarnings("unchecked")
+    private static <T> T createProxy(Class<T> type, java.lang.reflect.InvocationHandler handler) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, handler);
+    }
+
     @BeforeEach
     void setUp() {
         product = new Product("Milk", "SKU-1", null, null);
         ReflectionTestUtils.setField(product, "id", 1L);
+
         location = new Location("Loc", "A-01", null, null, true);
         ReflectionTestUtils.setField(location, "id", 2L);
+
         user = new User("supervisor", "s@test.com", "pass", Role.ROLE_SUPERVISOR, true, null, null);
         ReflectionTestUtils.setField(user, "id", 3L);
+
+        savedHistoryRef.set(null);
+        existsDifferentProduct.set(false);
+        stockFindResult.set(null);
+
+        stockRepository = createProxy(StockRepository.class, (proxy, method, args) -> {
+            if ("existsByLocationAndAvailableIsTrueAndProductIsNot".equals(method.getName())) {
+                return existsDifferentProduct.get();
+            }
+            if ("findByProductIdAndLocationId".equals(method.getName())) {
+                return Optional.ofNullable(stockFindResult.get());
+            }
+            if ("findById".equals(method.getName()) || "findByIdWithLock".equals(method.getName())) {
+                return Optional.ofNullable(stockFindResult.get());
+            }
+            if ("save".equals(method.getName())) {
+                Stock s = (Stock) args[0];
+                if (s.getId() == null) {
+                    ReflectionTestUtils.setField(s, "id", 10L);
+                }
+                return s;
+            }
+            return null;
+        });
+
+        inventoryHistoryRepository = createProxy(InventoryHistoryRepository.class, (proxy, method, args) -> {
+            if ("save".equals(method.getName())) {
+                InventoryHistory h = (InventoryHistory) args[0];
+                savedHistoryRef.set(h);
+                return h;
+            }
+            return null;
+        });
+
+        productRepository = createProxy(ProductRepository.class, (proxy, method, args) -> {
+            if ("findById".equals(method.getName())) {
+                return Optional.of(product);
+            }
+            return null;
+        });
+
+        locationRepository = createProxy(LocationRepository.class, (proxy, method, args) -> {
+            if ("findById".equals(method.getName()) || "findByIdWithLock".equals(method.getName())) {
+                return Optional.of(location);
+            }
+            return null;
+        });
+
+        userRepository = createProxy(UserRepository.class, (proxy, method, args) -> {
+            if ("findById".equals(method.getName())) {
+                return Optional.of(user);
+            }
+            return null;
+        });
+
+        securityFacade = new SecurityFacade(userRepository) {
+            @Override
+            public User getCurrentUser() {
+                return user;
+            }
+
+            @Override
+            public String getCurrentUsername() {
+                return user.getUsername();
+            }
+        };
+
+        inventoryService = new InventoryService(
+                stockRepository, inventoryHistoryRepository, productRepository, locationRepository,
+                userRepository, stockMapper, historyMapper,
+                null, null, null, securityFacade
+        );
     }
 
     @Test
     void addsNewStockAndCreatesHistory_emptyLocation() {
-        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
-        when(locationRepository.findById(2L)).thenReturn(Optional.of(location));
-        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
-
-        when(stockRepository.existsByLocationAndAvailableIsTrueAndProductIsNot(location, product)).thenReturn(false);
-        when(stockRepository.findByProductIdAndLocationId(1L, 2L)).thenReturn(Optional.empty());
-        when(stockRepository.save(any(Stock.class))).thenAnswer(invocation -> {
-            Stock savedStock = invocation.getArgument(0);
-            ReflectionTestUtils.setField(savedStock, "id", 10L);
-            return savedStock;
-        });
-
         StockResponse response = inventoryService.addStock(new AddStockRequest(
-            1L, 2L, 5, 0, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), 3L
+                1L, 2L, 5, 0, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), 3L
         ));
 
         assertThat(response.getId()).isEqualTo(10L);
         assertThat(response.getQuantity()).isEqualTo(5);
 
-        ArgumentCaptor<InventoryHistory> historyCaptor = ArgumentCaptor.forClass(InventoryHistory.class);
-        verify(inventoryHistoryRepository).save(historyCaptor.capture());
-        InventoryHistory history = historyCaptor.getValue();
+        InventoryHistory history = savedHistoryRef.get();
+        assertThat(history).isNotNull();
         assertThat(history.getOperationType()).isEqualTo(InventoryOperationType.ADD_STOCK);
         assertThat(history.getAlteredQuantity()).isEqualTo(5);
     }
 
     @Test
     void rejectsAddStock_differentProductOnLocation() {
-        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
-        when(locationRepository.findById(2L)).thenReturn(Optional.of(location));
-        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
-
-        when(stockRepository.existsByLocationAndAvailableIsTrueAndProductIsNot(location, product)).thenReturn(true);
+        existsDifferentProduct.set(true);
 
         assertThatThrownBy(() -> inventoryService.addStock(new AddStockRequest(1L, 2L, 5, 0, null, null, 3L)))
-            .isInstanceOf(InvalidRequestException.class)
-            .hasMessageContaining("occupied by a different product");
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("occupied by a different product");
     }
 
     @Test
@@ -114,15 +168,12 @@ class InventoryServiceTest {
         Stock stock = new Stock(product, location);
         stock.setQuantity(8);
         ReflectionTestUtils.setField(stock, "id", 10L);
-
-        when(stockRepository.findById(10L)).thenReturn(Optional.of(stock));
-        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
-        when(stockRepository.save(stock)).thenReturn(stock);
+        stockFindResult.set(stock);
 
         StockResponse response = inventoryService.removeStock(new RemoveStockRequest(10L, 3, 3L));
 
         assertThat(response.getQuantity()).isEqualTo(5);
-        verify(inventoryHistoryRepository).save(any(InventoryHistory.class));
+        assertThat(savedHistoryRef.get()).isNotNull();
     }
 
     @Test
@@ -131,11 +182,9 @@ class InventoryServiceTest {
         stock.setQuantity(2);
         stock.setReservedQuantity(0);
         ReflectionTestUtils.setField(stock, "id", 10L);
-
-        when(stockRepository.findById(10L)).thenReturn(Optional.of(stock));
-        when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+        stockFindResult.set(stock);
 
         assertThatThrownBy(() -> inventoryService.removeStock(new RemoveStockRequest(10L, 3, 3L)))
-            .isInstanceOf(InsufficientStockException.class);
+                .isInstanceOf(InsufficientStockException.class);
     }
 }
