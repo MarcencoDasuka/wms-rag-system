@@ -17,6 +17,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -76,7 +78,9 @@ public class UserService {
 
         User currentUser = null;
         if (currentUsername != null) {
-            currentUser = userRepository.findByUsername(currentUsername).orElse(null);
+            currentUser = userRepository.findByUsernameIgnoreCase(currentUsername)
+                .or(() -> userRepository.findByUsername(currentUsername))
+                .orElse(null);
             if (currentUser != null && !Boolean.TRUE.equals(currentUser.getIsActive())) {
                 log.warn("Security block: Inactive user '{}' attempted to register/reactivate an account", currentUsername);
                 throw new AccessDeniedException("Inactive accounts cannot register or reactivate users.");
@@ -94,8 +98,10 @@ public class UserService {
             throw new AccessDeniedException("Supervisors are only allowed to register operator accounts.");
         }
 
-        Optional<User> existingUserOpt = userRepository.findByUsername(request.username());
-        Optional<User> existingEmailOpt = userRepository.findByEmail(request.email());
+        Optional<User> existingUserOpt = userRepository.findByUsernameIgnoreCase(request.username())
+            .or(() -> userRepository.findByUsername(request.username()));
+        Optional<User> existingEmailOpt = userRepository.findByEmailIgnoreCase(request.email())
+            .or(() -> userRepository.findByEmail(request.email()));
 
         String verificationToken = UUID.randomUUID().toString();
         String temporaryPassword = UUID.randomUUID().toString();
@@ -157,8 +163,8 @@ public class UserService {
             userToSave.setIsActive(false);
             userRepository.save(userToSave);
 
-            emailService.sendVerificationEmail(request.email(), request.username(), verificationToken);
-            log.info("User '{}' registered, verification email sent to {}", request.username(), request.email());
+            dispatchVerificationEmailPostCommit(request.email(), request.username(), verificationToken);
+            log.info("User '{}' registered, verification email scheduled for post-commit dispatch to {}", request.username(), request.email());
             return;
         }
 
@@ -173,9 +179,26 @@ public class UserService {
 
         userRepository.save(userToSave);
 
-        emailService.sendVerificationEmail(request.email(), request.username(), verificationToken);
-        log.info("User '{}' scheduled for reactivation, new verification email sent to {}",
+        dispatchVerificationEmailPostCommit(request.email(), request.username(), verificationToken);
+        log.info("User '{}' scheduled for reactivation, new verification email scheduled for post-commit dispatch to {}",
             request.username(), request.email());
+    }
+
+    private void dispatchVerificationEmailPostCommit(String email, String username, String token) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        emailService.sendVerificationEmail(email, username, token);
+                    } catch (Exception e) {
+                        log.error("Failed to send post-commit verification email to {}: {}", email, e.getMessage(), e);
+                    }
+                }
+            });
+        } else {
+            emailService.sendVerificationEmail(email, username, token);
+        }
     }
 
     @Transactional
@@ -189,8 +212,9 @@ public class UserService {
         User existingUser = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!existingUser.getUsername().equals(request.username())) {
-            Optional<User> found = userRepository.findByUsername(request.username());
+        if (!existingUser.getUsername().equalsIgnoreCase(request.username())) {
+            Optional<User> found = userRepository.findByUsernameIgnoreCase(request.username())
+                .or(() -> userRepository.findByUsername(request.username()));
             if (found.isPresent()) {
                 if (found.get().getIsActive()) {
                     throw new RuntimeException("This username is already taken by another active user.");
@@ -281,7 +305,7 @@ public class UserService {
         User targetUser = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (targetUser.getUsername().equals(securityFacade.getCurrentUsername())) {
+        if (targetUser.getUsername().equalsIgnoreCase(securityFacade.getCurrentUsername())) {
             throw new RuntimeException("You cannot ban your own account.");
         }
 

@@ -12,8 +12,8 @@
 | Phase / Batch | Scope | Target Defects | Status | Tests Verified |
 | :--- | :--- | :--- | :---: | :---: |
 | **Batch 1 (Wave 1 Core)** | Critical business & baseline security stoppers | **DEF-02, DEF-13, DEF-18, DEF-05** | **`COMPLETED`** | 16/16 Passed (13.1s) |
-| **Batch 2 (Wave 1 & 2 Auth/Schema)** | Object authorization (BOLA/IDOR), schema index & deletion guards | **DEF-03, DEF-04, DEF-06, DEF-11, DEF-12** | `PLANNED` | Awaiting execution |
-| **Batch 3 (Wave 2 Concurrency)** | Concurrency controls, versioning, async dispatch & integrity | **DEF-09, DEF-10, DEF-15, DEF-20** | `QUEUED` | — |
+| **Batch 2 (Wave 1 & 2 Auth/Schema)** | Object authorization (BOLA/IDOR), schema index & deletion guards | **DEF-03, DEF-04, DEF-06, DEF-11, DEF-12** | **`COMPLETED`** | 32/32 Passed (10.9s) |
+| **Batch 3 (Wave 2 Concurrency)** | Concurrency controls, versioning, async dispatch & integrity | **DEF-09, DEF-10, DEF-15, DEF-20** | **`COMPLETED`** | 21/21 Passed (5.8s) |
 | **Batch 4 (Wave 3 REST & DTO)** | Pagination, authorization scopes & input boundary validation | **DEF-07, DEF-17, DEF-19, DEF-21** | `QUEUED` | — |
 | **Batch 5 (Wave 4 AI, Frontend & QA)** | AI tool boundaries, frontend config & authentic test harness | **DEF-01, DEF-14, DEF-16, DEF-22, DEF-23, DEF-24, DEF-25, DEF-26** | `QUEUED` | — |
 
@@ -75,10 +75,17 @@
 *Priority: High (Prevents data corruption, deadlocks, and connection exhaustion).*
 
 ### Task 2.1: Implement Concurrency Locks on Order & Replenishment (`DEF-09`, `DEF-10`)
-* **Status:** `OPEN` (Scheduled for Batch 3)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 3)
 * **Severity:** `HIGH`
-* **Affected Files:** `Order.java`, `Replenishment.java`, `OrderService.java`, `ReplenishmentService.java`
+* **Affected Files:**
+  * [`V39__remediation_batch_3_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V39__remediation_batch_3_schema.sql)
+  * [`Order.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/entity/Order.java)
+  * [`Replenishment.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/entity/Replenishment.java)
+  * [`OrderService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/OrderService.java)
+  * [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
 * **Invariant:** Concurrent requests to assign an order or replenishment must be mutually exclusive.
+* **Remediation Note:** Added `@Version` to `Order` and `Replenishment` along with Flyway `V39` DDL. Eliminated mass `@Modifying` status update in `assignOrderCascade`, enforcing `saveAndFlush` optimistic checks before task allocation. Confirmed losing transaction rollback without orphan task or allocation side-effects.
+* **Verification:** `Def09OrderAssignmentConcurrencyRemediationTest` (2/2 passed), `Def10ReplenishmentAssignmentConcurrencyRemediationTest` (2/2 passed).
 
 ---
 
@@ -105,10 +112,12 @@
 ---
 
 ### Task 2.4: Asynchronous Email Dispatch (`DEF-15`)
-* **Status:** `OPEN` (Scheduled for Batch 3)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 3)
 * **Severity:** `MEDIUM`
-* **Affected Files:** `UserService.java`, `EmailService.java`
+* **Affected Files:** [`UserService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/UserService.java), [`EmailService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/EmailService.java)
 * **Invariant:** SMTP calls must execute asynchronously outside active database transactions.
+* **Remediation Note:** Implemented `dispatchVerificationEmailPostCommit` using `TransactionSynchronizationManager` `afterCommit` hook. Network SMTP execution takes place strictly after connection release, eliminating pool starvation and preventing rollback on SMTP errors.
+* **Verification:** `Def15AsyncEmailDispatchRemediationTest` (4/4 passed).
 
 ---
 
@@ -146,9 +155,15 @@
 ---
 
 ### Task 3.5: Case-Insensitive Unique Indexes (`DEF-20`)
-* **Status:** `OPEN` (Scheduled for Batch 3)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 3)
 * **Severity:** `MEDIUM`
-* **Affected Files:** New Flyway migration `V39__add_lower_unique_indexes.sql`
+* **Affected Files:**
+  * [`V39__remediation_batch_3_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V39__remediation_batch_3_schema.sql)
+  * [`UserRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/UserRepository.java)
+  * [`CustomUserDetailsService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/CustomUserDetailsService.java)
+  * [`UserService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/UserService.java)
+* **Remediation Note:** Added functional indexes `uk_users_username_lower` and `uk_users_email_lower` on `LOWER(...)` in V39. Updated `UserRepository` with case-insensitive queries. Upgraded `CustomUserDetailsService` login lookup and `UserService` registration/update checks to case-insensitive semantics.
+* **Verification:** `Def20CaseInsensitiveUserRemediationTest` (11/11 passed), `Def20V39MigrationVerificationTest` (2/2 passed).
 
 ---
 

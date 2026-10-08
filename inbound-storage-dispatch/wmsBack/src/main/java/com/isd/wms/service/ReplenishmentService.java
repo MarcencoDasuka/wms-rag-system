@@ -492,10 +492,12 @@ public class ReplenishmentService {
         if (replenishment.getStatus() != Status.CREATED) {
             throw new InvalidRequestException("Replenishment assignment is only allowed for CREATED replenishments.");
         }
+        replenishment.setStatus(Status.ASSIGNED);
+        replenishmentRepository.saveAndFlush(replenishment);
         Task task = taskService.createTask(TaskType.REPLENISHMENT, replenishment.getRequestedQuantity(),
             replenishment.getProduct().getId());
         replenishment.setTask(task);
-        replenishmentRepository.saveAndFlush(replenishment);
+        replenishmentRepository.save(replenishment);
         taskService.assignTask(task.getId(), operatorId);
     }
 

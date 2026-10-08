@@ -43,6 +43,10 @@ public class Order extends BaseTimestampEntity {
     @SequenceGenerator(name = "order_gen", sequenceName = "orders_sequence", allocationSize = 1)
     private Long id;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     public Order(String logicId) {
         this.logicId = logicId;
     }

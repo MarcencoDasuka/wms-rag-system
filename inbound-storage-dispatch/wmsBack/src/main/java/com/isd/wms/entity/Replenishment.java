@@ -42,6 +42,10 @@ public class Replenishment extends BaseTimestampEntity{
     @SequenceGenerator(name = "replenishment_seq", sequenceName = "replenishments_sequence", allocationSize = 1)
     private Long id;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     @Column(name = "logic_id", unique = true, nullable = false, length = 50)
     private String logicId;
 

@@ -52,7 +52,9 @@ public class CustomUserDetailsService implements UserDetailsService {
     public @NonNull UserDetails loadUserByUsername(@NonNull String usernameOrEmail) throws UsernameNotFoundException {
         log.debug("Attempting to load user details for identifier: '{}'", usernameOrEmail);
 
-        User user = userRepository.findByUsername(usernameOrEmail)
+        User user = userRepository.findByUsernameIgnoreCase(usernameOrEmail)
+                .or(() -> userRepository.findByUsername(usernameOrEmail))
+                .or(() -> userRepository.findByEmailIgnoreCase(usernameOrEmail))
                 .or(() -> userRepository.findByEmail(usernameOrEmail))
                 .orElseThrow(() -> {
                     log.warn("Authentication failed: User identifier '{}' not found in database", usernameOrEmail);

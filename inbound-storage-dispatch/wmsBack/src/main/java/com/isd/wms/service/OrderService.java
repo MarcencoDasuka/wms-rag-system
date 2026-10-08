@@ -245,6 +245,9 @@ public class OrderService {
             throw new InvalidRequestException("Order assignment is not allowed for this order");
         }
 
+        order.setStatus(OrderStatus.ASSIGNED);
+        orderRepository.saveAndFlush(order);
+
         assignTasks(order);
         assignOrderCascade(orderId, operatorId);
     }
@@ -265,12 +268,6 @@ public class OrderService {
     }
 
     private void assignOrderCascade(Long orderId, Long operatorId) {
-        int updated = orderRepository.updateStatus(orderId, OrderStatus.ASSIGNED);
-        if (updated == 0) {
-            throw new OrderNotFoundException(orderId);
-        }
-        log.info("Updated order with id {}", orderId);
-
         int tasksUpdated = taskRepository.updateOperatorByOrderId(orderId, operatorId);
         log.info("Updated {} tasks for order {}", tasksUpdated, orderId);
 

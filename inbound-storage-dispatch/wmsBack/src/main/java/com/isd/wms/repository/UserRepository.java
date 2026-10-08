@@ -27,12 +27,32 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUsername(String username);
 
     /**
+     * Finds a user by username ignoring case.
+     *
+     * @param username the username
+     * @return an Optional containing the user, if found
+     */
+    Optional<User> findByUsernameIgnoreCase(String username);
+
+    /**
      * Finds a user by email.
      *
      * @param email the email
      * @return an Optional containing the user, if found
      */
     Optional<User> findByEmail(String email);
+
+    /**
+     * Finds a user by email ignoring case.
+     *
+     * @param email the email
+     * @return an Optional containing the user, if found
+     */
+    Optional<User> findByEmailIgnoreCase(String email);
+
+    boolean existsByUsernameIgnoreCase(String username);
+
+    boolean existsByEmailIgnoreCase(String email);
 
     /**
      * Finds a user by their verification token.

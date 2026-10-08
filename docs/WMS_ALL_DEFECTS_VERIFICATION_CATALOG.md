@@ -206,6 +206,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   Multi-threaded transaction interleaving test under PostgreSQL was not executed; race window width is deduced from code structure.
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 3]`**
+  * Added `@Version` field to [`Order.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/entity/Order.java) and schema versioning in [`V39__remediation_batch_3_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V39__remediation_batch_3_schema.sql) (`version BIGINT DEFAULT 0 NOT NULL`).
+  * In [`OrderService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/OrderService.java), removed mass `@Modifying` JPQL status update in `assignOrderCascade` (which bypassed Hibernate `@Version` checks) and enforced `orderRepository.saveAndFlush(order)` with optimistic locking checks before task instantiation.
+  * Losing concurrent transaction is rejected with `OptimisticLockException` mapped to HTTP 409 Conflict via `GlobalExceptionHandler`.
+  * Regression test: [`Def09OrderAssignmentConcurrencyRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def09OrderAssignmentConcurrencyRemediationTest.java) (2/2 passed) proving mutual exclusion, single winner, no orphan tasks, and HTTP 409 conflict mapping.
 
 ---
 
@@ -218,6 +223,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   Empirical runtime race measurement not conducted (`[RUNTIME/LOAD GAP]`).
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 3]`**
+  * Added `@Version` field to [`Replenishment.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/entity/Replenishment.java) and schema versioning in [`V39__remediation_batch_3_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V39__remediation_batch_3_schema.sql) (`version BIGINT DEFAULT 0 NOT NULL`).
+  * In [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java), enforced `replenishmentRepository.saveAndFlush(replenishment)` optimistic locking verification prior to creating task and executing `generateAllocationsForTask` inventory reservation.
+  * Losing concurrent transaction is rolled back with `OptimisticLockException` (mapped to HTTP 409 Conflict), preventing duplicate allocations or orphan movement tasks.
+  * Regression test: [`Def10ReplenishmentAssignmentConcurrencyRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def10ReplenishmentAssignmentConcurrencyRemediationTest.java) (2/2 passed) proving mutual exclusion, rollback of side-effects, and HTTP 409 conflict mapping.
 
 ---
 
@@ -301,6 +311,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   Actual pool exhaustion depends on registration traffic and SMTP socket timeout. Pool depletion under load has not been measured.
 * **Calibration & Classification:** Severity: **MEDIUM** (Downgraded from High). Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 3]`**
+  * In [`UserService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/UserService.java), replaced direct synchronous `emailService.sendVerificationEmail` with `dispatchVerificationEmailPostCommit`, registering an `afterCommit` hook via Spring's `TransactionSynchronizationManager`.
+  * Verified 4 strict invariants: (1) email is NOT dispatched prior to database commit, (2) email IS dispatched immediately after commit, (3) on transaction rollback, email is NEVER sent, and (4) SMTP network failure post-commit is trapped gracefully and does NOT roll back or corrupt committed user records in PostgreSQL.
+  * Regression test: [`Def15AsyncEmailDispatchRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def15AsyncEmailDispatchRemediationTest.java) (4/4 passed).
 
 ---
 
@@ -373,6 +387,12 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`).
 * **Calibration & Classification:** Severity: **MEDIUM**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 3]`**
+  * Created Flyway migration [`V39__remediation_batch_3_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V39__remediation_batch_3_schema.sql) adding PostgreSQL functional unique expression indexes `uk_users_username_lower` on `users(LOWER(username))` and `uk_users_email_lower` on `users(LOWER(email))`. Verified zero duplicate entries in live database prior to index creation.
+  * Added `findByUsernameIgnoreCase`, `findByEmailIgnoreCase`, `existsByUsernameIgnoreCase`, `existsByEmailIgnoreCase` to [`UserRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/UserRepository.java).
+  * In [`CustomUserDetailsService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/CustomUserDetailsService.java), upgraded authentication lookup to case-insensitive queries (`findByUsernameIgnoreCase` and `findByEmailIgnoreCase`) with backward-compatible fallbacks.
+  * In [`UserService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/UserService.java), enforced case-insensitive checks on `registerUser`, `updateUser`, self-reactivation guard, and account deactivation.
+  * Regression tests: [`Def20CaseInsensitiveUserRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def20CaseInsensitiveUserRemediationTest.java) (11/11 passed), [`Def20V39MigrationVerificationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/migration/Def20V39MigrationVerificationTest.java) (2/2 passed).
 
 ---
 
