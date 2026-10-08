@@ -64,6 +64,9 @@ public class Replenishment extends BaseTimestampEntity{
     @JoinColumn(name = "destination_location_id")
     private Location destinationLocation;
 
+    @Column(name = "created_by", length = 50)
+    private String createdBy;
+
     @PrePersist
     public void ensureLogicId() {
         if (this.logicId == null || this.logicId.isBlank()) {
@@ -76,6 +79,14 @@ public class Replenishment extends BaseTimestampEntity{
         this.product = product;
         this.requestedQuantity = requestedQuantity;
         this.destinationLocation = destinationLocation;
+    }
+
+    public Replenishment(Product product, Integer requestedQuantity, Location destinationLocation, String createdBy) {
+        this.logicId = "REPL-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        this.product = product;
+        this.requestedQuantity = requestedQuantity;
+        this.destinationLocation = destinationLocation;
+        this.createdBy = createdBy;
     }
 
     /**

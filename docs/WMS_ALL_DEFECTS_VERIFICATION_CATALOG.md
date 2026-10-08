@@ -18,16 +18,16 @@
 | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
 | **DEF-01** | Critical | **High** | `[DEFECT]` | `[OPEN]` | AI / Security | Token leakage in Tool Response proven by `[STATIC FACT]`; autonomous invocation without human input is a `[RUNTIME/LOAD GAP]`. |
 | **DEF-02** | Critical | **Critical** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | DB / Credentials | Seed passwords in V31 proven by `[STATIC FACT]`. Remediated via Flyway V37 password rotation and regression test. |
-| **DEF-03** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Order endpoints `[STATIC FACT]` (0 Gap). |
-| **DEF-04** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Replenishment endpoints `[STATIC FACT]` (0 Gap). |
+| **DEF-03** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Order endpoints `[STATIC FACT]`. Remediated via createdBy/task supervisor checks and V38 migration. |
+| **DEF-04** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Replenishment endpoints `[STATIC FACT]`. Remediated via createdBy/task supervisor checks and V38 migration. |
 | **DEF-05** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | Audit / Integrity | Proven completely by accepting `userId` from request body `[STATIC FACT]`. Remediated by deriving actor from `SecurityFacade`. |
-| **DEF-06** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 2]` | Data Leakage | Proven completely by unconditional `findAll()` in `getAllOrdersExtended()` `[STATIC FACT]` (0 Gap). |
+| **DEF-06** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Data Leakage | Proven completely by unconditional `findAll()` in `getAllOrdersExtended()` `[STATIC FACT]`. Remediated via scoped query `findAllAccessibleBySupervisor`. |
 | **DEF-07** | High | **Medium** | `[DEFECT]` | `[OPEN]` | Reliability / DoS | Absence of pagination proven by `[STATIC FACT]`; JVM DoS/OOM crashes are a `[RUNTIME/LOAD GAP]`. |
 | **DEF-08** | High | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | DB Migrations | Historical V12 artifact `[STATIC FACT]`; protected by Flyway checksum on existing V36+ deployments (0 Gap). |
 | **DEF-09** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 3]` | Concurrency | Absence of `@Version`/locks proven by `[STATIC FACT]`; empirical race interleaving is a `[RUNTIME/LOAD GAP]`. |
 | **DEF-10** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 3]` | Concurrency | Absence of `@Version`/locks proven by `[STATIC FACT]`; empirical race interleaving is a `[RUNTIME/LOAD GAP]`. |
-| **DEF-11** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 2]` | Schema / Constraints | Cross-product destination conflict proven by V33 and V34 index definitions `[STATIC FACT]` (0 Gap). |
-| **DEF-12** | High | **Medium** | `[DEFECT]` | `[OPEN - BATCH 2]` | Domain Logic | Deletion without status validation proven by `[STATIC FACT]`; orders with allocations trigger DB FK 500 error instead of silent drop. |
+| **DEF-11** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Schema / Constraints | Cross-product destination conflict proven by V33 and V34 index definitions `[STATIC FACT]`. Remediated via V38 partial unique index and service check. |
+| **DEF-12** | High | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Domain Logic | Deletion without status validation proven by `[STATIC FACT]`. Remediated by lifecycle guard allowing delete strictly for CREATED and CANCELED. |
 | **DEF-13** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | WMS State Machine | Unconditional `PARTIALLY_COMPLETED` proven by `[STATIC FACT]`. Remediated via deterministic completion state machine. |
 | **DEF-14** | High | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | AI / Network | Guarded by try-catch post-ready `[STATIC FACT]`; startup crash claim refuted by code (0 Gap). |
 | **DEF-15** | High | **Medium** | `[DEFECT]` | `[OPEN - BATCH 3]` | Transactions / Network | Connection holding during SMTP proven by `[STATIC FACT]`; connection pool exhaustion is a `[RUNTIME/LOAD GAP]`. |
@@ -112,6 +112,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). No hidden AOP aspects or interceptors exist to isolate objects.
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 2]`**
+  * Added `created_by` to `Order` entity and database table via `V38__remediation_batch_2_schema.sql`.
+  * In `OrderService`, implemented `validateOrderAccess`: grants access if `hasRole(ROLE_DEV) || createdBy.equalsIgnoreCase(currentUsername) || isSupervisorOfTask`.
+  * Enforced on: `getOrderById`, `getExtendedOrderById`, `updateOrder`, `updateExtendedOrder`, `assignOrder`, `deleteOrderById`, `getShortageDetails`.
+  * Regression test: [`Def03OrderBolaRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/security/Def03OrderBolaRemediationTest.java) (8/8 passed).
 
 ---
 
@@ -124,6 +129,12 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). Service invocation logic is direct and unconstrained.
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 2]`**
+  * Added `created_by` to `Replenishment` entity and database table via `V38__remediation_batch_2_schema.sql`.
+  * In `ReplenishmentService`, implemented `validateReplenishmentAccess`: grants access if `hasRole(ROLE_DEV) || createdBy.equalsIgnoreCase(currentUsername) || taskSupervisor.equalsIgnoreCase(currentUsername)`.
+  * Protects unassigned `CREATED` replenishments as well as assigned ones.
+  * Enforced on: `getReplenishmentById`, `updateReplenishment`, `deleteReplenishment`, `cancelReplenishment`, `assignReplenishment`, `getShortageDetails`.
+  * Regression test: [`Def04ReplenishmentBolaRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/security/Def04ReplenishmentBolaRemediationTest.java) (8/8 passed).
 
 ---
 
@@ -155,6 +166,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). `findAll()` execution is unconditional.
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 2]`**
+  * Created scoped query `orderRepository.findAllAccessibleBySupervisor(username)` matching `LOWER(created_by) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)`.
+  * In `OrderService`, `getAllOrders()`, `getAllExtendedOrders()`, and `getShortageOrders()` execute scoped query for non-DEV supervisors, reserving `findAll()` strictly for `ROLE_DEV`.
+  * Regression test: [`Def06OrderExtendedScopingRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def06OrderExtendedScopingRemediationTest.java) (3/3 passed).
 
 ---
 
@@ -217,6 +232,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). Schema constraint conflict is evident from DDL index definitions.
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 2]`**
+  * Created Flyway migration `V38__remediation_batch_2_schema.sql` which drops the compound index, cleans duplicate active replenishments, and creates partial unique index `uk_active_replenishment_destination` on `replenishments(destination_location_id) WHERE status IN ('CREATED', 'ASSIGNED', 'IN_PROGRESS')`.
+  * In `ReplenishmentService`, updated `validateDestinationLocation` and `checkAndTriggerAutoReplenishment` to verify `existsByDestinationLocationIdAndStatusIn(locationId, ACTIVE_STATUSES)`.
+  * Regression tests: [`Def11ReplenishmentDestinationConflictRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def11ReplenishmentDestinationConflictRemediationTest.java) (4/4 passed), [`Def11V38MigrationVerificationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/migration/Def11V38MigrationVerificationTest.java) (2/2 passed).
 
 ---
 
@@ -229,6 +248,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). FK mechanics and missing validation are proven by DB schema and service code.
 * **Calibration & Classification:** Severity: **MEDIUM** (Downgraded from High: silent deletion prevented by RDBMS FK; defect manifests as missing business validation and unhandled 500). Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 2]`**
+  * In `OrderService.deleteOrderById`, implemented lifecycle validation: allows deletion strictly for `CREATED` and `CANCELED` orders.
+  * Rejects all active, in-progress, and completed states (`ASSIGNED`, `IN_PROGRESS`, `PICKED`, `COMPLETED`, `PARTIALLY_COMPLETED`) with `InvalidRequestException` (HTTP 400).
+  * Regression test: [`Def12OrderDeletionLifecycleRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def12OrderDeletionLifecycleRemediationTest.java) (7/7 passed).
 
 ---
 

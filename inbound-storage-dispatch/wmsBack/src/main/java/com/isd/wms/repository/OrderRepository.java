@@ -73,7 +73,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     boolean existsByDestinationLocationIdAndStatusIn(Long destinationLocationId, java.util.Collection<OrderStatus> statuses);
 
    /**
-     * Finds all orders created by a specific supervisor (by username).
+     * Finds all orders accessible by a supervisor: either created by the supervisor
+     * or having tasks supervised by the supervisor.
      *
      * @param username the supervisor's username
      * @return list of orders
@@ -81,10 +82,26 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @EntityGraph(attributePaths = {"destinationLocation"})
     @Query("""
         SELECT DISTINCT o FROM Order o
-        JOIN OrderLine ol ON ol.order = o
-        JOIN Task t ON t = ol.task
-        JOIN User u ON u = t.supervisor
-        WHERE u.username = :username
+        LEFT JOIN o.orderLines ol
+        LEFT JOIN ol.task t
+        LEFT JOIN t.supervisor u
+        WHERE LOWER(o.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
+        """)
+    List<Order> findAllAccessibleBySupervisor(@Param("username") String username);
+
+   /**
+     * Backward-compatible alias for findAllAccessibleBySupervisor.
+     *
+     * @param username the supervisor's username
+     * @return list of orders
+     */
+    @EntityGraph(attributePaths = {"destinationLocation"})
+    @Query("""
+        SELECT DISTINCT o FROM Order o
+        LEFT JOIN o.orderLines ol
+        LEFT JOIN ol.task t
+        LEFT JOIN t.supervisor u
+        WHERE LOWER(o.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
         """)
     List<Order> findAllByCreatedByUsername(@Param("username") String username);
 

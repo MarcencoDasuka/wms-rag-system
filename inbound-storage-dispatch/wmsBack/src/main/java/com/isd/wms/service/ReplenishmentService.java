@@ -8,6 +8,7 @@ import com.isd.wms.dto.replenishment.shortage.AffectedReplenishmentLineResponse;
 import com.isd.wms.dto.replenishment.shortage.ShortageReplenishmentDetailsResponse;
 import com.isd.wms.dto.replenishment.shortage.ShortageReplenishmentResponse;
 import com.isd.wms.entity.*;
+import com.isd.wms.enums.Role;
 import com.isd.wms.enums.Status;
 import com.isd.wms.enums.TaskStatus;
 import com.isd.wms.enums.TaskType;
@@ -16,6 +17,7 @@ import com.isd.wms.exception.InvalidRequestException;
 import com.isd.wms.exception.LocationNotFoundException;
 import com.isd.wms.exception.ProductNotFoundException;
 import com.isd.wms.exception.ReplenishmentNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import com.isd.wms.mapper.ReplenishmentMapper;
 import com.isd.wms.repository.*;
 import com.isd.wms.service.imports.ImportService;
@@ -79,6 +81,13 @@ public class ReplenishmentService {
             );
         }
 
+        if (replenishmentRepository.existsByDestinationLocationIdAndStatusIn(destinationLocation.getId(), ACTIVE_STATUSES)) {
+            throw new InvalidRequestException(
+                "Cannot route replenishment to " + destinationLocation.getBarcode() +
+                    ". Location already has an active replenishment in progress."
+            );
+        }
+
         stockRepository.findByLocationIdAndAvailableIsTrue(destinationLocation.getId())
             .ifPresent(stock -> {
                 Product existingProduct = stock.getProduct().orElse(null);
@@ -89,6 +98,27 @@ public class ReplenishmentService {
                     );
                 }
             });
+    }
+
+    public void validateReplenishmentAccess(Replenishment replenishment) {
+        if (securityFacade.hasRole(Role.ROLE_DEV)) {
+            return;
+        }
+        String currentUsername = securityFacade.getCurrentUsername();
+        boolean isCreator = replenishment.getCreatedBy() != null && replenishment.getCreatedBy().equalsIgnoreCase(currentUsername);
+        String taskSupervisor = replenishment.getTask()
+            .map(Task::getSupervisor)
+            .map(User::getUsername)
+            .orElse(null);
+        boolean isTaskSupervisor = taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
+
+        if (!isCreator && !isTaskSupervisor) {
+            log.warn("Access denied to replenishment {} (createdBy: {}, taskSupervisor: {}) for user {}",
+                replenishment.getId(), replenishment.getCreatedBy(), taskSupervisor, currentUsername);
+            throw new AccessDeniedException(
+                "Access denied: Replenishment " + replenishment.getLogicId() + " belongs to another supervisor."
+            );
+        }
     }
 
     /**
@@ -108,7 +138,7 @@ public class ReplenishmentService {
 
         validateDestinationLocation(product, destinationLocation);
 
-        Replenishment replenishment = new Replenishment(product, request.requestedQuantity(), destinationLocation);
+        Replenishment replenishment = new Replenishment(product, request.requestedQuantity(), destinationLocation, securityFacade.getCurrentUsername());
         replenishment.setStatus(Status.CREATED);
         replenishment.setLogicId(generateUniqueLogicId());
 
@@ -122,6 +152,7 @@ public class ReplenishmentService {
         log.info("Updating replenishment: id={}, status={}", id, request.status());
 
         Replenishment replenishment = getReplenishment(id);
+        validateReplenishmentAccess(replenishment);
 
         if (replenishment.getStatus() == Status.IN_PROGRESS ||
             replenishment.getStatus() == Status.COMPLETED ||
@@ -183,8 +214,8 @@ public class ReplenishmentService {
         int replenishQty = product.getReplenishQty().get();
 
         if (locationQty <= minThreshold) {
-            boolean hasActive = replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(
-                product.getId(), location.getId(), ACTIVE_STATUSES
+            boolean hasActive = replenishmentRepository.existsByDestinationLocationIdAndStatusIn(
+                location.getId(), ACTIVE_STATUSES
             );
 
             if (!hasActive) {
@@ -213,6 +244,7 @@ public class ReplenishmentService {
     public void deleteReplenishment(Long replenishmentId) {
         log.info("Deleting replenishment: id={}", replenishmentId);
         Replenishment replenishment = getReplenishment(replenishmentId);
+        validateReplenishmentAccess(replenishment);
 
         if (replenishment.getStatus() != Status.CREATED) {
             throw new InvalidRequestException("Physical deletion is only allowed for tasks in CREATED status.");
@@ -242,6 +274,7 @@ public class ReplenishmentService {
     public ReplenishmentResponse cancelReplenishment(Long replenishmentId) {
         log.info("Canceling replenishment: id={}", replenishmentId);
         Replenishment replenishment = getReplenishment(replenishmentId);
+        validateReplenishmentAccess(replenishment);
 
         if (replenishment.getStatus() == Status.COMPLETED || replenishment.getStatus() == Status.CANCELED) {
             throw new InvalidRequestException("Cannot cancel a task that is already COMPLETED or CANCELED.");
@@ -272,11 +305,18 @@ public class ReplenishmentService {
     }
 
     public ReplenishmentResponse getReplenishmentById(Long replenishmentId) {
-        return replenishmentMapper.toResponse(getReplenishment(replenishmentId));
+        Replenishment replenishment = getReplenishment(replenishmentId);
+        validateReplenishmentAccess(replenishment);
+        return replenishmentMapper.toResponse(replenishment);
     }
 
     public List<ReplenishmentResponse> getAllReplenishments() {
-        List<Replenishment> replenishments = replenishmentRepository.findAll();
+        List<Replenishment> replenishments;
+        if (securityFacade.hasRole(Role.ROLE_SUPERVISOR) && !securityFacade.hasRole(Role.ROLE_DEV)) {
+            replenishments = replenishmentRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
+        } else {
+            replenishments = replenishmentRepository.findAll();
+        }
         if (replenishments.isEmpty()) {
             return Collections.emptyList();
         }
@@ -307,7 +347,10 @@ public class ReplenishmentService {
     }
 
     public List<ShortageReplenishmentResponse> getShortageReplenishments() {
-        return replenishmentRepository.findAllByCreatedByUsername(securityFacade.getCurrentUsername()).stream()
+        List<Replenishment> replenishments = securityFacade.hasRole(Role.ROLE_DEV)
+            ? replenishmentRepository.findAll()
+            : replenishmentRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
+        return replenishments.stream()
             .filter(this::isShortageReplenishment)
             .map(this::toShortageReplenishmentResponse)
             .sorted((left, right) -> right.updatedAt().compareTo(left.updatedAt()))
@@ -316,6 +359,7 @@ public class ReplenishmentService {
 
     public ShortageReplenishmentDetailsResponse getShortageDetails(Long replenishmentId) {
         Replenishment replenishment = getReplenishment(replenishmentId);
+        validateReplenishmentAccess(replenishment);
         List<Allocation> allocations = replenishment.getTask()
             .map(task -> allocationRepository.findAllByTaskId(task.getId()))
             .orElse(List.of());
@@ -444,6 +488,7 @@ public class ReplenishmentService {
     @Transactional
     public void assignReplenishment(Long replenishmentId, Long operatorId) {
         Replenishment replenishment = getReplenishment(replenishmentId);
+        validateReplenishmentAccess(replenishment);
         if (replenishment.getStatus() != Status.CREATED) {
             throw new InvalidRequestException("Replenishment assignment is only allowed for CREATED replenishments.");
         }

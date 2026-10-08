@@ -125,8 +125,11 @@ public class AiToolSecurityBoundary {
         }
 
         String currentUsername = securityFacade.getCurrentUsername();
+        boolean isCreator = order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(currentUsername);
         List<String> supervisors = orderRepository.findSupervisorUsernamesByOrder(order);
-        if (!supervisors.isEmpty() && supervisors.stream().noneMatch(s -> s.equalsIgnoreCase(currentUsername))) {
+        boolean isTaskSupervisor = supervisors.stream().anyMatch(s -> s.equalsIgnoreCase(currentUsername));
+
+        if (!isCreator && !isTaskSupervisor && (!supervisors.isEmpty() || order.getCreatedBy() != null)) {
             AUDIT_LOG.warn("OBJECT_ACCESS_DENIED: Supervisor [{}] attempted to access order [{}] belonging to supervisor(s) {}",
                 currentUsername, order.getLogicId(), supervisors);
             throw new AccessDeniedException("Access denied: Order '" + order.getLogicId() +
@@ -137,7 +140,7 @@ public class AiToolSecurityBoundary {
     /**
      * Enforces object-level authorization for a Replenishment target.
      * DEV role can manage any replenishment.
-     * SUPERVISOR role can only manage replenishments they supervise.
+     * SUPERVISOR role can only manage replenishments they supervise or created.
      *
      * @param replenishment target replenishment
      * @throws AccessDeniedException if caller lacks permission for this replenishment
@@ -149,12 +152,14 @@ public class AiToolSecurityBoundary {
         }
 
         String currentUsername = securityFacade.getCurrentUsername();
+        boolean isCreator = replenishment.getCreatedBy() != null && replenishment.getCreatedBy().equalsIgnoreCase(currentUsername);
         String supervisorUsername = replenishment.getTask()
             .map(Task::getSupervisor)
             .map(User::getUsername)
             .orElse(null);
+        boolean isTaskSupervisor = supervisorUsername != null && supervisorUsername.equalsIgnoreCase(currentUsername);
 
-        if (supervisorUsername != null && !supervisorUsername.equalsIgnoreCase(currentUsername)) {
+        if (!isCreator && !isTaskSupervisor && (supervisorUsername != null || replenishment.getCreatedBy() != null)) {
             AUDIT_LOG.warn("OBJECT_ACCESS_DENIED: Supervisor [{}] attempted to access replenishment [{}] belonging to supervisor [{}]",
                 currentUsername, replenishment.getLogicId(), supervisorUsername);
             throw new AccessDeniedException("Access denied: Replenishment '" + replenishment.getLogicId() +

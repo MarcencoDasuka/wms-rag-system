@@ -42,14 +42,15 @@
 ---
 
 ### Task 1.3: Enforce Supervisor Object-Level Authorization (BOLA/IDOR) (`DEF-03`, `DEF-04`, `DEF-06`)
-* **Status:** `IN PROGRESS` (Scheduled for Batch 2)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 2)
 * **Severity:** `HIGH`
 * **Affected Files:**
-  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/OrderController.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/OrderController.java)
-  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/OrderService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/OrderService.java)
-  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/ReplenishmentController.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/ReplenishmentController.java)
-  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
-* **Invariant:** Supervisors can only view, update, cancel, or delete orders and replenishments they own (or admins across all).
+  * [`Order.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/entity/Order.java) & [`Replenishment.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/entity/Replenishment.java) (added `createdBy`)
+  * [`OrderRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/OrderRepository.java) & [`ReplenishmentRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/ReplenishmentRepository.java) (`findAllAccessibleBySupervisor`)
+  * [`OrderService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/OrderService.java) & [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
+  * [`V38__remediation_batch_2_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V38__remediation_batch_2_schema.sql)
+* **Invariant:** Access granted if `isDev() OR createdBy == currentUser OR task.supervisor == currentUser`. Unassigned `CREATED` entities accessible to creator. List endpoints return scoped results.
+* **Verification:** `Def03OrderBolaRemediationTest` (8/8 passed), `Def04ReplenishmentBolaRemediationTest` (8/8 passed), `Def06OrderExtendedScopingRemediationTest` (3/3 passed).
 
 ---
 
@@ -82,18 +83,24 @@
 ---
 
 ### Task 2.2: Fix Cross-Product Replenishment Location Unique Constraint (`DEF-11`)
-* **Status:** `IN PROGRESS` (Scheduled for Batch 2)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 2)
 * **Severity:** `HIGH`
-* **Affected Files:** New Flyway migration `V38__fix_replenishment_destination_unique_index.sql`
+* **Affected Files:**
+  * [`V38__remediation_batch_2_schema.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V38__remediation_batch_2_schema.sql)
+  * [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
 * **Invariant:** A destination location cannot have multiple active replenishments, regardless of product ID.
+* **Remediation Note:** Dropped old compound index, cleaned up duplicate records in V38, added partial unique index `uk_active_replenishment_destination`, and enforced pre-check in `ReplenishmentService`.
+* **Verification:** `Def11ReplenishmentDestinationConflictRemediationTest` (4/4 passed), `Def11V38MigrationVerificationTest` (2/2 passed).
 
 ---
 
 ### Task 2.3: Order Deletion Lifecycle Guard (`DEF-12`)
-* **Status:** `IN PROGRESS` (Scheduled for Batch 2)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 2)
 * **Severity:** `MEDIUM`
 * **Affected Files:** [`OrderService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/OrderService.java)
-* **Invariant:** Active or in-progress orders (`ASSIGNED`, `IN_PROGRESS`) must not be physically deleted.
+* **Invariant:** Active or in-progress orders (`ASSIGNED`, `IN_PROGRESS`, `PICKED`, `COMPLETED`, `PARTIALLY_COMPLETED`) must not be physically deleted. Deletion permitted only for `CREATED` and `CANCELED`.
+* **Remediation Note:** `OrderService.deleteOrderById` strictly enforces `status IN (CREATED, CANCELED)`, throwing `InvalidRequestException` for all non-deletable lifecycle states.
+* **Verification:** `Def12OrderDeletionLifecycleRemediationTest` (7/7 passed).
 
 ---
 

@@ -133,7 +133,8 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
     int deleteReplenishmentsByTaskCreatedAtOlderThan(@Param("cutoffDate") LocalDateTime cutoffDate);
 
     /**
-     * Finds all replenishments created by a specific supervisor (by username).
+     * Finds all replenishments accessible by a supervisor: either created by the supervisor
+     * or having a task supervised by the supervisor.
      *
      * @param username the supervisor's username
      * @return list of replenishments
@@ -141,9 +142,24 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
     @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
     @Query("""
         SELECT r FROM Replenishment r
-        JOIN r.task t
-        JOIN t.supervisor u
-        WHERE u.username = :username
+        LEFT JOIN r.task t
+        LEFT JOIN t.supervisor u
+        WHERE LOWER(r.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
+        """)
+    List<Replenishment> findAllAccessibleBySupervisor(@Param("username") String username);
+
+    /**
+     * Backward-compatible alias for findAllAccessibleBySupervisor.
+     *
+     * @param username the supervisor's username
+     * @return list of replenishments
+     */
+    @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
+    @Query("""
+        SELECT r FROM Replenishment r
+        LEFT JOIN r.task t
+        LEFT JOIN t.supervisor u
+        WHERE LOWER(r.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
         """)
     List<Replenishment> findAllByCreatedByUsername(@Param("username") String username);
 

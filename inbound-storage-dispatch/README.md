@@ -242,7 +242,7 @@ docker-compose up --build
 
 5. **Default login credentials:**
   - Dev: `dev@isd.com` / `password`
-  - Supervisor: `supervisor@isd.com` / `password`
+  - Supervisor: `super@isd.com` / `password`
   - Operator: `operator@isd.com` / `password`
 
 ### Running Locally (Development)

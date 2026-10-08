@@ -61,6 +61,9 @@ public class Order extends BaseTimestampEntity {
     @Column(nullable = false)
     private OrderStatus status = OrderStatus.CREATED;
 
+    @Column(name = "created_by", length = 50)
+    private String createdBy;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "destination_location_id", nullable = false)
     private Location destinationLocation;
@@ -71,6 +74,12 @@ public class Order extends BaseTimestampEntity {
     public Order(String logicId, Location destinationLocation) {
         this.logicId = logicId;
         this.destinationLocation = destinationLocation;
+    }
+
+    public Order(String logicId, Location destinationLocation, String createdBy) {
+        this.logicId = logicId;
+        this.destinationLocation = destinationLocation;
+        this.createdBy = createdBy;
     }
 
     @Override

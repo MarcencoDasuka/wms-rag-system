@@ -7,11 +7,13 @@ import com.isd.wms.dto.order.shortage.ShortageOrderResponse;
 import com.isd.wms.dto.order_line.OrderLineCreateRequest;
 import com.isd.wms.entity.*;
 import com.isd.wms.enums.OrderStatus;
+import com.isd.wms.enums.Role;
 import com.isd.wms.enums.Status;
 import com.isd.wms.enums.TaskType;
 import com.isd.wms.exception.InvalidRequestException;
 import com.isd.wms.exception.LocationNotFoundException;
 import com.isd.wms.exception.OrderNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import com.isd.wms.mapper.ExtendedOrderMapper;
 import com.isd.wms.mapper.OrderMapper;
 import com.isd.wms.repository.*;
@@ -91,8 +93,26 @@ public class OrderService {
             throw new InvalidRequestException("An order with logicId " + logicId + " already exists");
         }
 
-        Order order = new Order(logicId.trim(), getDestinationLocation(request.destinationLocationId()));
+        Order order = new Order(logicId.trim(), getDestinationLocation(request.destinationLocationId()), securityFacade.getCurrentUsername());
         return orderRepository.save(order);
+    }
+
+    public void validateOrderAccess(Order order) {
+        if (securityFacade.hasRole(Role.ROLE_DEV)) {
+            return;
+        }
+        String currentUsername = securityFacade.getCurrentUsername();
+        boolean isCreator = order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(currentUsername);
+        List<String> supervisors = orderRepository.findSupervisorUsernamesByOrder(order);
+        boolean isTaskSupervisor = supervisors.stream().anyMatch(s -> s.equalsIgnoreCase(currentUsername));
+
+        if (!isCreator && !isTaskSupervisor) {
+            log.warn("Access denied to order {} (createdBy: {}, taskSupervisors: {}) for user {}",
+                order.getId(), order.getCreatedBy(), supervisors, currentUsername);
+            throw new AccessDeniedException(
+                "Access denied: Order " + order.getLogicId() + " belongs to another supervisor."
+            );
+        }
     }
 
     @Transactional
@@ -101,6 +121,7 @@ public class OrderService {
             throw new InvalidRequestException("Order status must be CREATED to update");
         }
         Order order = getOrder(id);
+        validateOrderAccess(order);
 
         if (request.logicId() != null && !request.logicId().trim().equalsIgnoreCase(order.getLogicId())) {
             if (orderRepository.findByLogicIdIgnoreCase(request.logicId().trim()).isPresent()) {
@@ -124,6 +145,7 @@ public class OrderService {
     @Transactional
     public ExtendedOrderResponse updateExtendedOrder(Long id, ExtendedOrderCreateRequest request) {
         Order order = getOrder(id);
+        validateOrderAccess(order);
 
         if (order.getStatus() != OrderStatus.CREATED) {
             throw new InvalidRequestException("Cannot modify lines of an order that is already assigned or in progress.");
@@ -155,12 +177,20 @@ public class OrderService {
 
     /**
      * Deletes an order and releases any reserved stock.
+     * Only orders in CREATED or CANCELED status can be deleted.
      *
      * @param id the ID of the order to delete
      */
     @Transactional
     public void deleteOrderById(Long id) {
         Order order = getOrder(id);
+        validateOrderAccess(order);
+
+        if (order.getStatus() != OrderStatus.CREATED && order.getStatus() != OrderStatus.CANCELED) {
+            throw new InvalidRequestException("Cannot delete order with status: " + order.getStatus() +
+                ". Only CREATED or CANCELED orders can be deleted.");
+        }
+
         releaseReservedStock(order);
 
         transportUnitRepository.findByOrder(order).ifPresent(tu -> {
@@ -174,7 +204,9 @@ public class OrderService {
     }
 
     public List<OrderResponse> getAllOrders() {
-        List<Order> orders = orderRepository.findAllByCreatedByUsername(securityFacade.getCurrentUsername());
+        List<Order> orders = securityFacade.hasRole(Role.ROLE_DEV)
+            ? orderRepository.findAll()
+            : orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
         if (orders.isEmpty()) {
             return Collections.emptyList();
         }
@@ -187,7 +219,9 @@ public class OrderService {
     }
 
     public OrderResponse getOrderById(@NonNull Long orderId) {
-        return orderMapper.toResponse(getOrder(orderId), orderRepository.findOperatorIdByOrderId(orderId).orElse(null));
+        Order order = getOrder(orderId);
+        validateOrderAccess(order);
+        return orderMapper.toResponse(order, orderRepository.findOperatorIdByOrderId(orderId).orElse(null));
     }
 
     public Order getOrder(@NonNull Long orderId) {
@@ -206,6 +240,7 @@ public class OrderService {
     @Transactional
     public void assignOrder(Long orderId, Long operatorId) {
         Order order = getOrder(orderId);
+        validateOrderAccess(order);
         if (order.getStatus() != OrderStatus.CREATED) {
             throw new InvalidRequestException("Order assignment is not allowed for this order");
         }
@@ -295,6 +330,7 @@ public class OrderService {
 
     public ExtendedOrderResponse getExtendedOrderById(Long orderId) {
         Order order = getOrder(orderId);
+        validateOrderAccess(order);
         Long operatorId = orderRepository.findOperatorIdByOrderId(order.getId()).orElse(null);
         return extendedOrderMapper.toResponse(order, operatorId);
     }
@@ -319,7 +355,9 @@ public class OrderService {
     }
 
     public List<ExtendedOrderResponse> getAllExtendedOrders() {
-        List<Order> orders = orderRepository.findAll();
+        List<Order> orders = securityFacade.hasRole(Role.ROLE_DEV)
+            ? orderRepository.findAll()
+            : orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
         if (orders.isEmpty()) {
             return Collections.emptyList();
         }
@@ -389,7 +427,10 @@ public class OrderService {
      * @return list of shortage order summaries
      */
     public List<ShortageOrderResponse> getShortageOrders() {
-        return orderRepository.findAllByCreatedByUsername(securityFacade.getCurrentUsername()).stream()
+        List<Order> orders = securityFacade.hasRole(Role.ROLE_DEV)
+            ? orderRepository.findAll()
+            : orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
+        return orders.stream()
             .filter(this::isShortageOrder)
             .map(this::toShortageOrderResponse)
             .sorted((left, right) ->
@@ -399,6 +440,7 @@ public class OrderService {
 
     public ShortageDetailsResponse getShortageDetails(Long orderId) {
         Order order = getOrder(orderId);
+        validateOrderAccess(order);
         List<OrderLine> lines = orderLineRepository.findAllByOrderId(order.getId());
         List<Allocation> allocations = allocationRepository.findAllByOrder(order);
 
