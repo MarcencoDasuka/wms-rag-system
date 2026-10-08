@@ -17,15 +17,22 @@ import com.isd.wms.service.InventoryService;
 import com.isd.wms.service.LocationService;
 import com.isd.wms.service.OrderService;
 import com.isd.wms.service.ReplenishmentService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -74,18 +81,53 @@ class StockLocationMappingIntegrityIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private User testUser;
     private Category testCategory;
 
+    private List<Long> stockIds;
+    private List<Long> orderIds;
+    private List<Long> replenishmentIds;
+    private List<Long> productIds;
+    private List<Long> locationIds;
+    private List<Long> categoryIds;
+
     @BeforeEach
     void setUp() {
+        stockIds = new ArrayList<>();
+        orderIds = new ArrayList<>();
+        replenishmentIds = new ArrayList<>();
+        productIds = new ArrayList<>();
+        locationIds = new ArrayList<>();
+        categoryIds = new ArrayList<>();
+
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         tx.execute(status -> {
             testUser = userRepository.findByUsername("supervisor")
                 .orElseGet(() -> userRepository.save(new User("supervisor", "sup@test.com", "pass", Role.ROLE_SUPERVISOR, true, null, null)));
             testCategory = categoryRepository.save(new Category("Cat_D2_" + UUID.randomUUID()));
+            categoryIds.add(testCategory.getId());
             return null;
         });
+    }
+
+    @AfterEach
+    void tearDown() {
+        try {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                stockIds.forEach(id -> jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id));
+                orderIds.forEach(id -> jdbcTemplate.update("DELETE FROM orders WHERE id = ?", id));
+                replenishmentIds.forEach(id -> jdbcTemplate.update("DELETE FROM replenishments WHERE id = ?", id));
+                productIds.forEach(id -> jdbcTemplate.update("DELETE FROM products WHERE id = ?", id));
+                locationIds.forEach(id -> jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id));
+                categoryIds.forEach(id -> jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id));
+                return null;
+            });
+        } catch (Exception e) {
+            System.err.println("Teardown failed: " + e.getMessage());
+        }
     }
 
     @Test
@@ -96,19 +138,24 @@ class StockLocationMappingIntegrityIntegrationTest {
         Long[] fixtureIds = tx.execute(status -> {
             String suffix = UUID.randomUUID().toString().substring(0, 8);
             Product prodA = productRepository.save(new Product("ProdA_" + suffix, "BARA_" + suffix, "Desc A", testCategory));
+            productIds.add(prodA.getId());
             Product prodB = productRepository.save(new Product("ProdB_" + suffix, "BARB_" + suffix, "Desc B", testCategory));
+            productIds.add(prodB.getId());
 
             Location loc = locationRepository.save(new Location("LOC_D2_" + suffix, "BC_D2_" + suffix, Zone.PICKING, "Test Loc"));
+            locationIds.add(loc.getId());
 
             // Stock 1 for Product A: depleted (available = false, quantity = 0)
             Stock stockA = new Stock(prodA, loc, 0, 0, LocalDate.now(), LocalDate.now().plusMonths(6));
             stockA.setAvailable(false);
             stockA = stockRepository.save(stockA);
+            stockIds.add(stockA.getId());
 
             // Stock 2 for Product B: active (available = true, quantity = 15)
             Stock stockB = new Stock(prodB, loc, 15, 0, LocalDate.now(), LocalDate.now().plusMonths(6));
             stockB.setAvailable(true);
             stockB = stockRepository.save(stockB);
+            stockIds.add(stockB.getId());
 
             return new Long[]{loc.getId(), stockA.getId(), stockB.getId(), prodA.getId(), prodB.getId()};
         });
@@ -146,8 +193,11 @@ class StockLocationMappingIntegrityIntegrationTest {
 
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         Location locWithStock = locationRepository.save(new Location("LOC_STK_" + suffix, "BC_STK_" + suffix, Zone.PICKING, "Loc with stock"));
+        locationIds.add(locWithStock.getId());
         Product prod = productRepository.save(new Product("Prod_" + suffix, "BAR_" + suffix, "Desc", testCategory));
-        stockRepository.save(new Stock(prod, locWithStock, 10, 0, LocalDate.now(), LocalDate.now().plusMonths(6)));
+        productIds.add(prod.getId());
+        Stock stock = stockRepository.save(new Stock(prod, locWithStock, 10, 0, LocalDate.now(), LocalDate.now().plusMonths(6)));
+        stockIds.add(stock.getId());
 
         // 1. Cannot delete location with active stock
         assertThatThrownBy(() -> locationService.deleteLocation(locWithStock.getId()))
@@ -156,10 +206,12 @@ class StockLocationMappingIntegrityIntegrationTest {
 
         // 2. Cannot delete location with active replenishment
         Location locWithRepl = locationRepository.save(new Location("LOC_RPL_" + suffix, "BC_RPL_" + suffix, Zone.PICKING, "Loc with repl"));
+        locationIds.add(locWithRepl.getId());
         Replenishment repl = new Replenishment(prod, 10, locWithRepl);
         repl.setStatus(Status.IN_PROGRESS);
         repl.setLogicId("RPL-" + suffix.toUpperCase());
-        replenishmentRepository.save(repl);
+        repl = replenishmentRepository.save(repl);
+        replenishmentIds.add(repl.getId());
 
         assertThatThrownBy(() -> locationService.deleteLocation(locWithRepl.getId()))
             .isInstanceOf(IllegalStateException.class)
@@ -167,9 +219,11 @@ class StockLocationMappingIntegrityIntegrationTest {
 
         // 3. Cannot delete location with active order
         Location locWithOrder = locationRepository.save(new Location("LOC_ORD_" + suffix, "BC_ORD_" + suffix, Zone.DISPATCH, "Loc with order"));
+        locationIds.add(locWithOrder.getId());
         Order order = new Order("ORD-" + suffix.toUpperCase(), locWithOrder);
         order.setStatus(OrderStatus.CREATED);
-        orderRepository.save(order);
+        order = orderRepository.save(order);
+        orderIds.add(order.getId());
 
         assertThatThrownBy(() -> locationService.deleteLocation(locWithOrder.getId()))
             .isInstanceOf(IllegalStateException.class)
@@ -177,6 +231,7 @@ class StockLocationMappingIntegrityIntegrationTest {
 
         // 4. Deleting an empty unused location synchronizes isActive=false and available=false
         Location cleanLoc = locationRepository.save(new Location("LOC_CLN_" + suffix, "BC_CLN_" + suffix, Zone.PICKING, "Clean Loc"));
+        locationIds.add(cleanLoc.getId());
         locationService.deleteLocation(cleanLoc.getId());
 
         Location deletedLoc = locationRepository.findById(cleanLoc.getId()).orElseThrow();
@@ -189,40 +244,50 @@ class StockLocationMappingIntegrityIntegrationTest {
     void inactiveOrUnavailableLocation_rejectsMutations() {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         Location inactiveLoc = locationRepository.save(new Location("LOC_INACT_" + suffix, "BC_INACT_" + suffix, Zone.PICKING, "Inactive Loc"));
+        locationIds.add(inactiveLoc.getId());
         locationService.deleteLocation(inactiveLoc.getId());
 
         Location unavailableLoc = locationRepository.save(new Location("LOC_UNAV_" + suffix, "BC_UNAV_" + suffix, Zone.PICKING, "Unavail Loc", false));
+        locationIds.add(unavailableLoc.getId());
 
         Product prod = productRepository.save(new Product("Prod_MUT_" + suffix, "BAR_MUT_" + suffix, "Desc", testCategory));
+        productIds.add(prod.getId());
 
-        // 1. Cannot add stock to inactive location
-        assertThatThrownBy(() -> inventoryService.addStock(new AddStockRequest(
-            prod.getId(), inactiveLoc.getId(), 10, 0, LocalDate.now(), LocalDate.now().plusMonths(6), testUser.getId()
-        )))
-            .isInstanceOf(InvalidRequestException.class)
-            .hasMessageContaining("Cannot add stock to an inactive or unavailable location");
+        SecurityContext sc = SecurityContextHolder.createEmptyContext();
+        sc.setAuthentication(new UsernamePasswordAuthenticationToken("supervisor", null, List.of(new SimpleGrantedAuthority("ROLE_SUPERVISOR"))));
+        SecurityContextHolder.setContext(sc);
+        try {
+            // 1. Cannot add stock to inactive location
+            assertThatThrownBy(() -> inventoryService.addStock(new AddStockRequest(
+                prod.getId(), inactiveLoc.getId(), 10, 0, LocalDate.now(), LocalDate.now().plusMonths(6), testUser.getId()
+            )))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Cannot add stock to an inactive or unavailable location");
 
-        // 2. Cannot add stock to unavailable location
-        assertThatThrownBy(() -> inventoryService.addStock(new AddStockRequest(
-            prod.getId(), unavailableLoc.getId(), 10, 0, LocalDate.now(), LocalDate.now().plusMonths(6), testUser.getId()
-        )))
-            .isInstanceOf(InvalidRequestException.class)
-            .hasMessageContaining("Cannot add stock to an inactive or unavailable location");
+            // 2. Cannot add stock to unavailable location
+            assertThatThrownBy(() -> inventoryService.addStock(new AddStockRequest(
+                prod.getId(), unavailableLoc.getId(), 10, 0, LocalDate.now(), LocalDate.now().plusMonths(6), testUser.getId()
+            )))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Cannot add stock to an inactive or unavailable location");
 
-        // 3. Cannot route replenishment to inactive location
-        assertThatThrownBy(() -> replenishmentService.createReplenishment(new ReplenishmentCreateRequest(
-            prod.getId(), 5, inactiveLoc.getId()
-        )))
-            .isInstanceOf(InvalidRequestException.class)
-            .hasMessageContaining("Cannot route replenishment to inactive or unavailable location");
+            // 3. Cannot route replenishment to inactive location
+            assertThatThrownBy(() -> replenishmentService.createReplenishment(new ReplenishmentCreateRequest(
+                prod.getId(), 5, inactiveLoc.getId()
+            )))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Cannot route replenishment to inactive or unavailable location");
 
-        // 4. Cannot route order to inactive destination location
-        ExtendedOrderCreateRequest orderReq = new ExtendedOrderCreateRequest(
-            new OrderCreateRequest("ORD-INACT-" + suffix, inactiveLoc.getId()),
-            List.of(new OrderLineCreateRequest(null, prod.getId(), 5))
-        );
-        assertThatThrownBy(() -> orderService.addExtendedOrder(orderReq))
-            .isInstanceOf(InvalidRequestException.class)
-            .hasMessageContaining("Cannot route order to inactive or unavailable destination location");
+            // 4. Cannot route order to inactive destination location
+            ExtendedOrderCreateRequest orderReq = new ExtendedOrderCreateRequest(
+                new OrderCreateRequest("ORD-INACT-" + suffix, inactiveLoc.getId()),
+                List.of(new OrderLineCreateRequest(null, prod.getId(), 5))
+            );
+            assertThatThrownBy(() -> orderService.addExtendedOrder(orderReq))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Cannot route order to inactive or unavailable destination location");
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 }

@@ -6,6 +6,7 @@ import com.isd.wms.enums.TaskStatus;
 import com.isd.wms.enums.TaskType;
 import com.isd.wms.enums.Zone;
 import com.isd.wms.repository.*;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -59,9 +61,42 @@ class LocationProductExclusivityConcurrencyIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    private List<Long> allocationIds;
+    private List<Long> stockIds;
+    private List<Long> replenishmentIds;
+    private List<Long> taskIds;
+    private List<Long> locationIds;
+    private List<Long> productIds;
+    private List<Long> categoryIds;
+
     @BeforeEach
     void setUpSchema() {
         jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS uk_stocks_active_location ON stocks (location_id) WHERE available = true;");
+        allocationIds = new ArrayList<>();
+        stockIds = new ArrayList<>();
+        replenishmentIds = new ArrayList<>();
+        taskIds = new ArrayList<>();
+        locationIds = new ArrayList<>();
+        productIds = new ArrayList<>();
+        categoryIds = new ArrayList<>();
+    }
+
+    @AfterEach
+    void tearDown() {
+        try {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                allocationIds.forEach(id -> jdbcTemplate.update("DELETE FROM allocations WHERE id = ?", id));
+                replenishmentIds.forEach(id -> jdbcTemplate.update("DELETE FROM replenishments WHERE id = ?", id));
+                stockIds.forEach(id -> jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id));
+                taskIds.forEach(id -> jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", id));
+                locationIds.forEach(id -> jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id));
+                productIds.forEach(id -> jdbcTemplate.update("DELETE FROM products WHERE id = ?", id));
+                categoryIds.forEach(id -> jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id));
+                return null;
+            });
+        } catch (Exception e) {
+            System.err.println("Teardown failed: " + e.getMessage());
+        }
     }
 
     @Test
@@ -79,56 +114,70 @@ class LocationProductExclusivityConcurrencyIntegrationTest {
                 .orElseThrow(() -> new IllegalStateException("Seed supervisor not found"));
 
             Category cat = categoryRepository.save(new Category("CatEx_" + suffix));
+            categoryIds.add(cat.getId());
             Product prodA = productRepository.save(new Product("ProdA_" + suffix, "BARA_" + suffix, "Desc A", cat));
+            productIds.add(prodA.getId());
             Product prodB = productRepository.save(new Product("ProdB_" + suffix, "BARB_" + suffix, "Desc B", cat));
+            productIds.add(prodB.getId());
 
             Location destLoc = locationRepository.save(new Location("DST_" + suffix, "BC_DST_" + suffix, Zone.PICKING, "Pick Face Dest"));
+            locationIds.add(destLoc.getId());
             Location srcLocA = locationRepository.save(new Location("SRCA_" + suffix, "BC_SRCA_" + suffix, Zone.REPLENISHMENT, "Reserve A"));
+            locationIds.add(srcLocA.getId());
             Location srcLocB = locationRepository.save(new Location("SRCB_" + suffix, "BC_SRCB_" + suffix, Zone.REPLENISHMENT, "Reserve B"));
+            locationIds.add(srcLocB.getId());
 
             Stock stockA = stockRepository.save(new Stock(prodA, srcLocA, 10, LocalDate.now(), LocalDate.now().plusYears(1)));
             stockA.setReservedQuantity(10);
             stockA = stockRepository.save(stockA);
+            stockIds.add(stockA.getId());
 
             Stock stockB = stockRepository.save(new Stock(prodB, srcLocB, 10, LocalDate.now(), LocalDate.now().plusYears(1)));
             stockB.setReservedQuantity(10);
             stockB = stockRepository.save(stockB);
+            stockIds.add(stockB.getId());
 
             // Replenishment A for Product A to destLoc
             Task taskA = new Task(supervisor, TaskType.REPLENISHMENT, 10);
             taskA.setOperator(operator);
             taskA.setStatus(TaskStatus.IN_PROGRESS);
             taskA = taskRepository.save(taskA);
+            taskIds.add(taskA.getId());
 
             Replenishment replA = new Replenishment(prodA, 10, destLoc);
             replA.setTask(taskA);
             replA.setStatus(Status.IN_PROGRESS);
             replA.setLogicId("RPLA-" + suffix.toUpperCase());
             replA = replenishmentRepository.save(replA);
+            replenishmentIds.add(replA.getId());
 
             Allocation allocA = new Allocation(taskA, stockA, 10, Status.COMPLETED);
             allocA.setPickedQuantity(10);
             allocA.setSourceLocationScanned(true);
             allocA.setProductScanned(true);
             allocA = allocationRepository.save(allocA);
+            allocationIds.add(allocA.getId());
 
             // Replenishment B for Product B to destLoc
             Task taskB = new Task(supervisor, TaskType.REPLENISHMENT, 10);
             taskB.setOperator(operator);
             taskB.setStatus(TaskStatus.IN_PROGRESS);
             taskB = taskRepository.save(taskB);
+            taskIds.add(taskB.getId());
 
             Replenishment replB = new Replenishment(prodB, 10, destLoc);
             replB.setTask(taskB);
             replB.setStatus(Status.IN_PROGRESS);
             replB.setLogicId("RPLB-" + suffix.toUpperCase());
             replB = replenishmentRepository.save(replB);
+            replenishmentIds.add(replB.getId());
 
             Allocation allocB = new Allocation(taskB, stockB, 10, Status.COMPLETED);
             allocB.setPickedQuantity(10);
             allocB.setSourceLocationScanned(true);
             allocB.setProductScanned(true);
             allocB = allocationRepository.save(allocB);
+            allocationIds.add(allocB.getId());
 
             return new Long[]{destLoc.getId(), allocA.getId(), allocB.getId(), prodA.getId(), prodB.getId()};
         });

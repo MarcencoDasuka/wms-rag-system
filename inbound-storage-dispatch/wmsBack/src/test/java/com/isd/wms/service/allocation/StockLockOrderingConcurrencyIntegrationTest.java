@@ -8,10 +8,13 @@ import com.isd.wms.exception.InsufficientStockException;
 import com.isd.wms.repository.*;
 import com.isd.wms.service.InventoryAdjustmentService;
 import com.isd.wms.service.InventoryService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
@@ -20,6 +23,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -54,6 +58,44 @@ class StockLockOrderingConcurrencyIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private List<Long> stockIds;
+    private List<Long> locationIds;
+    private List<Long> productIds;
+    private List<Long> categoryIds;
+
+    @BeforeEach
+    void setUp() {
+        stockIds = new ArrayList<>();
+        locationIds = new ArrayList<>();
+        productIds = new ArrayList<>();
+        categoryIds = new ArrayList<>();
+    }
+
+    @AfterEach
+    void tearDown() {
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                for (Long id : stockIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM products WHERE id = ?", id);
+                }
+                for (Long id : categoryIds) {
+                    jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id);
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("Teardown failed: " + e.getMessage());
+        }
+    }
+
     @Test
     @DisplayName("GAP-04: Concurrent removeStock calls serialize via findByIdWithLock preventing overselling and lost updates")
     void concurrentRemoveStock_serializesAndPreventsOverselling() throws Exception {
@@ -64,10 +106,14 @@ class StockLockOrderingConcurrencyIntegrationTest {
             User operator = userRepository.findByUsername("operator").orElseThrow();
 
             Category cat = categoryRepository.save(new Category("CatRMS_" + suffix));
+            categoryIds.add(cat.getId());
             Product prod = productRepository.save(new Product("ProdRMS_" + suffix, "BAR_RMS_" + suffix, "Desc", cat));
+            productIds.add(prod.getId());
             Location loc = locationRepository.save(new Location("PLOC_RMS_" + suffix, "BC_RMS_" + suffix, Zone.PICKING, "Loc"));
+            locationIds.add(loc.getId());
 
             Stock stock = stockRepository.save(new Stock(prod, loc, 10, LocalDate.now(), LocalDate.now().plusYears(1)));
+            stockIds.add(stock.getId());
             return new Long[]{stock.getId(), operator.getId()};
         });
 
@@ -132,12 +178,18 @@ class StockLockOrderingConcurrencyIntegrationTest {
             User supervisor = userRepository.findByUsername("supervisor").orElseThrow();
 
             Category cat = categoryRepository.save(new Category("CatORD_" + suffix));
+            categoryIds.add(cat.getId());
             Product prod = productRepository.save(new Product("ProdORD_" + suffix, "BAR_ORD_" + suffix, "Desc", cat));
+            productIds.add(prod.getId());
             Location loc1 = locationRepository.save(new Location("PLOC_ORD1_" + suffix, "BC_ORD1_" + suffix, Zone.PICKING, "Loc 1"));
+            locationIds.add(loc1.getId());
             Location loc2 = locationRepository.save(new Location("PLOC_ORD2_" + suffix, "BC_ORD2_" + suffix, Zone.PICKING, "Loc 2"));
+            locationIds.add(loc2.getId());
 
             Stock stock1 = stockRepository.save(new Stock(prod, loc1, 20, LocalDate.now(), LocalDate.now().plusYears(1)));
+            stockIds.add(stock1.getId());
             Stock stock2 = stockRepository.save(new Stock(prod, loc2, 20, LocalDate.now(), LocalDate.now().plusYears(1)));
+            stockIds.add(stock2.getId());
 
             // Ensure stock1 has lower ID than stock2
             Long lowId = Math.min(stock1.getId(), stock2.getId());

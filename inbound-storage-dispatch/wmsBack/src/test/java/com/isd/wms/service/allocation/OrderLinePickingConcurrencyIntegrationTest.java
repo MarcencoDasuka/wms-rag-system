@@ -14,7 +14,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -57,6 +62,50 @@ class OrderLinePickingConcurrencyIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private List<Long> allocationIds;
+    private List<Long> orderLineIds;
+    private List<Long> orderIds;
+    private List<Long> stockIds;
+    private List<Long> taskIds;
+    private List<Long> locationIds;
+    private List<Long> productIds;
+    private List<Long> categoryIds;
+
+    @BeforeEach
+    void setUp() {
+        allocationIds = new ArrayList<>();
+        orderLineIds = new ArrayList<>();
+        orderIds = new ArrayList<>();
+        stockIds = new ArrayList<>();
+        taskIds = new ArrayList<>();
+        locationIds = new ArrayList<>();
+        productIds = new ArrayList<>();
+        categoryIds = new ArrayList<>();
+    }
+
+    @AfterEach
+    void tearDown() {
+        try {
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            tx.execute(status -> {
+                allocationIds.forEach(id -> jdbcTemplate.update("DELETE FROM allocations WHERE id = ?", id));
+                orderLineIds.forEach(id -> jdbcTemplate.update("DELETE FROM order_lines WHERE id = ?", id));
+                stockIds.forEach(id -> jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id));
+                orderIds.forEach(id -> jdbcTemplate.update("DELETE FROM orders WHERE id = ?", id));
+                taskIds.forEach(id -> jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", id));
+                locationIds.forEach(id -> jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id));
+                productIds.forEach(id -> jdbcTemplate.update("DELETE FROM products WHERE id = ?", id));
+                categoryIds.forEach(id -> jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id));
+                return null;
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     @Test
     @DisplayName("Concurrent picking completion on the same OrderLine preserves deliveredQuantity without lost updates")
     void concurrentPicking_onSameOrderLine_preservesDeliveredQuantityWithoutLostUpdates() throws Exception {
@@ -72,46 +121,58 @@ class OrderLinePickingConcurrencyIntegrationTest {
                 .orElseThrow(() -> new IllegalStateException("Seed supervisor not found"));
 
             Category cat = categoryRepository.save(new Category("Cat_" + suffix));
+            categoryIds.add(cat.getId());
             Product prod = productRepository.save(new Product("Prod_" + suffix, "BAR_" + suffix, "Desc", cat));
+            productIds.add(prod.getId());
 
             Location loc1 = locationRepository.save(new Location("L1_" + suffix, "BC1_" + suffix, Zone.PICKING, "Loc 1"));
+            locationIds.add(loc1.getId());
             Location loc2 = locationRepository.save(new Location("L2_" + suffix, "BC2_" + suffix, Zone.PICKING, "Loc 2"));
+            locationIds.add(loc2.getId());
             Location destLoc = locationRepository.save(new Location("DST_" + suffix, "BCD_" + suffix, Zone.DISPATCH, "Dest Loc"));
+            locationIds.add(destLoc.getId());
 
             Stock stock1 = stockRepository.save(new Stock(prod, loc1, 10, LocalDate.now(), LocalDate.now().plusYears(1)));
             stock1.setReservedQuantity(5);
             stock1 = stockRepository.save(stock1);
+            stockIds.add(stock1.getId());
 
             Stock stock2 = stockRepository.save(new Stock(prod, loc2, 10, LocalDate.now(), LocalDate.now().plusYears(1)));
             stock2.setReservedQuantity(5);
             stock2 = stockRepository.save(stock2);
+            stockIds.add(stock2.getId());
 
             Task task = new Task(supervisor, TaskType.PICKING_ORDER, 10);
             task.setOperator(operator);
             task.setStatus(TaskStatus.IN_PROGRESS);
             task = taskRepository.save(task);
+            taskIds.add(task.getId());
 
             Order order = orderRepository.save(new Order("ORD-" + suffix, destLoc));
             order.setStatus(OrderStatus.IN_PROGRESS);
             order = orderRepository.save(order);
+            orderIds.add(order.getId());
 
             OrderLine orderLine = new OrderLine(order, task, prod, 10);
             orderLine.setDeliveredQuantity(0);
             orderLine.setShortageQuantity(0);
             orderLine.setStatus(Status.IN_PROGRESS);
             orderLine = orderLineRepository.save(orderLine);
+            orderLineIds.add(orderLine.getId());
 
             Allocation alloc1 = new Allocation(task, stock1, 5, Status.IN_PROGRESS);
             alloc1.setPickedQuantity(5);
             alloc1.setSourceLocationScanned(true);
             alloc1.setProductScanned(true);
             alloc1 = allocationRepository.save(alloc1);
+            allocationIds.add(alloc1.getId());
 
             Allocation alloc2 = new Allocation(task, stock2, 5, Status.IN_PROGRESS);
             alloc2.setPickedQuantity(5);
             alloc2.setSourceLocationScanned(true);
             alloc2.setProductScanned(true);
             alloc2 = allocationRepository.save(alloc2);
+            allocationIds.add(alloc2.getId());
 
             return new Long[]{orderLine.getId(), alloc1.getId(), alloc2.getId(), operator.getId(), order.getId()};
         });
