@@ -127,6 +127,12 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     List<Stock> findAllByAvailableIsTrue();
 
     @EntityGraph(attributePaths = {"product", "location"})
+    List<Stock> findAllByProductIdAndAvailableIsTrue(Long productId);
+
+    @EntityGraph(attributePaths = {"product", "location"})
+    List<Stock> findAllByLocationIdAndAvailableIsTrue(Long locationId);
+
+    @EntityGraph(attributePaths = {"product", "location"})
     Page<Stock> findAllByAvailableIsTrue(Pageable pageable);
 
     boolean existsByLocationAndAvailableIsTrueAndProductIsNot(Location location, Product product);

@@ -6,6 +6,8 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { useTheme } from './composables/useTheme'
+import { setApiRouter, setAuthStoreGetter } from './api/index.js'
+import { useAuthStore } from './stores/auth.js'
 
 import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
@@ -18,8 +20,18 @@ const app = createApp(App)
 
 useTheme()
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
+
+setApiRouter(router)
+setAuthStoreGetter(() => {
+  try {
+    return useAuthStore()
+  } catch {
+    return null
+  }
+})
 
 app.use(PrimeVue, {
   theme: {

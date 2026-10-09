@@ -6,19 +6,24 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Service that indexes product information into a vector store for semantic search.
  * <p>
- * On application startup, all existing products are indexed. The index is updated
+ * On application startup, all existing products are indexed asynchronously. The index is updated
  * whenever a product is created, updated, or deleted. Each product is represented
  * as a {@link Document} containing its name, description, and metadata (barcode, ID).
  * </p>
@@ -33,36 +38,116 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ProductVectorIndexer {
+
+    public enum VectorIndexStatus {
+        NOT_STARTED,
+        IN_PROGRESS,
+        READY,
+        FAILED
+    }
 
     private final ProductRepository productRepository;
     private final VectorStore vectorStore;
+    private final boolean indexingEnabled;
+
+    private final AtomicReference<VectorIndexStatus> indexingStatus = new AtomicReference<>(VectorIndexStatus.NOT_STARTED);
+    private final AtomicBoolean isIndexing = new AtomicBoolean(false);
+    private volatile Instant lastIndexedAt;
+    private volatile String lastErrorMessage;
+    private volatile int indexedCount = 0;
+
+    public ProductVectorIndexer(
+        ProductRepository productRepository,
+        VectorStore vectorStore,
+        @Value("${wms.ai.vector-indexing.enabled:true}") boolean indexingEnabled
+    ) {
+        this.productRepository = productRepository;
+        this.vectorStore = vectorStore;
+        this.indexingEnabled = indexingEnabled;
+    }
+
+    public ProductVectorIndexer(ProductRepository productRepository, VectorStore vectorStore) {
+        this(productRepository, vectorStore, true);
+    }
 
     /**
-     * Indexes all products in the database on application startup.
-     * This method is triggered by the {@link ApplicationReadyEvent}.
+     * Non-blocking listener triggered on {@link ApplicationReadyEvent}.
+     * Dispatches vector indexing asynchronously to a background thread, ensuring
+     * HTTP server readiness and health probes are never blocked by external AI latency.
      */
     @EventListener(ApplicationReadyEvent.class)
-    public void indexAllProducts() {
-        log.info("Starting Product Vector Indexing...");
-        List<Product> products = productRepository.findAll();
+    public void onApplicationReady() {
+        if (!indexingEnabled) {
+            log.info("Startup vector indexing is disabled by configuration (wms.ai.vector-indexing.enabled=false).");
+            indexingStatus.set(VectorIndexStatus.NOT_STARTED);
+            return;
+        }
+        CompletableFuture.runAsync(this::indexAllProducts);
+    }
 
-        if (products.isEmpty()) {
-            log.info("No products found to index.");
+    /**
+     * Indexes all products in the database into the vector store.
+     * Guarded by an atomic mutex to prevent concurrent duplicate re-indexing runs.
+     */
+    public void indexAllProducts() {
+        if (!isIndexing.compareAndSet(false, true)) {
+            log.info("Product vector indexing is already in progress, skipping duplicate invocation.");
             return;
         }
 
-        List<Document> documents = products.stream()
-            .map(this::createDocument)
-            .toList();
+        indexingStatus.set(VectorIndexStatus.IN_PROGRESS);
+        log.info("Starting Product Vector Indexing in background thread...");
 
         try {
+            List<Product> products = productRepository.findAll();
+
+            if (products.isEmpty()) {
+                log.info("No products found to index.");
+                indexedCount = 0;
+                lastIndexedAt = Instant.now();
+                lastErrorMessage = null;
+                indexingStatus.set(VectorIndexStatus.READY);
+                return;
+            }
+
+            List<Document> documents = products.stream()
+                .map(this::createDocument)
+                .toList();
+
             vectorStore.add(documents);
+            indexedCount = documents.size();
+            lastIndexedAt = Instant.now();
+            lastErrorMessage = null;
+            indexingStatus.set(VectorIndexStatus.READY);
             log.info("Successfully indexed {} products into PGVector.", documents.size());
         } catch (Exception e) {
-            log.warn("Failed to index products into PGVector on startup (OpenAI API key may not be configured): {}", e.getMessage());
+            lastErrorMessage = e.getMessage();
+            indexingStatus.set(VectorIndexStatus.FAILED);
+            log.warn("Failed to index products into PGVector on startup (OpenAI API key may not be configured or service unreachable): {}", e.getMessage());
+        } finally {
+            isIndexing.set(false);
         }
+    }
+
+    public VectorIndexStatus getIndexingStatus() {
+        return indexingStatus.get();
+    }
+
+    public boolean isIndexingInProgress() {
+        return isIndexing.get();
+    }
+
+    public Instant getLastIndexedAt() {
+        return lastIndexedAt;
+    }
+
+    public String getLastErrorMessage() {
+        return lastErrorMessage;
+    }
+
+    public int getIndexedCount() {
+        return indexedCount;
     }
 
     /**

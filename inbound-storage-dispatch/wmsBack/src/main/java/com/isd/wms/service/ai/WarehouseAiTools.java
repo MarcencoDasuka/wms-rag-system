@@ -2,6 +2,7 @@ package com.isd.wms.service.ai;
 
 import com.isd.wms.entity.*;
 import com.isd.wms.enums.OrderStatus;
+import com.isd.wms.enums.Role;
 import com.isd.wms.enums.Status;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.OrderRepository;
@@ -66,9 +67,7 @@ public class WarehouseAiTools {
     @Tool(description = "Lists all registered Operators in the system.")
     public String getAvailableOperators() {
         log.info("AI invoked getAvailableOperators tool");
-        List<User> operators = userRepository.findAll().stream()
-            .filter(u -> u.getUserRole().name().equals("ROLE_OPERATOR"))
-            .toList();
+        List<User> operators = userRepository.findByUserRoleAndIsActiveTrue(Role.ROLE_OPERATOR);
 
         return operators.isEmpty() ? "No operators found in the system." : formatOperators(operators);
     }
@@ -83,7 +82,7 @@ public class WarehouseAiTools {
     public String autoDistributeWorkload() {
         securityBoundary.enforceSupervisorOrDev("autoDistributeWorkload");
         log.info("AI invoked autoDistributeWorkload");
-        List<User> operators = userRepository.findAll().stream().filter(u -> u.getUserRole().name().equals("ROLE_OPERATOR")).toList();
+        List<User> operators = userRepository.findByUserRoleAndIsActiveTrue(Role.ROLE_OPERATOR);
         if (operators.isEmpty()) return "Error: No operators registered in the system.";
 
         List<Order> unassignedOrders = orderRepository.findAll().stream().filter(o -> o.getStatus() == OrderStatus.CREATED).toList();

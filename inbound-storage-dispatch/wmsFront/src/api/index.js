@@ -1,7 +1,5 @@
 import axios from 'axios'
-import router from '@/router'
-import { useAuthStore } from '@/stores/auth'
-import * as notificationService from '@/services/notificationService'
+import * as notificationService from '../services/notificationService.js'
 import {
   setupInterceptors,
   handle401Unauthorized,
@@ -9,9 +7,24 @@ import {
   handle409Conflict
 } from './interceptors.js'
 
-const currentHostname = typeof window !== 'undefined' && window.location ? window.location.hostname : 'localhost'
+let appRouter = null
+export const setApiRouter = (router) => {
+  appRouter = router
+}
 
-const API_BASE_URL = `http://${currentHostname}:8080/api`
+let authStoreGetter = null
+export const setAuthStoreGetter = (fn) => {
+  authStoreGetter = fn
+}
+
+export const resolveBaseUrl = (env = typeof import.meta !== 'undefined' ? import.meta.env : {}) => {
+  if (env && env.VITE_API_URL && typeof env.VITE_API_URL === 'string' && env.VITE_API_URL.trim().length > 0) {
+    return env.VITE_API_URL.trim()
+  }
+  return '/api'
+}
+
+export const API_BASE_URL = resolveBaseUrl()
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -22,7 +35,7 @@ apiClient.interceptors.request.use((config) => {
   // If in-memory token is available, pass it in Authorization header;
   // otherwise, the browser transmits the HttpOnly cookie automatically via withCredentials: true.
   try {
-    const authStore = useAuthStore()
+    const authStore = typeof authStoreGetter === 'function' ? authStoreGetter() : null
     if (authStore && authStore.token) {
       config.headers.Authorization = `Bearer ${authStore.token}`
     }
@@ -35,12 +48,12 @@ apiClient.interceptors.request.use((config) => {
 setupInterceptors(apiClient, {
   getAuthStore: () => {
     try {
-      return useAuthStore()
+      return typeof authStoreGetter === 'function' ? authStoreGetter() : null
     } catch {
       return null
     }
   },
-  router,
+  getRouter: () => appRouter,
   notifyError: notificationService.notifyError,
   notifyWarning: notificationService.notifyWarning
 })

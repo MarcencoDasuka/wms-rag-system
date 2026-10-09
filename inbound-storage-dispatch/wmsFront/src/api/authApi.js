@@ -1,4 +1,4 @@
-import apiClient from './index'
+import apiClient from './index.js'
 
 export const authApi = {
   login(payload) {

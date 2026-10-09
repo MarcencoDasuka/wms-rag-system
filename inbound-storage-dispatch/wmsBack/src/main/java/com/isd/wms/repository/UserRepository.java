@@ -1,6 +1,7 @@
 package com.isd.wms.repository;
 
 import com.isd.wms.entity.User;
+import com.isd.wms.enums.Role;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -70,6 +71,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return list of active users
      */
     List<User> findAllByIsActiveTrue();
+
+    List<User> findByUserRoleAndIsActiveTrue(Role userRole);
 
     Page<User> findAllByIsActiveTrue(Pageable pageable);
 

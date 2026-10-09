@@ -123,7 +123,7 @@ export const handle409Conflict = (error, { notifyWarning, dispatchEvent } = {}) 
   }
 }
 
-export const setupInterceptors = (apiClient, { getAuthStore, router, notifyError, notifyWarning } = {}) => {
+export const setupInterceptors = (apiClient, { getAuthStore, router, getRouter, notifyError, notifyWarning } = {}) => {
   apiClient.interceptors.response.use(
     (response) => response,
     async (error) => {
@@ -131,7 +131,8 @@ export const setupInterceptors = (apiClient, { getAuthStore, router, notifyError
         const status = error.response.status
         if (status === 401) {
           if (!isAuthLoginRequest(error.config)) {
-            await handle401Unauthorized(error, { getAuthStore, router, notifyError })
+            const activeRouter = typeof getRouter === 'function' ? getRouter() : router
+            await handle401Unauthorized(error, { getAuthStore, router: activeRouter, notifyError })
           }
         } else if (status === 403) {
           handle403Forbidden(error, { notifyError })

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '../stores/auth.js'
 
 import LoginView from '../views/auth/LoginView.vue'
 import AccessDeniedPage from '../views/auth/AccessDeniedPage.vue'
@@ -15,7 +15,7 @@ import OperatorConsole from '../views/operator/OperatorConsole.vue'
 import VerifyEmailView from '../views/auth/VerifyEmailView.vue'
 import OrderForm from '../views/supervisor/OrderView.vue'
 import ReplenishmentsView from '../views/supervisor/ReplenishmentsView.vue'
-import AllocationsView from '@/views/supervisor/AllocationsView.vue'
+import AllocationsView from '../views/supervisor/AllocationsView.vue'
 
 const DEV = 'ROLE_DEV'
 const SUPERVISOR = 'ROLE_SUPERVISOR'
@@ -117,8 +117,13 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+
+  // Validate stored session with authoritative backend on reload / initial navigation
+  if (authStore.isAuthenticated && !authStore.isSessionValidated && authStore.validateSessionOnReload) {
+    await authStore.validateSessionOnReload()
+  }
 
   if (to.meta.guestOnly && authStore.isAuthenticated) {
     return next(authStore.dashboardPath)

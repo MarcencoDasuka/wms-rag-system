@@ -69,14 +69,13 @@ public class InventoryMutatingAiTools {
         }
     }
 
-    @Tool(description = "Adjusts or writes off inventory stock when items are damaged, lost, stolen, or have an inventory mismatch. High-impact operation: requires confirmation token. If confirmationToken is omitted, a pending confirmation token will be generated. Pass the token to confirm adjustment. Requires SUPERVISOR or DEV role.")
+    @Tool(description = "Requests adjustment or write-off of inventory stock when items are damaged, lost, stolen, or have an inventory mismatch. High-impact operation: initiates a pending adjustment request requiring out-of-band human supervisor approval via the management interface. Cannot be executed autonomously by AI. Requires SUPERVISOR or DEV role.")
     public String adjustInventoryStock(
         @ToolParam(description = "Barcode of the product") String productBarcode,
         @ToolParam(description = "Barcode of the location") String locationBarcode,
         @ToolParam(description = "The NEW absolute physical quantity that is actually on the shelf") Integer newQuantity,
         @ToolParam(description = "Reason for adjustment. MUST be exactly one of: DAMAGED, LOST, STOLEN, INVENTORY_MISMATCH") String reason,
-        @ToolParam(description = "Optional comment explaining the adjustment", required = false) String comment,
-        @ToolParam(description = "Confirmation token for the adjustment. Leave empty on first invocation to request confirmation.", required = false) String confirmationToken) {
+        @ToolParam(description = "Optional comment explaining the adjustment", required = false) String comment) {
 
         securityBoundary.enforceSupervisorOrDev("adjustInventoryStock");
         log.info("AI invoked adjustInventoryStock for product {}, loc: {}", productBarcode, locationBarcode);
@@ -87,9 +86,7 @@ public class InventoryMutatingAiTools {
         Location loc = findLocationOrNull(locationBarcode);
         if (loc == null) return "Error: Location not found.";
 
-        Stock stock = stockRepository.findAllByAvailableIsTrue().stream()
-            .filter(s -> s.getProduct().isPresent() && s.getProduct().get().getId().equals(product.getId()) && s.getLocation().getId().equals(loc.getId()))
-            .findFirst()
+        Stock stock = stockRepository.findByProductIdAndLocationIdAndAvailableIsTrue(product.getId(), loc.getId())
             .orElse(null);
 
         if (stock == null) return "Error: No existing stock record found for this product at this location.";
@@ -97,36 +94,20 @@ public class InventoryMutatingAiTools {
         String targetId = productBarcode + "@" + locationBarcode;
         String details = "Adjust quantity from " + stock.getQuantity() + " to " + newQuantity + " (reason: " + reason + ")";
 
-        String confirmationResult = securityBoundary.requireConfirmation(
+        return securityBoundary.initiatePendingOperation(
             "ADJUST_INVENTORY_STOCK",
             targetId,
-            details,
-            confirmationToken
+            stock.getId(),
+            details
         );
-
-        if (confirmationResult != null) {
-            return confirmationResult;
-        }
-
-        try {
-            User currentUser = userRepository.findByUsername(securityFacade.getCurrentUsername()).orElseThrow();
-            InventoryAdjustmentReason adjReason = InventoryAdjustmentReason.valueOf(reason.toUpperCase());
-
-            InventoryAdjustmentRequest req = new InventoryAdjustmentRequest(
-                newQuantity, currentUser.getId(), adjReason, comment, null, null);
-
-            inventoryAdjustmentService.adjustStock(stock.getId(), req);
-            securityBoundary.auditMutation("adjustInventoryStock", targetId, details);
-            return String.format("Success! Stock adjusted to %d. Reason: %s.", newQuantity, adjReason.name());
-        } catch (IllegalArgumentException e) {
-            return "Error: Invalid reason. Allowed reasons are exactly: DAMAGED, LOST, STOLEN, INVENTORY_MISMATCH.";
-        } catch (Exception e) {
-            return "Failed to adjust stock: " + e.getMessage();
-        }
     }
 
-    public String adjustInventoryStock(String productBarcode, String locationBarcode, Integer newQuantity, String reason, String comment) {
-        return adjustInventoryStock(productBarcode, locationBarcode, newQuantity, reason, comment, null);
+    public String adjustInventoryStock(String productBarcode, String locationBarcode, Integer newQuantity, String reason, String comment, String confirmationToken) {
+        if (confirmationToken != null && !confirmationToken.trim().isEmpty()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                "Autonomous AI tool confirmation is disabled. Destructive operations require human approval via trusted management endpoint.");
+        }
+        return adjustInventoryStock(productBarcode, locationBarcode, newQuantity, reason, comment);
     }
 
     private Product findProductOrNull(String barcode) {

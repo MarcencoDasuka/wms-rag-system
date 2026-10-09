@@ -99,10 +99,9 @@ public class OrderMutatingAiTools {
         }
     }
 
-    @Tool(description = "Deletes an existing order by its logical ID. High-impact destructive operation: requires two-phase confirmation token. If confirmationToken is omitted, a pending confirmation token will be generated. Pass the token to confirm deletion. Requires SUPERVISOR or DEV role.")
+    @Tool(description = "Requests deletion of an existing order by its logical ID. High-impact destructive operation: initiates a pending deletion request requiring out-of-band human supervisor approval via the management interface. Cannot be executed autonomously by AI. Requires SUPERVISOR or DEV role.")
     public String deleteOrder(
-        @ToolParam(description = "Logical order ID to delete (e.g. 'ORD-123')") String logicId,
-        @ToolParam(description = "Confirmation token for the deletion. Leave empty on first invocation to request confirmation.", required = false) String confirmationToken) {
+        @ToolParam(description = "Logical order ID to delete (e.g. 'ORD-123')") String logicId) {
 
         securityBoundary.enforceSupervisorOrDev("deleteOrder");
         log.info("AI invoked deleteOrder for logicId {}", logicId);
@@ -112,29 +111,20 @@ public class OrderMutatingAiTools {
 
         securityBoundary.enforceOrderAccess(order);
 
-        String confirmationResult = securityBoundary.requireConfirmation(
+        return securityBoundary.initiatePendingOperation(
             "DELETE_ORDER",
             logicId,
-            "Delete order " + logicId,
-            confirmationToken
+            order.getId(),
+            "Delete order " + logicId
         );
-
-        if (confirmationResult != null) {
-            // Confirmation is pending: return prompt to user
-            return confirmationResult;
-        }
-
-        try {
-            orderService.deleteOrderById(order.getId());
-            securityBoundary.auditMutation("deleteOrder", logicId, "Deleted order and released reserved stock");
-            return "Success! Order " + logicId + " has been deleted.";
-        } catch (Exception e) {
-            return "Failed to delete order: " + e.getMessage();
-        }
     }
 
-    public String deleteOrder(String logicId) {
-        return deleteOrder(logicId, null);
+    public String deleteOrder(String logicId, String confirmationToken) {
+        if (confirmationToken != null && !confirmationToken.trim().isEmpty()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                "Autonomous AI tool confirmation is disabled. Destructive operations require human approval via trusted management endpoint.");
+        }
+        return deleteOrder(logicId);
     }
 
     private Product findProductOrNull(String barcode) {

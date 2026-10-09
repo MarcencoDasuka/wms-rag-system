@@ -63,9 +63,7 @@ public class InventoryAiTools {
         Product product = findProductOrNull(productBarcode);
         if (product == null) return "Product with barcode " + productBarcode + " not found in the database.";
 
-        List<Stock> stocks = stockRepository.findAllByAvailableIsTrue().stream()
-            .filter(s -> s.getProduct().isPresent() && s.getProduct().get().getId().equals(product.getId()))
-            .toList();
+        List<Stock> stocks = stockRepository.findAllByProductIdAndAvailableIsTrue(product.getId());
 
         return formatStockDetails(product, stocks);
     }
@@ -77,9 +75,7 @@ public class InventoryAiTools {
         Location loc = findLocationOrNull(locationBarcode);
         if (loc == null) return "Error: Location with barcode " + locationBarcode + " not found.";
 
-        List<Stock> stocksInLocation = stockRepository.findAllByAvailableIsTrue().stream()
-            .filter(s -> s.getLocation().getId().equals(loc.getId()))
-            .toList();
+        List<Stock> stocksInLocation = stockRepository.findAllByLocationIdAndAvailableIsTrue(loc.getId());
 
         if (stocksInLocation.isEmpty()) {
             return "Location " + locationBarcode + " is currently completely empty.";

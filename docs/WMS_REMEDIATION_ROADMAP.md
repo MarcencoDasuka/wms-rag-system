@@ -15,7 +15,7 @@
 | **Batch 2 (Wave 1 & 2 Auth/Schema)** | Object authorization (BOLA/IDOR), schema index & deletion guards | **DEF-03, DEF-04, DEF-06, DEF-11, DEF-12** | **`COMPLETED`** | 32/32 Passed (10.9s) |
 | **Batch 3 (Wave 2 Concurrency)** | Concurrency controls, versioning, async dispatch & integrity | **DEF-09, DEF-10, DEF-15, DEF-20** | **`COMPLETED`** | 21/21 Passed (5.8s) |
 | **Batch 4 (Wave 3 REST & DTO)** | Pagination, authorization scopes & input boundary validation | **DEF-07, DEF-17, DEF-19, DEF-21** | **`COMPLETED`** | 29/29 Passed (6.6s) |
-| **Batch 5 (Wave 4 AI, Frontend & QA)** | AI tool boundaries, frontend config & authentic test harness | **DEF-01, DEF-14, DEF-16, DEF-22, DEF-23, DEF-24, DEF-25, DEF-26** | `QUEUED` | — |
+| **Batch 5 (Wave 4 AI, Frontend & QA)** | AI tool boundaries, frontend config & authentic test harness | **DEF-01, DEF-14, DEF-16, DEF-22, DEF-23, DEF-24, DEF-25, DEF-26** | **`COMPLETED`** | 19/19 Java Unit Tests, 36/36 Frontend Tests, 107/107 Full Regression Suite Passed |
 
 ---
 
@@ -24,12 +24,16 @@
 *Priority: Immediate (Blockers for secure multi-user operations).*
 
 ### Task 1.1: AI Confirmation Boundary Isolation (`DEF-01`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `HIGH`
 * **Affected Files:**
-  * [`inbound-storage-dispatch/src/main/java/com/isd/wms/service/ai/AiToolSecurityBoundary.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/AiToolSecurityBoundary.java)
-  * [`inbound-storage-dispatch/src/main/java/com/isd/wms/service/ai/ChatbotService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/ChatbotService.java)
-* **Invariant:** The LLM must NEVER receive the confirmation token in tool return strings or conversation messages. Mutating actions require explicit out-of-band user approval.
+  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/AiToolSecurityBoundary.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/AiToolSecurityBoundary.java)
+  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/OrderMutatingAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/OrderMutatingAiTools.java)
+  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryMutatingAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryMutatingAiTools.java)
+  * [`inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/AiChatController.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/AiChatController.java)
+* **Invariant:** The LLM must NEVER receive the confirmation token or be able to autonomously execute mutating deletions. Mutating actions require explicit out-of-band user approval via dedicated human REST endpoints with supervisor role and object-level authorization checks.
+* **Remediation Note:** Removed `confirmationToken` parameters from mutating tool signatures; mutating operations create pending requests with 15-minute expiration; added human endpoints `POST /confirmations/{operationId}/confirm`, `POST /confirmations/{operationId}/reject`, and `GET /confirmations/pending` enforcing `ROLE_SUPERVISOR`/`ROLE_DEV` and ownership validation.
+* **Verification:** `Def01HumanInTheLoopConfirmationTest` (6/6 passed).
 
 ---
 
@@ -201,51 +205,83 @@
 *Priority: Normal (Operational hygiene, UI integrity, and automated test reliability).*
 
 ### Task 4.1: Decouple Startup Vector Indexing (`DEF-14`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `LOW`
-* **Affected Files:** `ProductVectorIndexer.java`
+* **Affected Files:** [`ProductVectorIndexer.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/ProductVectorIndexer.java)
+* **Invariant:** Vector store initialization must not block web server startup or readiness probes. Indexing failures must fail gracefully without bringing down the application.
+* **Remediation Note:** Implemented asynchronous background execution via `CompletableFuture.runAsync`, concurrency mutex with `AtomicBoolean isIndexing`, and observable state machine (`VectorIndexStatus`: `NOT_STARTED`, `IN_PROGRESS`, `READY`, `FAILED`) with `getStatus()` and `getLastError()`.
+* **Verification:** `Def14ResilientVectorIndexerTest` (5/5 passed).
 
 ---
 
 ### Task 4.2: AI Worker Active Status Filter (`DEF-24`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `MEDIUM`
-* **Affected Files:** `WarehouseAiTools.java`
+* **Affected Files:**
+  * [`UserRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/UserRepository.java)
+  * [`WarehouseAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/WarehouseAiTools.java)
+* **Invariant:** AI tools must only suggest or assign work to active operators (`isActive = true`).
+* **Remediation Note:** Added `findByUserRoleAndIsActiveTrue(Role)` to `UserRepository` and updated `WarehouseAiTools.getAvailableOperators` and `findOperatorForNewOrder` to strictly query and balance workload exclusively across active operators.
+* **Verification:** `Def24ActiveOperatorFilterTest` (3/3 passed).
 
 ---
 
 ### Task 4.3: Optimize AI Stock Querying (`DEF-25`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `LOW`
-* **Affected Files:** `InventoryMutatingAiTools.java`
+* **Affected Files:**
+  * [`StockRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/StockRepository.java)
+  * [`InventoryAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryAiTools.java)
+  * [`InventoryMutatingAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryMutatingAiTools.java)
+* **Invariant:** AI stock tools must query database indexes directly instead of loading the entire stock table into JVM heap for stream filtering.
+* **Remediation Note:** Added `findAllByProductIdAndAvailableIsTrue` and `findAllByLocationIdAndAvailableIsTrue` to `StockRepository`. Replaced full-table `findAllByAvailableIsTrue()` calls with targeted repository methods.
+* **Verification:** `Def25EfficientStockQueryTest` (3/3 passed).
 
 ---
 
 ### Task 4.4: Authentic Frontend Test Suite (`DEF-16`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `HIGH`
-* **Affected Files:** `wmsFront/test/def02_user_id_dataflow.test.js`, `def05_conflict_event.test.js`
+* **Affected Files:**
+  * [`wmsFront/src/api/index.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/api/index.js)
+  * [`wmsFront/src/api/interceptors.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/api/interceptors.js)
+  * [`wmsFront/test/def22_role_validation.test.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/test/def22_role_validation.test.js)
+  * [`wmsFront/test/def23_api_base_url.test.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/test/def23_api_base_url.test.js)
+* **Invariant:** Frontend automated tests must verify genuine component, API, and store behavior using authentic test runners without dummy mocks or regex source matching.
+* **Remediation Note:** Decoupled API layer from Vue router/Pinia instances using dynamic setters (`setApiRouter`, `setAuthStoreGetter`), added comprehensive Node test runner suites for role validation and base URL resolution (36/36 passed), and verified clean production build (`npm run build`).
+* **Verification:** `node --test test/*.test.js` (36/36 passed).
 
 ---
 
 ### Task 4.5: Validate Stored Roles on App Reload (`DEF-22`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `LOW`
-* **Affected Files:** `wmsFront/src/stores/auth.js`
+* **Affected Files:**
+  * [`wmsFront/src/stores/auth.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/stores/auth.js)
+  * [`wmsFront/src/router/index.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/router/index.js)
+* **Invariant:** Stored roles in `localStorage` or `sessionStorage` must be verified against backend `/api/auth/me` on application reload and route navigation; local tampering must never unlock UI permissions.
+* **Remediation Note:** Implemented `validateSessionOnReload()` in `useAuthStore` and wired into `router.beforeEach`. Tampered roles are overwritten with server claims; expired sessions are terminated with storage purge.
+* **Verification:** `def22_role_validation.test.js` (8/8 passed).
 
 ---
 
 ### Task 4.6: Dynamic Base API URL Configuration (`DEF-23`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `LOW`
-* **Affected Files:** `wmsFront/src/api/index.js`
+* **Affected Files:** [`wmsFront/src/api/index.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/api/index.js)
+* **Invariant:** API base URL must not be hardcoded to `http://localhost:8080/api`; must support relative `/api` paths for reverse proxy environments and `VITE_API_URL` environment overrides.
+* **Remediation Note:** Extracted and tested `resolveBaseUrl(env)` with environment-driven resolution and safe default fallback.
+* **Verification:** `def23_api_base_url.test.js` (6/6 passed).
 
 ---
 
 ### Task 4.7: Clean Up Dead Route in SecurityConfig (`DEF-26`)
-* **Status:** `OPEN` (Scheduled for Batch 5)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 5)
 * **Severity:** `LOW`
-* **Affected Files:** `SecurityConfig.java`
+* **Affected Files:** [`SecurityConfig.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/security/SecurityConfig.java)
+* **Invariant:** Dead route matchers that do not correspond to any active controllers must be removed to avoid documentation and security configuration drift.
+* **Remediation Note:** Removed `.requestMatchers("/api/operator/**")` from `SecurityConfig.java`, preserving active operational matcher `/api/v1/tasks/operator/**`.
+* **Verification:** `Def26SecurityMatcherHygieneTest` (2/2 passed).
 
 ---
 

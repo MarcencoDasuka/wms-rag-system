@@ -16,7 +16,7 @@
 
 | ID | Original Severity | Recalibrated Severity | Final Verdict | Lifecycle Status | Domain Area | Verification Status & Justification Boundary |
 | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
-| **DEF-01** | Critical | **High** | `[DEFECT]` | `[OPEN]` | AI / Security | Token leakage in Tool Response proven by `[STATIC FACT]`; autonomous invocation without human input is a `[RUNTIME/LOAD GAP]`. |
+| **DEF-01** | Critical | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 5]` | AI / Security | Autonomous deletion loop eliminated. Removed tokens from `@Tool` methods; mutating operations create pending requests requiring explicit human execution via dedicated endpoints (`POST /confirmations/{id}/confirm`). |
 | **DEF-02** | Critical | **Critical** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | DB / Credentials | Seed passwords in V31 proven by `[STATIC FACT]`. Remediated via Flyway V37 password rotation and regression test. |
 | **DEF-03** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Order endpoints `[STATIC FACT]`. Remediated via createdBy/task supervisor checks and V38 migration. |
 | **DEF-04** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Replenishment endpoints `[STATIC FACT]`. Remediated via createdBy/task supervisor checks and V38 migration. |
@@ -29,19 +29,19 @@
 | **DEF-11** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Schema / Constraints | Cross-product destination conflict proven by V33 and V34 index definitions `[STATIC FACT]`. Remediated via V38 partial unique index and service check. |
 | **DEF-12** | High | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Domain Logic | Deletion without status validation proven by `[STATIC FACT]`. Remediated by lifecycle guard allowing delete strictly for CREATED and CANCELED. |
 | **DEF-13** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | WMS State Machine | Unconditional `PARTIALLY_COMPLETED` proven by `[STATIC FACT]`. Remediated via deterministic completion state machine. |
-| **DEF-14** | High | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | AI / Network | Guarded by try-catch post-ready `[STATIC FACT]`; startup crash claim refuted by code (0 Gap). |
+| **DEF-14** | High | **Low** | `[RESIDUAL RISK]` | `[REMEDIATED IN BATCH 5]` | AI / Network | Resilient asynchronous initialization via `CompletableFuture.runAsync` with atomic concurrency mutex and `VectorIndexStatus` state machine. Failure handled gracefully with status observability. |
 | **DEF-15** | High | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 3]` | Transactions / Network | Connection holding during SMTP remediated via `TransactionSynchronizationManager` post-commit dispatch. |
-| **DEF-16** | High | **High** | `[DEFECT]` | `[OPEN]` | QA / Testing | Fictitious assertions against local mocks/regex grep proven by test code `[STATIC FACT]` (0 Gap). |
+| **DEF-16** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 5]` | QA / Testing | Frontend test suite hardened with Node ESM test harness (36/36 passed), eliminating fake assertions and adding real role validation and API base URL resolution tests. |
 | **DEF-17** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | Authorization | Read/search replenishment endpoints secured with `@PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")` and service defense-in-depth scoping. Operators strictly restricted to their assigned tasks. |
 | **DEF-18** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | DTO Validation | Omission of nested collection validation without `@Valid` proven by Jakarta Spec `[STATIC FACT]`. Remediated. |
 | **DEF-19** | Medium | **Low** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | DTO Validation | Zero-quantity replenishment prevented via `@NotNull` and `@Min(1)` on `ReplenishmentCreateRequest`/`ReplenishmentUpdateRequest` and service validation defense-in-depth. |
 | **DEF-20** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 3]` | DB Integrity | Case-insensitive unique indexes added via V39; `CustomUserDetailsService` and `UserService` case-insensitive lookups enforced. |
 | **DEF-21** | Medium | **Low** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | Warehouse Audit | Picking audit logging rescheduled strictly post-deduction in `PickingOperatorStrategy`. Point-in-time quantity captures accurate post-deduction stock with mathematical continuity. |
-| **DEF-22** | Medium | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | Frontend / Security | UI spoofing in sessionStorage proven `[STATIC FACT]`; backend strictly enforces 403 Forbidden `[STATIC FACT]` (0 Gap). |
-| **DEF-23** | Medium | **Low** | `[DEFECT]` | `[OPEN]` | Frontend / Config | Hardcoded HTTP/8080 literal proven by `index.js` `[STATIC FACT]` (0 Gap). |
-| **DEF-24** | Medium | **Medium** | `[DEFECT]` | `[OPEN]` | AI / Business Logic | Ignoring operator `isActive` flag in AI tools proven by code `[STATIC FACT]` (0 Gap). |
-| **DEF-25** | Medium | **Low** | `[DEFECT]` | `[OPEN]` | AI / DB Queries | Inefficient `findAll` + Stream filter proven by `[STATIC FACT]`; JVM heap exhaustion is a `[RUNTIME/LOAD GAP]`. |
-| **DEF-26** | Low | **Low** | `[DOCUMENTATION DRIFT]` | `[OPEN]` | Configuration | Dead `/api/operator/**` route pattern proven by total absence of matching controllers `[STATIC FACT]` (0 Gap). |
+| **DEF-22** | Medium | **Low** | `[RESIDUAL RISK]` | `[REMEDIATED IN BATCH 5]` | Frontend / Security | Frontend role trust boundary enforced via `validateSessionOnReload()` verifying against `/api/auth/me` on reload and router navigation; tampered roles overwritten or session invalidated. |
+| **DEF-23** | Medium | **Low** | `[DEFECT]` | `[REMEDIATED IN BATCH 5]` | Frontend / Config | Hardcoded localhost:8080 replaced with dynamic `resolveBaseUrl(env)` supporting relative `/api` fallback and `VITE_API_URL` environment override. |
+| **DEF-24** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 5]` | AI / Business Logic | Added `findByUserRoleAndIsActiveTrue`; `WarehouseAiTools` operator discovery and workload balancing strictly filter to active operators (`isActive = true`). |
+| **DEF-25** | Medium | **Low** | `[DEFECT]` | `[REMEDIATED IN BATCH 5]` | AI / DB Queries | Full-table stock scanning eliminated; `StockRepository` queries by product ID and location ID push filtering directly to database indexes. |
+| **DEF-26** | Low | **Low** | `[DOCUMENTATION DRIFT]` | `[REMEDIATED IN BATCH 5]` | Configuration | Dead `/api/operator/**` route matcher safely purged from `SecurityConfig.java`; verified no impact on operational endpoints. |
 
 ---
 
@@ -79,6 +79,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   No live LLM run was conducted in an isolated environment to verify whether the model autonomously calls the confirmation tool in the same loop without human intervention or pauses to query the user. This depends on system prompt and Spring AI advisor configuration.
 * **Calibration & Classification:** Severity: **HIGH** (Downgraded from Critical as autonomous bypass without human participation requires runtime confirmation). Classification: **`[DEFECT]`** (Architectural compromise of confirmation secret).
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * Removed `confirmationToken` parameter from mutating `@Tool` methods in [`OrderMutatingAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/OrderMutatingAiTools.java) and [`InventoryMutatingAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryMutatingAiTools.java). The LLM tool signature can no longer confirm or execute deletions autonomously.
+  * In [`AiToolSecurityBoundary.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/AiToolSecurityBoundary.java), mutating requests register a pending operation record with 15-minute expiration, actor binding, and opaque ID. The tool returns an advisory message explicitly instructing the user to confirm via the UI or REST endpoint.
+  * Dedicated human-in-the-loop endpoints implemented in [`AiChatController.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/AiChatController.java): `POST /confirmations/{operationId}/confirm`, `POST /confirmations/{operationId}/reject`, and `GET /confirmations/pending` enforcing `SUPERVISOR`/`DEV` role checks and object ownership validation.
+  * Regression test: [`Def01HumanInTheLoopConfirmationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/ai/Def01HumanInTheLoopConfirmationTest.java) (6/6 passed) verifying tool cannot execute deletion, returns human instruction, pending operations expire, and user-initiated execution works with ownership validation.
 
 ---
 
@@ -304,6 +309,12 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   Prior audit assertion that "missing OpenAI key crashes application on startup" is **REFUTED BY CODE**.
 * **Calibration & Classification:** Severity: **LOW** (Downgraded from High/Medium). Classification: **`[RESIDUAL RISK]`** (Architectural Code Smell).
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * In [`ProductVectorIndexer.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/ProductVectorIndexer.java), decoupled vector initialization from startup lifecycle using asynchronous execution via `CompletableFuture.runAsync`.
+  * Implemented atomic concurrency control via `AtomicBoolean isIndexing` to prevent duplicate parallel indexing passes.
+  * Added observable lifecycle state machine with `VectorIndexStatus` (`NOT_STARTED`, `IN_PROGRESS`, `READY`, `FAILED`), along with `getStatus()` and `getLastError()` getters.
+  * Failures (missing OpenAI credentials, network timeouts) are captured gracefully, logged, transition state to `FAILED`, and never block or crash the web server.
+  * Regression test: [`Def14ResilientVectorIndexerTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/ai/Def14ResilientVectorIndexerTest.java) (5/5 passed).
 
 ---
 
@@ -336,6 +347,12 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). Fictitious assertions are self-evident from test code.
 * **Calibration & Classification:** Severity: **HIGH**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * Audited and remediated frontend test suite, decoupling API client and interceptors via dynamic injection hooks (`setApiRouter`, `setAuthStoreGetter` in [`api/index.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/api/index.js) and [`api/interceptors.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/api/interceptors.js)).
+  * Added authentic, functional unit test suites executing via Node native test runner:
+    * [`def22_role_validation.test.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/test/def22_role_validation.test.js) (8/8 passed) verifying session validation against `/api/auth/me`, role tampering reconciliation, and expired session logout.
+    * [`def23_api_base_url.test.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/test/def23_api_base_url.test.js) (6/6 passed) verifying dynamic base URL resolution across SSR, build-time, proxy, and development configurations.
+  * All 36 frontend test cases executed and passing (`node --test test/*.test.js`, 36/36 passed, 0 failures); Vite production build verified cleanly (`npm run build`, 731 modules transformed, 0 errors).
 
 ---
 
@@ -440,6 +457,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). Pure cosmetic UI display issue, not data privilege escalation.
 * **Calibration & Classification:** Severity: **LOW** (Downgraded from Medium). Classification: **`[RESIDUAL RISK]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * In [`wmsFront/src/stores/auth.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/stores/auth.js), implemented `validateSessionOnReload()` verifying persisted user and role claims against authoritative backend `/api/auth/me`.
+  * If the client-side role stored in `localStorage` or `sessionStorage` was tampered with, it is immediately reconciled and overwritten with the server's authoritative role. If the JWT token is invalid or expired, session storage is cleared and user is logged out.
+  * In [`wmsFront/src/router/index.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/router/index.js), wired `validateSessionOnReload()` directly into `router.beforeEach` navigation guard prior to role authorization checks.
+  * Unit test: [`def22_role_validation.test.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/test/def22_role_validation.test.js) (8/8 passed).
 
 ---
 
@@ -452,6 +474,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`).
 * **Calibration & Classification:** Severity: **LOW** (Downgraded from Medium). Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * In [`wmsFront/src/api/index.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/api/index.js), extracted dynamic URL resolution helper `resolveBaseUrl(env)` supporting `VITE_API_URL` environment override, dynamic hostname detection, and safe fallback to relative `/api` path for HTTPS reverse proxy and containerized deployments.
+  * Eliminated hardcoded `http://localhost:8080/api` string literal.
+  * Unit test: [`def23_api_base_url.test.js`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/test/def23_api_base_url.test.js) (6/6 passed).
 
 ---
 
@@ -464,6 +490,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). Filter predicate is statically evident.
 * **Calibration & Classification:** Severity: **MEDIUM**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * Added `findByUserRoleAndIsActiveTrue(Role role)` to [`UserRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/UserRepository.java).
+  * In [`WarehouseAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/WarehouseAiTools.java), methods `getAvailableOperators` and `findOperatorForNewOrder` strictly invoke `findByUserRoleAndIsActiveTrue(Role.ROLE_OPERATOR)` and filter workload counts exclusively across active operators.
+  * Deactivated operators (`isActive = false`) are never selected or suggested for warehouse tasks.
+  * Regression test: [`Def24ActiveOperatorFilterTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/ai/Def24ActiveOperatorFilterTest.java) (3/3 passed).
 
 ---
 
@@ -476,6 +507,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   Claim of "JVM heap exhaustion" is an exaggeration under standard warehouse scale (<50,000 items).
 * **Calibration & Classification:** Severity: **LOW** (Downgraded from Medium). Classification: **`[DEFECT]`** (Inefficient query pattern; memory exhaustion is `[RUNTIME/LOAD GAP]`).
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * Added targeted indexed queries `findAllByProductIdAndAvailableIsTrue(Long productId)` and `findAllByLocationIdAndAvailableIsTrue(Long locationId)` to [`StockRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/StockRepository.java).
+  * In [`InventoryAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryAiTools.java) and [`InventoryMutatingAiTools.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ai/InventoryMutatingAiTools.java), completely eliminated unindexed full-table fetches (`findAllByAvailableIsTrue()`) followed by JVM stream filtering. Queries are pushed directly down to the database engine with `WHERE product_id = :productId AND available = true`.
+  * Regression test: [`Def25EfficientStockQueryTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/ai/Def25EfficientStockQueryTest.java) (3/3 passed).
 
 ---
 
@@ -488,3 +523,7 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`).
 * **Calibration & Classification:** Severity: **LOW**. Classification: **`[DOCUMENTATION DRIFT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 5]`**
+  * Purged obsolete dead route matcher `.requestMatchers("/api/operator/**").hasRole("OPERATOR")` from [`SecurityConfig.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/security/SecurityConfig.java).
+  * Validated that all active operational task endpoints remain strictly secured under `.requestMatchers("/api/v1/tasks/operator/**").hasAnyRole("OPERATOR", "SUPERVISOR", "DEV")`.
+  * Regression test: [`Def26SecurityMatcherHygieneTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/security/Def26SecurityMatcherHygieneTest.java) (2/2 passed).

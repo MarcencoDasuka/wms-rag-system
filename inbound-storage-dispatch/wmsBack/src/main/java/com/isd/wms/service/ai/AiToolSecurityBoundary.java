@@ -41,9 +41,14 @@ public class AiToolSecurityBoundary {
         String username,
         String actionType,
         String targetId,
+        Long targetEntityId,
         String details,
         Instant expiresAt
     ) {
+        public PendingConfirmation(String token, String username, String actionType, String targetId, String details, Instant expiresAt) {
+            this(token, username, actionType, targetId, null, details, expiresAt);
+        }
+
         public boolean isExpired() {
             return Instant.now().isAfter(expiresAt);
         }
@@ -189,68 +194,127 @@ public class AiToolSecurityBoundary {
     }
 
     /**
-     * Enforces a two-phase confirmation boundary for high-impact mutations.
-     * <p>
-     * If the confirmationToken is omitted (null or blank), a unique pending confirmation
-     * token is generated and returned with a descriptive message. The mutation MUST NOT execute.
-     * If a confirmationToken is provided, it is validated against the authenticated user,
-     * action type, and target ID. If valid, the token is consumed (single-use) and null is returned,
-     * signaling the caller to proceed with the mutation.
-     * </p>
+     * Initiates a pending operation requiring out-of-band human confirmation.
+     * The model is given a descriptive message with the operation ID, but CANNOT confirm it autonomously.
      *
-     * @param actionType        name of the action (e.g. DELETE_ORDER, ADJUST_INVENTORY_STOCK)
-     * @param targetId          business identifier of the target (e.g. order logicId, barcode@location)
-     * @param details           human-readable description of the pending change
-     * @param confirmationToken optional token provided by the user in the follow-up prompt
-     * @return confirmation prompt string if confirmation is required; null if token was validly consumed
-     * @throws AccessDeniedException if token is invalid, expired, or issued for a different action/user
+     * @param actionType     name of the action (e.g. DELETE_ORDER, ADJUST_INVENTORY_STOCK)
+     * @param targetId       business identifier of the target (e.g. order logicId, barcode@location)
+     * @param targetEntityId internal database ID of the target entity (optional)
+     * @param details        human-readable description of the pending change
+     * @return confirmation prompt string explaining that human supervisor confirmation is required
      */
-    public String requireConfirmation(String actionType, String targetId, String details, String confirmationToken) {
+    public String initiatePendingOperation(String actionType, String targetId, Long targetEntityId, String details) {
         enforceSupervisorOrDev(actionType);
         String username = securityFacade.getCurrentUsername();
         cleanExpiredConfirmations();
 
-        if (confirmationToken == null || confirmationToken.trim().isEmpty()) {
-            String token = "CONFIRM-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-            PendingConfirmation pending = new PendingConfirmation(
-                token,
-                username,
-                actionType,
-                targetId,
-                details,
-                Instant.now().plus(5, ChronoUnit.MINUTES)
-            );
-            pendingConfirmations.put(token, pending);
-            AUDIT_LOG.info("PENDING_CONFIRMATION: Token [{}] issued for user [{}] action [{}] target [{}] ({})",
-                token, username, actionType, targetId, details);
+        String operationId = "OP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        PendingConfirmation pending = new PendingConfirmation(
+            operationId,
+            username,
+            actionType,
+            targetId,
+            targetEntityId,
+            details,
+            Instant.now().plus(5, ChronoUnit.MINUTES)
+        );
+        pendingConfirmations.put(operationId, pending);
+        AUDIT_LOG.info("PENDING_OPERATION_CREATED: Operation [{}] initiated by user [{}] action [{}] target [{}] ({})",
+            operationId, username, actionType, targetId, details);
 
-            return String.format(
-                "CONFIRMATION REQUIRED: %s on target '%s' (%s) is a high-impact operation. " +
-                "To confirm and execute, call this tool with confirmationToken='%s'.",
-                actionType, targetId, details, token
-            );
-        }
+        return String.format(
+            "PENDING HUMAN CONFIRMATION: Action '%s' on target '%s' (%s) requires out-of-band confirmation. " +
+            "Operation ID: '%s'. For safety, AI cannot confirm or execute destructive actions autonomously. " +
+            "A human supervisor must explicitly confirm this operation via the management interface or confirmation endpoint.",
+            actionType, targetId, details, operationId
+        );
+    }
 
-        String trimmedToken = confirmationToken.trim();
-        PendingConfirmation pending = pendingConfirmations.remove(trimmedToken);
+    /**
+     * Confirms and atomically consumes a pending operation by an authenticated human supervisor/DEV.
+     *
+     * @param operationId ID of the pending operation
+     * @return the confirmed {@link PendingConfirmation} record for execution
+     * @throws AccessDeniedException if unauthenticated, unauthorized, invalid, or expired
+     */
+    public PendingConfirmation confirmOperationByHuman(String operationId) {
+        enforceSupervisorOrDev("confirmOperation");
+        String username = securityFacade.getCurrentUsername();
+        cleanExpiredConfirmations();
+
+        String trimmedId = operationId != null ? operationId.trim() : "";
+        PendingConfirmation pending = pendingConfirmations.remove(trimmedId);
 
         if (pending == null || pending.isExpired()) {
-            AUDIT_LOG.warn("INVALID_CONFIRMATION: User [{}] provided invalid/expired token [{}] for action [{}] target [{}]",
-                username, trimmedToken, actionType, targetId);
-            throw new AccessDeniedException("Invalid or expired confirmation token: " + trimmedToken);
+            AUDIT_LOG.warn("INVALID_CONFIRMATION: User [{}] provided invalid/expired operation ID [{}]",
+                username, trimmedId);
+            throw new AccessDeniedException("Invalid or expired operation ID: " + trimmedId);
         }
 
-        if (!pending.username().equalsIgnoreCase(username) ||
-            !pending.actionType().equalsIgnoreCase(actionType) ||
-            !pending.targetId().equalsIgnoreCase(targetId)) {
-            AUDIT_LOG.warn("MISMATCH_CONFIRMATION: User [{}] attempted token [{}] issued for user [{}] action [{}] target [{}]",
-                username, trimmedToken, pending.username(), pending.actionType(), pending.targetId());
-            throw new AccessDeniedException("Confirmation token does not match the requested action, user, or target.");
+        if (!hasDevRole() && !pending.username().equalsIgnoreCase(username)) {
+            AUDIT_LOG.warn("MISMATCH_CONFIRMATION: User [{}] attempted to confirm operation [{}] initiated by [{}]",
+                username, trimmedId, pending.username());
+            throw new AccessDeniedException("Access denied: You are not authorized to confirm operation initiated by " + pending.username());
         }
 
-        AUDIT_LOG.info("CONFIRMED_EXECUTION: User [{}] confirmed action [{}] on target [{}] using token [{}]",
-            username, actionType, targetId, trimmedToken);
-        return null; // Confirmed, proceed
+        AUDIT_LOG.info("HUMAN_CONFIRMED_EXECUTION: User [{}] confirmed action [{}] on target [{}] (op: [{}])",
+            username, pending.actionType(), pending.targetId(), trimmedId);
+        return pending;
+    }
+
+    /**
+     * Rejects and removes a pending operation.
+     */
+    public PendingConfirmation rejectOperationByHuman(String operationId) {
+        enforceSupervisorOrDev("rejectOperation");
+        String username = securityFacade.getCurrentUsername();
+
+        String trimmedId = operationId != null ? operationId.trim() : "";
+        PendingConfirmation pending = pendingConfirmations.remove(trimmedId);
+
+        if (pending == null) {
+            throw new AccessDeniedException("Operation ID not found: " + trimmedId);
+        }
+
+        AUDIT_LOG.info("HUMAN_REJECTED_OPERATION: User [{}] rejected action [{}] on target [{}] (op: [{}])",
+            username, pending.actionType(), pending.targetId(), trimmedId);
+        return pending;
+    }
+
+    /**
+     * Returns all currently active pending operations visible to the authenticated caller.
+     */
+    public List<PendingConfirmation> getPendingOperations() {
+        enforceSupervisorOrDev("getPendingOperations");
+        cleanExpiredConfirmations();
+        String username = securityFacade.getCurrentUsername();
+        boolean isDev = hasDevRole();
+
+        return pendingConfirmations.values().stream()
+            .filter(p -> !p.isExpired())
+            .filter(p -> isDev || p.username().equalsIgnoreCase(username))
+            .toList();
+    }
+
+    /**
+     * Backward-compatible confirmation method for existing tools.
+     * <p>
+     * If confirmationToken is omitted (null/blank), creates a pending operation awaiting human approval.
+     * If a confirmationToken is attempted in the tool call, it is strictly REJECTED to prevent
+     * autonomous LLM confirmation loops.
+     * </p>
+     */
+    public String requireConfirmation(String actionType, String targetId, String details, String confirmationToken) {
+        enforceSupervisorOrDev(actionType);
+        cleanExpiredConfirmations();
+
+        if (confirmationToken != null && !confirmationToken.trim().isEmpty()) {
+            AUDIT_LOG.warn("AUTONOMOUS_TOOL_CONFIRMATION_BLOCKED: AI attempted to pass confirmation token [{}] for action [{}] target [{}]",
+                confirmationToken.trim(), actionType, targetId);
+            throw new AccessDeniedException("Autonomous AI tool confirmation is disabled. Destructive operations require human approval via trusted management endpoint.");
+        }
+
+        return initiatePendingOperation(actionType, targetId, null, details);
     }
 
     /**

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { authApi } from '@/api/authApi'
+import { authApi } from '../api/authApi.js'
 
 const TOKEN_KEY = 'jwt_token'
 const ROLE_KEY = 'user_role'
@@ -10,7 +10,7 @@ const USER_ID_KEY = 'user_id'
 
 // Purge any legacy token from localStorage to remediate S-5 (XSS protection)
 if (typeof window !== 'undefined' && window.localStorage) {
-  localStorage.removeItem(TOKEN_KEY)
+  window.localStorage.removeItem(TOKEN_KEY)
 }
 
 const defaultRolesByUsername = {
@@ -55,8 +55,8 @@ const safeDashboardForRole = (role) => {
 export const useAuthStore = defineStore('auth', () => {
   // Token is strictly in-memory; credentials are primarily transmitted via HttpOnly cookie
   const token = ref(null)
-  const role = ref(typeof window !== 'undefined' ? sessionStorage.getItem(ROLE_KEY) : null)
-  const user = ref(typeof window !== 'undefined' ? JSON.parse(sessionStorage.getItem(USER_KEY) || 'null') : null)
+  const role = ref(typeof window !== 'undefined' && window.sessionStorage ? window.sessionStorage.getItem(ROLE_KEY) : null)
+  const user = ref(typeof window !== 'undefined' && window.sessionStorage ? JSON.parse(window.sessionStorage.getItem(USER_KEY) || 'null') : null)
 
   const isAuthenticated = computed(() => !!token.value || !!user.value)
   const dashboardPath = computed(() => safeDashboardForRole(role.value))
@@ -68,14 +68,14 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Invariant: Never store JWT in localStorage/sessionStorage
     if (typeof window !== 'undefined') {
-      localStorage.removeItem(TOKEN_KEY)
-      sessionStorage.setItem(ROLE_KEY, role.value)
-      sessionStorage.setItem(USER_KEY, JSON.stringify(user.value))
+      window.localStorage?.removeItem(TOKEN_KEY)
+      window.sessionStorage?.setItem(ROLE_KEY, role.value)
+      window.sessionStorage?.setItem(USER_KEY, JSON.stringify(user.value))
 
       if (user.value?.id) {
-        sessionStorage.setItem(USER_ID_KEY, user.value.id)
+        window.sessionStorage?.setItem(USER_ID_KEY, user.value.id)
       } else {
-        sessionStorage.removeItem(USER_ID_KEY)
+        window.sessionStorage?.removeItem(USER_ID_KEY)
       }
     }
   }
@@ -135,10 +135,10 @@ export const useAuthStore = defineStore('auth', () => {
         role.value = normalizeRole(response.data.role)
 
         if (typeof window !== 'undefined') {
-          sessionStorage.setItem(ROLE_KEY, role.value)
-          sessionStorage.setItem(USER_KEY, JSON.stringify(user.value))
+          window.sessionStorage?.setItem(ROLE_KEY, role.value)
+          window.sessionStorage?.setItem(USER_KEY, JSON.stringify(user.value))
           if (response.data.id) {
-            sessionStorage.setItem(USER_ID_KEY, response.data.id)
+            window.sessionStorage?.setItem(USER_ID_KEY, response.data.id)
           }
         }
         return response.data
@@ -155,16 +155,55 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
 
     if (typeof window !== 'undefined') {
-      localStorage.removeItem(TOKEN_KEY)
-      sessionStorage.removeItem(ROLE_KEY)
-      sessionStorage.removeItem(USER_KEY)
-      sessionStorage.removeItem(USER_ID_KEY)
+      window.localStorage?.removeItem(TOKEN_KEY)
+      window.sessionStorage?.removeItem(ROLE_KEY)
+      window.sessionStorage?.removeItem(USER_KEY)
+      window.sessionStorage?.removeItem(USER_ID_KEY)
     }
 
     try {
       await authApi.logout()
     } catch {
       // Ignore network errors during logout
+    }
+  }
+
+  const isSessionValidated = ref(false)
+
+  const validateSessionOnReload = async () => {
+    // If no user in session, nothing to validate against server
+    if (!user.value && !role.value) {
+      isSessionValidated.value = true
+      return null
+    }
+
+    try {
+      const response = await authApi.getMe()
+      if (response?.data) {
+        const serverRole = normalizeRole(response.data.role)
+        const serverUser = {
+          id: response.data.id,
+          username: response.data.username
+        }
+        // Force server authoritative state, correcting any tampered sessionStorage
+        role.value = serverRole
+        user.value = serverUser
+
+        if (typeof window !== 'undefined') {
+          window.sessionStorage?.setItem(ROLE_KEY, serverRole)
+          window.sessionStorage?.setItem(USER_KEY, JSON.stringify(serverUser))
+          if (serverUser.id) {
+            window.sessionStorage?.setItem(USER_ID_KEY, serverUser.id)
+          }
+        }
+        isSessionValidated.value = true
+        return response.data
+      }
+    } catch {
+      // Server rejected session (401/403): fail closed
+      await logout()
+      isSessionValidated.value = true
+      return null
     }
   }
 
@@ -178,10 +217,12 @@ export const useAuthStore = defineStore('auth', () => {
     role,
     user,
     isAuthenticated,
+    isSessionValidated,
     dashboardPath,
     login,
     logout,
     fetchCurrentUser,
+    validateSessionOnReload,
     hasAnyRole
   }
 })
