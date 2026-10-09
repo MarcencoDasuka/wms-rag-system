@@ -97,7 +97,7 @@ class ReplenishmentControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "SUPERVISOR")
     void getAllReplenishments_returnsOkWithList() throws Exception {
         ReplenishmentResponse r1 = new ReplenishmentResponse(1L, "REP-001", 1L, 2L, 10, Status.CREATED, 3L, null);
         ReplenishmentResponse r2 = new ReplenishmentResponse(2L, "REP-002", 2L, 3L, 5, Status.IN_PROGRESS, 4L, null);
@@ -112,7 +112,23 @@ class ReplenishmentControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "DEV")
+    void getAllReplenishments_withDevRole_returnsOk() throws Exception {
+        when(replenishmentService.getAllReplenishments()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/replenishments"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void getAllReplenishments_withOperatorRole_returnsForbidden() throws Exception {
+        mockMvc.perform(get("/api/replenishments"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPERVISOR")
     void getReplenishmentById_existingId_returnsOk() throws Exception {
         ReplenishmentResponse response = new ReplenishmentResponse(1L, "REP-001", 1L, 2L, 10, Status.CREATED, 3L, null);
 
@@ -124,7 +140,14 @@ class ReplenishmentControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "OPERATOR")
+    void getReplenishmentById_withOperatorRole_returnsForbidden() throws Exception {
+        mockMvc.perform(get("/api/replenishments/1"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPERVISOR")
     void getReplenishmentById_notFound_returnsNotFound() throws Exception {
         when(replenishmentService.getReplenishmentById(99L))
                 .thenThrow(new ReplenishmentNotFoundException(99L));
@@ -143,8 +166,8 @@ class ReplenishmentControllerTest {
                 .thenReturn(response);
 
         mockMvc.perform(put("/api/replenishments/1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1L))
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
@@ -162,7 +185,7 @@ class ReplenishmentControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(roles = "SUPERVISOR")
     void searchReplenishments_returnsMatchingList() throws Exception {
         ReplenishmentSearchRequest request = new ReplenishmentSearchRequest(1L, null, null, 12, Status.CREATED, null);
         ReplenishmentResponse response = new ReplenishmentResponse(1L, "REP-001", 1L, 2L, 10, Status.CREATED, 3L, null);
@@ -176,6 +199,17 @@ class ReplenishmentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].status").value("CREATED"));
+    }
+
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    void searchReplenishments_withOperatorRole_returnsForbidden() throws Exception {
+        ReplenishmentSearchRequest request = new ReplenishmentSearchRequest(1L, null, null, 12, Status.CREATED, null);
+
+        mockMvc.perform(post("/api/replenishments/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
     }
 
     @Configuration

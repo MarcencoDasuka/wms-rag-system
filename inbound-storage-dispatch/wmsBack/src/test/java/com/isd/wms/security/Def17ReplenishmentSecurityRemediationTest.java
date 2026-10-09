@@ -1,15 +1,15 @@
 package com.isd.wms.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.isd.wms.controller.ReplenishmentController;
 import com.isd.wms.dto.replenishment.ReplenishmentResponse;
 import com.isd.wms.dto.replenishment.ReplenishmentSearchRequest;
 import com.isd.wms.entity.Location;
 import com.isd.wms.entity.Product;
 import com.isd.wms.entity.Replenishment;
-import com.isd.wms.entity.Task;
-import com.isd.wms.entity.User;
 import com.isd.wms.enums.Role;
 import com.isd.wms.enums.Status;
+import com.isd.wms.exception.GlobalExceptionHandler;
 import com.isd.wms.mapper.ReplenishmentMapper;
 import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.TransportUnitRepository;
@@ -18,11 +18,25 @@ import com.isd.wms.service.validation.SecurityFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.List;
@@ -30,17 +44,35 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@SpringJUnitWebConfig
+@ContextConfiguration(classes = Def17ReplenishmentSecurityRemediationTest.TestConfig.class)
 class Def17ReplenishmentSecurityRemediationTest {
 
-    private ReplenishmentRepository replenishmentRepository;
-    private ReplenishmentService replenishmentService;
+    @Autowired
+    private WebApplicationContext webApplicationContext;
 
+    @Autowired
+    private ReplenishmentService mockReplenishmentService;
+
+    private MockMvc mockMvc;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // Isolated unit-test fixtures for service-level defense-in-depth
+    private ReplenishmentRepository unitReplenishmentRepository;
+    private ReplenishmentService unitReplenishmentService;
     private String currentUsername;
     private Role currentRole;
     private AtomicBoolean accessibleBySupervisorCalled;
     private AtomicBoolean findAllCalled;
-
     private Replenishment aliceReplenishment;
     private Replenishment bobReplenishment;
 
@@ -51,6 +83,11 @@ class Def17ReplenishmentSecurityRemediationTest {
 
     @BeforeEach
     void setUp() {
+        reset(mockReplenishmentService);
+        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
+                .apply(springSecurity())
+                .build();
+
         currentUsername = "supervisor_alice";
         currentRole = Role.ROLE_SUPERVISOR;
         accessibleBySupervisorCalled = new AtomicBoolean(false);
@@ -74,7 +111,7 @@ class Def17ReplenishmentSecurityRemediationTest {
         bobReplenishment.setLogicId("REP-BOB");
         bobReplenishment.setStatus(Status.CREATED);
 
-        replenishmentRepository = createProxy(ReplenishmentRepository.class, (proxy, method, args) -> {
+        unitReplenishmentRepository = createProxy(ReplenishmentRepository.class, (proxy, method, args) -> {
             String name = method.getName();
             if ("findAllAccessibleBySupervisor".equals(name)) {
                 accessibleBySupervisorCalled.set(true);
@@ -90,13 +127,7 @@ class Def17ReplenishmentSecurityRemediationTest {
             return null;
         });
 
-        TransportUnitRepository tuRepository = createProxy(TransportUnitRepository.class, (proxy, method, args) -> {
-            if ("findAllByReplenishment".equals(method.getName())) {
-                return Collections.emptyList();
-            }
-            return Collections.emptyList();
-        });
-
+        TransportUnitRepository tuRepository = createProxy(TransportUnitRepository.class, (proxy, method, args) -> Collections.emptyList());
         ReplenishmentMapper replenishmentMapper = new ReplenishmentMapper(tuRepository);
 
         SecurityFacade securityFacade = new SecurityFacade(null) {
@@ -111,44 +142,80 @@ class Def17ReplenishmentSecurityRemediationTest {
             }
         };
 
-        replenishmentService = new ReplenishmentService(
-            replenishmentRepository,
-            null, // stockRepository
-            null, // productRepository
-            null, // locationRepository
-            null, // allocationRepository
-            tuRepository, // transportUnitRepository
-            replenishmentMapper, // replenishmentMapper
-            null, // workflowService
-            null, // taskService
-            null, // importService
-            securityFacade // securityFacade
+        unitReplenishmentService = new ReplenishmentService(
+            unitReplenishmentRepository,
+            null,
+            null,
+            null,
+            null,
+            tuRepository,
+            replenishmentMapper,
+            null,
+            null,
+            null,
+            securityFacade
         );
     }
 
+    // ==========================================
+    // 1. Controller HTTP Security via MockMvc
+    // ==========================================
+
     @Test
-    @DisplayName("ReplenishmentController: all read and search endpoints are strictly protected by @PreAuthorize")
-    void controllerEndpoints_havePreAuthorizeAnnotations() throws Exception {
-        Method getAll = ReplenishmentController.class.getMethod("getAllReplenishments");
-        assertThat(getAll.isAnnotationPresent(PreAuthorize.class)).isTrue();
-        assertThat(getAll.getAnnotation(PreAuthorize.class).value())
-            .isEqualTo("hasAnyRole('SUPERVISOR', 'DEV')");
-
-        Method getById = ReplenishmentController.class.getMethod("getReplenishmentById", Long.class);
-        assertThat(getById.isAnnotationPresent(PreAuthorize.class)).isTrue();
-        assertThat(getById.getAnnotation(PreAuthorize.class).value())
-            .isEqualTo("hasAnyRole('SUPERVISOR', 'DEV')");
-
-        Method filter = ReplenishmentController.class.getMethod("searchReplenishments", ReplenishmentSearchRequest.class);
-        assertThat(filter.isAnnotationPresent(PreAuthorize.class)).isTrue();
-        assertThat(filter.getAnnotation(PreAuthorize.class).value())
-            .isEqualTo("hasAnyRole('SUPERVISOR', 'DEV')");
-
-        Method search = ReplenishmentController.class.getMethod("searchReplenishmentsFromBody", ReplenishmentSearchRequest.class);
-        assertThat(search.isAnnotationPresent(PreAuthorize.class)).isTrue();
-        assertThat(search.getAnnotation(PreAuthorize.class).value())
-            .isEqualTo("hasAnyRole('SUPERVISOR', 'DEV')");
+    @WithMockUser(roles = "OPERATOR")
+    @DisplayName("HTTP Security: OPERATOR cannot view all replenishments (403 Forbidden)")
+    void operator_getAllReplenishments_httpForbidden() throws Exception {
+        mockMvc.perform(get("/api/replenishments"))
+                .andExpect(status().isForbidden());
     }
+
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    @DisplayName("HTTP Security: OPERATOR cannot view replenishment by id (403 Forbidden)")
+    void operator_getReplenishmentById_httpForbidden() throws Exception {
+        mockMvc.perform(get("/api/replenishments/101"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "OPERATOR")
+    @DisplayName("HTTP Security: OPERATOR cannot search replenishments (403 Forbidden)")
+    void operator_searchReplenishments_httpForbidden() throws Exception {
+        ReplenishmentSearchRequest request = new ReplenishmentSearchRequest(null, null, null, null, null, null);
+        mockMvc.perform(post("/api/replenishments/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPERVISOR")
+    @DisplayName("HTTP Security: SUPERVISOR can access replenishments (200 OK)")
+    void supervisor_getAllReplenishments_httpOk() throws Exception {
+        when(mockReplenishmentService.getAllReplenishments()).thenReturn(Collections.emptyList());
+        mockMvc.perform(get("/api/replenishments"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "DEV")
+    @DisplayName("HTTP Security: DEV can access replenishments (200 OK)")
+    void dev_getAllReplenishments_httpOk() throws Exception {
+        when(mockReplenishmentService.getAllReplenishments()).thenReturn(Collections.emptyList());
+        mockMvc.perform(get("/api/replenishments"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("HTTP Security: Unauthenticated access to replenishments is forbidden")
+    void unauthenticated_getAllReplenishments_httpForbidden() throws Exception {
+        mockMvc.perform(get("/api/replenishments"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ==========================================
+    // 2. Service Defense-in-Depth Layer
+    // ==========================================
 
     @Test
     @DisplayName("Service defense-in-depth: OPERATOR role calling getAllReplenishments throws AccessDeniedException")
@@ -156,7 +223,7 @@ class Def17ReplenishmentSecurityRemediationTest {
         currentUsername = "operator_dave";
         currentRole = Role.ROLE_OPERATOR;
 
-        assertThatThrownBy(() -> replenishmentService.getAllReplenishments())
+        assertThatThrownBy(() -> unitReplenishmentService.getAllReplenishments())
             .isInstanceOf(AccessDeniedException.class)
             .hasMessageContaining("only SUPERVISOR or DEV can view replenishments");
 
@@ -172,7 +239,7 @@ class Def17ReplenishmentSecurityRemediationTest {
 
         ReplenishmentSearchRequest request = new ReplenishmentSearchRequest(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> replenishmentService.searchReplenishments(request))
+        assertThatThrownBy(() -> unitReplenishmentService.searchReplenishments(request))
             .isInstanceOf(AccessDeniedException.class)
             .hasMessageContaining("only SUPERVISOR or DEV can search replenishments");
     }
@@ -183,7 +250,7 @@ class Def17ReplenishmentSecurityRemediationTest {
         currentUsername = "supervisor_alice";
         currentRole = Role.ROLE_SUPERVISOR;
 
-        List<ReplenishmentResponse> result = replenishmentService.getAllReplenishments();
+        List<ReplenishmentResponse> result = unitReplenishmentService.getAllReplenishments();
 
         assertThat(accessibleBySupervisorCalled.get()).isTrue();
         assertThat(findAllCalled.get()).isFalse();
@@ -198,7 +265,7 @@ class Def17ReplenishmentSecurityRemediationTest {
         currentRole = Role.ROLE_SUPERVISOR;
 
         ReplenishmentSearchRequest request = new ReplenishmentSearchRequest(null, null, null, null, null, null);
-        List<ReplenishmentResponse> result = replenishmentService.searchReplenishments(request);
+        List<ReplenishmentResponse> result = unitReplenishmentService.searchReplenishments(request);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(101L);
@@ -210,12 +277,37 @@ class Def17ReplenishmentSecurityRemediationTest {
         currentUsername = "dev_admin";
         currentRole = Role.ROLE_DEV;
 
-        List<ReplenishmentResponse> all = replenishmentService.getAllReplenishments();
+        List<ReplenishmentResponse> all = unitReplenishmentService.getAllReplenishments();
         assertThat(findAllCalled.get()).isTrue();
         assertThat(all).hasSize(2);
 
         ReplenishmentSearchRequest request = new ReplenishmentSearchRequest(null, null, null, null, null, null);
-        List<ReplenishmentResponse> search = replenishmentService.searchReplenishments(request);
+        List<ReplenishmentResponse> search = unitReplenishmentService.searchReplenishments(request);
         assertThat(search).hasSize(2);
+    }
+
+    @Configuration
+    @EnableWebMvc
+    @EnableWebSecurity
+    @EnableMethodSecurity
+    @Import(GlobalExceptionHandler.class)
+    static class TestConfig {
+
+        @Bean
+        public ReplenishmentService replenishmentService() {
+            return mock(ReplenishmentService.class);
+        }
+
+        @Bean
+        public ReplenishmentController replenishmentController(ReplenishmentService replenishmentService) {
+            return new ReplenishmentController(replenishmentService);
+        }
+
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+            http.csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated());
+            return http.build();
+        }
     }
 }

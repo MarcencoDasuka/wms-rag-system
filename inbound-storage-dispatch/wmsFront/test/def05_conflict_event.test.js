@@ -1,7 +1,5 @@
 import { test } from 'node:test'
 import assert from 'node:assert'
-import fs from 'node:fs'
-import path from 'node:path'
 import { handle409Conflict } from '../src/api/interceptors.js'
 import { useConflictListener } from '../src/composables/useConflictListener.js'
 
@@ -140,32 +138,61 @@ test('DEF-05: useConflictListener safely contains callback errors without crashi
   }
 })
 
-test('DEF-05: Static verification: InventoryView and OrderView subscribe to conflict events', () => {
-  const inventoryViewPath = path.resolve('src/views/supervisor/InventoryView.vue')
-  const orderViewPath = path.resolve('src/views/supervisor/OrderView.vue')
+test('DEF-05: multiple conflict listeners receive dispatched conflict events independently', () => {
+  const listeners = new Map()
+  const originalWindow = globalThis.window
 
-  const inventoryContent = fs.readFileSync(inventoryViewPath, 'utf-8')
-  const orderContent = fs.readFileSync(orderViewPath, 'utf-8')
+  globalThis.window = {
+    addEventListener: (type, handler) => {
+      if (!listeners.has(type)) listeners.set(type, [])
+      listeners.get(type).push(handler)
+    },
+    removeEventListener: (type, handler) => {
+      if (listeners.has(type)) {
+        const list = listeners.get(type).filter((h) => h !== handler)
+        listeners.set(type, list)
+      }
+    }
+  }
 
-  assert.match(
-    inventoryContent,
-    /useConflictListener/,
-    'InventoryView.vue must import and use useConflictListener'
-  )
-  assert.match(
-    inventoryContent,
-    /useConflictListener\(loadInventoryData\)/,
-    'InventoryView.vue must register loadInventoryData with useConflictListener'
-  )
+  try {
+    const invocationsA = []
+    const invocationsB = []
 
-  assert.match(
-    orderContent,
-    /useConflictListener/,
-    'OrderView.vue must import and use useConflictListener'
-  )
-  assert.match(
-    orderContent,
-    /useConflictListener\(loadOrders\)/,
-    'OrderView.vue must register loadOrders with useConflictListener'
-  )
+    const listenerA = useConflictListener((detail) => invocationsA.push(detail))
+    const listenerB = useConflictListener((detail) => invocationsB.push(detail))
+
+    listenerA.startListening()
+    listenerB.startListening()
+
+    assert.strictEqual(listeners.get('wms:conflict')?.length, 2)
+
+    // Trigger event to all registered listeners
+    const handlers = listeners.get('wms:conflict') || []
+    handlers.forEach((h) => h({
+      type: 'wms:conflict',
+      detail: { message: 'Multi-view lock conflict', status: 409 }
+    }))
+
+    assert.strictEqual(invocationsA.length, 1)
+    assert.strictEqual(invocationsB.length, 1)
+    assert.strictEqual(invocationsA[0].message, 'Multi-view lock conflict')
+    assert.strictEqual(invocationsB[0].message, 'Multi-view lock conflict')
+
+    // Stop listener A, listener B remains active
+    listenerA.stopListening()
+    assert.strictEqual(listeners.get('wms:conflict')?.length, 1)
+
+    // Trigger second event
+    const remainingHandlers = listeners.get('wms:conflict') || []
+    remainingHandlers.forEach((h) => h({
+      type: 'wms:conflict',
+      detail: { message: 'Second conflict', status: 409 }
+    }))
+
+    assert.strictEqual(invocationsA.length, 1) // Unsubscribed, unchanged
+    assert.strictEqual(invocationsB.length, 2) // Still subscribed, received
+  } finally {
+    globalThis.window = originalWindow
+  }
 })

@@ -57,6 +57,7 @@ public class ProductVectorIndexer {
     private volatile String lastErrorMessage;
     private volatile int indexedCount = 0;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ProductVectorIndexer(
         ProductRepository productRepository,
         VectorStore vectorStore,

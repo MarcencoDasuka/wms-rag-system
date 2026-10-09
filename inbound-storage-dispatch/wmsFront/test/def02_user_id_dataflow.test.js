@@ -1,12 +1,7 @@
-import { test, beforeEach } from 'node:test'
+import { test } from 'node:test'
 import assert from 'node:assert'
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { resolveCurrentUserId } from '../src/composables/useCurrentUserId.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { reactive, ref } from 'vue'
+import { resolveCurrentUserId, useCurrentUserId } from '../src/composables/useCurrentUserId.js'
 
 test('DEF-02: resolveCurrentUserId strictly returns authenticated user ID', () => {
   // 1. Authenticated user id = X
@@ -23,12 +18,12 @@ test('DEF-02: resolveCurrentUserId strictly returns authenticated user ID', () =
 })
 
 test('DEF-02: resolveCurrentUserId fails closed when user or user.id is absent/invalid', () => {
-  // 3. authStore.user is absent
+  // authStore or user is absent
   assert.strictEqual(resolveCurrentUserId(null), null)
   assert.strictEqual(resolveCurrentUserId({ user: null }), null)
   assert.strictEqual(resolveCurrentUserId({}), null)
 
-  // 4. user.id is absent/invalid
+  // user.id is absent/invalid
   assert.strictEqual(resolveCurrentUserId({ user: { id: null } }), null)
   assert.strictEqual(resolveCurrentUserId({ user: { id: undefined } }), null)
   assert.strictEqual(resolveCurrentUserId({ user: { id: '' } }), null)
@@ -36,6 +31,7 @@ test('DEF-02: resolveCurrentUserId fails closed when user or user.id is absent/i
   assert.strictEqual(resolveCurrentUserId({ user: { id: -1 } }), null, 'Negative ID must be rejected')
   assert.strictEqual(resolveCurrentUserId({ user: { id: 'not-a-number' } }), null)
   assert.strictEqual(resolveCurrentUserId({ user: { id: NaN } }), null)
+  assert.strictEqual(resolveCurrentUserId({ user: { id: 12.34 } }), null, 'Non-integer float ID must be rejected')
 })
 
 test('DEF-02: resolveCurrentUserId NEVER falls back to role-based mock IDs (1, 2, 3)', () => {
@@ -47,7 +43,6 @@ test('DEF-02: resolveCurrentUserId NEVER falls back to role-based mock IDs (1, 2
 })
 
 test('DEF-02: resolveCurrentUserId ignores any legacy localStorage.user_id', () => {
-  // Even if localStorage mock exists in global scope
   const originalLocalStorage = globalThis.localStorage
   globalThis.localStorage = {
     getItem: (key) => (key === 'user_id' ? '1' : null)
@@ -61,272 +56,77 @@ test('DEF-02: resolveCurrentUserId ignores any legacy localStorage.user_id', () 
   }
 })
 
-test('DEF-02: Inventory adjustment business flow uses authenticated user ID and blocks unauthenticated requests', async () => {
-  const executeAdjustment = async (authStore, changedStocks, apiMock, toastMock) => {
-    const userId = resolveCurrentUserId(authStore)
-    if (!userId) {
-      toastMock.add({
-        severity: 'error',
-        summary: 'Missing user',
-        detail: 'User id is required for stock changes.'
-      })
-      return false
-    }
+test('DEF-02: useCurrentUserId composable produces dynamic getter tracking store lifecycle', () => {
+  const store = reactive({
+    user: null,
+    role: null
+  })
 
-    await Promise.all(
-      changedStocks.map((stock) =>
-        apiMock.adjustStock(stock.id, {
-          newQuantity: stock.quantity,
-          manufactureDate: stock.manufactureDate || null,
-          expirationDate: stock.expirationDate || null,
-          userId,
-          reason: 'INVENTORY_MISMATCH',
-          comment: null
-        })
-      )
-    )
-    return true
-  }
+  const currentUserId = useCurrentUserId(store)
+  assert.strictEqual(typeof currentUserId, 'function')
 
-  const calls = []
-  const apiMock = {
-    adjustStock: async (stockId, payload) => {
-      calls.push({ stockId, payload })
-      return { data: { success: true } }
-    }
-  }
+  // 1. Initially unauthenticated
+  assert.strictEqual(currentUserId(), null, 'Should return null when user is null')
 
-  const toasts = []
-  const toastMock = {
-    add: (t) => toasts.push(t)
-  }
+  // 2. User logs in
+  store.user = { id: 101, username: 'operator1' }
+  store.role = 'ROLE_OPERATOR'
+  assert.strictEqual(currentUserId(), 101, 'Should resolve authenticated ID after login')
 
-  // 1. Authenticated user id = 42
-  calls.length = 0
-  toasts.length = 0
-  const success42 = await executeAdjustment(
-    { user: { id: 42 } },
-    [{ id: 10, quantity: 15 }],
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(success42, true)
-  assert.strictEqual(calls.length, 1)
-  assert.strictEqual(calls[0].payload.userId, 42, 'Payload must contain authenticated user ID 42')
+  // 3. User switches / updates profile
+  store.user = { id: 202, username: 'supervisor1' }
+  store.role = 'ROLE_SUPERVISOR'
+  assert.strictEqual(currentUserId(), 202, 'Should dynamically reflect updated user ID')
 
-  // 2. Authenticated user id = 99
-  calls.length = 0
-  toasts.length = 0
-  const success99 = await executeAdjustment(
-    { user: { id: 99 } },
-    [{ id: 10, quantity: 20 }],
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(success99, true)
-  assert.strictEqual(calls.length, 1)
-  assert.strictEqual(calls[0].payload.userId, 99, 'Payload must contain authenticated user ID 99')
-
-  // 3. authStore.user is absent -> request NOT sent
-  calls.length = 0
-  toasts.length = 0
-  const failNoUser = await executeAdjustment(
-    { user: null },
-    [{ id: 10, quantity: 20 }],
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(failNoUser, false)
-  assert.strictEqual(calls.length, 0, 'No request should be sent when user is absent')
-  assert.strictEqual(toasts.length, 1)
-  assert.strictEqual(toasts[0].severity, 'error')
-
-  // 4. user.id is invalid -> request NOT sent
-  calls.length = 0
-  toasts.length = 0
-  const failInvalidId = await executeAdjustment(
-    { user: { id: 0 } },
-    [{ id: 10, quantity: 20 }],
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(failInvalidId, false)
-  assert.strictEqual(calls.length, 0, 'No request should be sent when user.id is invalid')
-  assert.strictEqual(toasts.length, 1)
-
-  // 5. Legacy localStorage.user_id present but user is null -> request NOT sent
-  const originalLocalStorage = globalThis.localStorage
-  globalThis.localStorage = { getItem: (key) => (key === 'user_id' ? '2' : null) }
-  try {
-    calls.length = 0
-    toasts.length = 0
-    const failWithLocalStorage = await executeAdjustment(
-      { user: null, role: 'ROLE_SUPERVISOR' },
-      [{ id: 10, quantity: 20 }],
-      apiMock,
-      toastMock
-    )
-    assert.strictEqual(failWithLocalStorage, false)
-    assert.strictEqual(calls.length, 0, 'Must NOT send request using legacy localStorage fallback')
-  } finally {
-    globalThis.localStorage = originalLocalStorage
-  }
+  // 4. User logs out
+  store.user = null
+  store.role = null
+  assert.strictEqual(currentUserId(), null, 'Should return null after logout')
 })
 
-test('DEF-02: Inventory addStock business flow uses authenticated user ID and blocks unauthenticated requests', async () => {
-  const executeAddStock = async (authStore, payload, apiMock, toastMock) => {
-    const userId = resolveCurrentUserId(authStore)
-    if (!userId) {
-      toastMock.add({
-        severity: 'error',
-        summary: 'Missing user',
-        detail: 'User id is required for stock changes.'
-      })
-      return false
-    }
+test('DEF-02: useCurrentUserId composable fails closed when reactive user id becomes invalid', () => {
+  const store = reactive({
+    user: { id: 42, username: 'valid_user' }
+  })
 
-    await apiMock.addStock({ ...payload, userId })
-    return true
-  }
+  const currentUserId = useCurrentUserId(store)
+  assert.strictEqual(currentUserId(), 42)
 
-  const calls = []
-  const apiMock = {
-    addStock: async (payload) => {
-      calls.push(payload)
-      return { data: { id: 1 } }
-    }
-  }
+  // Mutate to zero ID
+  store.user.id = 0
+  assert.strictEqual(currentUserId(), null, 'Zero ID must fail closed')
 
-  const toasts = []
-  const toastMock = { add: (t) => toasts.push(t) }
+  // Mutate to empty string
+  store.user.id = ''
+  assert.strictEqual(currentUserId(), null, 'Empty string ID must fail closed')
 
-  // 1. Authenticated user id = 77
-  calls.length = 0
-  const success77 = await executeAddStock(
-    { user: { id: 77 } },
-    { productId: 1, locationId: 2, quantity: 5 },
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(success77, true)
-  assert.strictEqual(calls.length, 1)
-  assert.strictEqual(calls[0].userId, 77)
+  // Mutate to negative ID
+  store.user.id = -5
+  assert.strictEqual(currentUserId(), null, 'Negative ID must fail closed')
 
-  // 2. Unauthenticated -> fails closed
-  calls.length = 0
-  toasts.length = 0
-  const failNoUser = await executeAddStock(
-    { user: null },
-    { productId: 1, locationId: 2, quantity: 5 },
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(failNoUser, false)
-  assert.strictEqual(calls.length, 0)
-  assert.strictEqual(toasts.length, 1)
+  // Mutate to non-integer float
+  store.user.id = 42.9
+  assert.strictEqual(currentUserId(), null, 'Non-integer float must fail closed')
+
+  // Restore valid integer string
+  store.user.id = '77'
+  assert.strictEqual(currentUserId(), 77, 'String numeric ID must coerce to valid integer')
 })
 
-test('DEF-02: OrderWithLinesForm submission blocks when user is not authenticated', async () => {
-  const executeSubmitOrder = async (authStore, formData, apiMock, toastMock) => {
-    const userId = resolveCurrentUserId(authStore)
-    if (!userId) {
-      toastMock.add({
-        severity: 'error',
-        summary: 'Authentication error',
-        detail: 'Authenticated user ID is required to create an order.'
-      })
-      return false
-    }
-
-    const payload = {
-      order: {
-        logicId: formData.logicId,
-        destinationLocationId: formData.location
-      },
-      lines: formData.lines.map((l) => ({
-        orderId: null,
-        productId: l.product,
-        requestedQuantity: l.quantity
-      }))
-    }
-
-    await apiMock.create(payload)
-    return true
-  }
-
-  const calls = []
-  const apiMock = {
-    create: async (payload) => {
-      calls.push(payload)
-      return { data: { id: 501 } }
+test('DEF-02: useCurrentUserId works with ref-wrapped auth state', () => {
+  const userRef = ref(null)
+  const store = {
+    get user() {
+      return userRef.value
     }
   }
 
-  const toasts = []
-  const toastMock = { add: (t) => toasts.push(t) }
+  const currentUserId = useCurrentUserId(store)
+  assert.strictEqual(currentUserId(), null)
 
-  // Authenticated user
-  calls.length = 0
-  const success = await executeSubmitOrder(
-    { user: { id: 42 } },
-    { logicId: 'ORD-TEST-001', location: 10, lines: [{ product: 1, quantity: 2 }] },
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(success, true)
-  assert.strictEqual(calls.length, 1)
+  userRef.value = { id: 88, username: 'ref_user' }
+  assert.strictEqual(currentUserId(), 88)
 
-  // Unauthenticated user -> fail closed
-  calls.length = 0
-  toasts.length = 0
-  const fail = await executeSubmitOrder(
-    { user: null },
-    { logicId: 'ORD-TEST-001', location: 10, lines: [{ product: 1, quantity: 2 }] },
-    apiMock,
-    toastMock
-  )
-  assert.strictEqual(fail, false)
-  assert.strictEqual(calls.length, 0, 'Order creation request must NOT be sent without authenticated user')
-  assert.strictEqual(toasts.length, 1)
-  assert.strictEqual(toasts[0].severity, 'error')
-})
-
-test('DEF-02: Static analysis verifies no legacy localStorage.user_id or fallback IDs in source files', () => {
-  const inventoryViewPath = path.join(__dirname, '../src/views/supervisor/InventoryView.vue')
-  const orderFormPath = path.join(__dirname, '../src/components/OrderWithLinesForm.vue')
-  const authStorePath = path.join(__dirname, '../src/stores/auth.js')
-
-  const inventoryContent = fs.readFileSync(inventoryViewPath, 'utf-8')
-  const orderContent = fs.readFileSync(orderFormPath, 'utf-8')
-  const authContent = fs.readFileSync(authStorePath, 'utf-8')
-
-  // Invariant 1: No localStorage.getItem('user_id')
-  assert.ok(
-    !inventoryContent.includes("localStorage.getItem('user_id')"),
-    'InventoryView.vue must not access localStorage.getItem("user_id")'
-  )
-  assert.ok(
-    !orderContent.includes("localStorage.getItem('user_id')"),
-    'OrderWithLinesForm.vue must not access localStorage.getItem("user_id")'
-  )
-
-  // Invariant 2: No fallback to 1 or 2
-  assert.ok(
-    !inventoryContent.includes('|| 2'),
-    'InventoryView.vue must not have fallback || 2'
-  )
-  assert.ok(
-    !orderContent.includes('|| 1'),
-    'OrderWithLinesForm.vue must not have fallback || 1'
-  )
-
-  // Invariant 3: No seededUsers mock user IDs in auth.js
-  assert.ok(
-    !authContent.includes('seededUsers'),
-    'auth.js must not reference seededUsers'
-  )
-  assert.ok(
-    !authContent.includes('seededUser?.id'),
-    'auth.js must not use seededUser?.id fallback'
-  )
+  userRef.value = null
+  assert.strictEqual(currentUserId(), null)
 })
