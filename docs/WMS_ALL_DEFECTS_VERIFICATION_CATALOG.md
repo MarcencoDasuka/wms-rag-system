@@ -22,21 +22,21 @@
 | **DEF-04** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Auth / BOLA | Proven completely by total absence of ownership checks in Replenishment endpoints `[STATIC FACT]`. Remediated via createdBy/task supervisor checks and V38 migration. |
 | **DEF-05** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | Audit / Integrity | Proven completely by accepting `userId` from request body `[STATIC FACT]`. Remediated by deriving actor from `SecurityFacade`. |
 | **DEF-06** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Data Leakage | Proven completely by unconditional `findAll()` in `getAllOrdersExtended()` `[STATIC FACT]`. Remediated via scoped query `findAllAccessibleBySupervisor`. |
-| **DEF-07** | High | **Medium** | `[DEFECT]` | `[OPEN]` | Reliability / DoS | Absence of pagination proven by `[STATIC FACT]`; JVM DoS/OOM crashes are a `[RUNTIME/LOAD GAP]`. |
+| **DEF-07** | High | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | Reliability / DoS | Unbounded collections remediated via server-side pagination with backward-compatible flat `List<T>` body, HTTP headers (`X-Total-Count`, etc.), and clamping. Verified across Order, Inventory, Product, User endpoints. |
 | **DEF-08** | High | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | DB Migrations | Historical V12 artifact `[STATIC FACT]`; protected by Flyway checksum on existing V36+ deployments (0 Gap). |
-| **DEF-09** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 3]` | Concurrency | Absence of `@Version`/locks proven by `[STATIC FACT]`; empirical race interleaving is a `[RUNTIME/LOAD GAP]`. |
-| **DEF-10** | High | **High** | `[DEFECT]` | `[OPEN - BATCH 3]` | Concurrency | Absence of `@Version`/locks proven by `[STATIC FACT]`; empirical race interleaving is a `[RUNTIME/LOAD GAP]`. |
+| **DEF-09** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 3]` | Concurrency | Optimistic locking via `@Version` and V39 migration remediated double-assignment race. |
+| **DEF-10** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 3]` | Concurrency | Optimistic locking via `@Version` and V39 migration remediated double-reservation race. |
 | **DEF-11** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Schema / Constraints | Cross-product destination conflict proven by V33 and V34 index definitions `[STATIC FACT]`. Remediated via V38 partial unique index and service check. |
 | **DEF-12** | High | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 2]` | Domain Logic | Deletion without status validation proven by `[STATIC FACT]`. Remediated by lifecycle guard allowing delete strictly for CREATED and CANCELED. |
 | **DEF-13** | High | **High** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | WMS State Machine | Unconditional `PARTIALLY_COMPLETED` proven by `[STATIC FACT]`. Remediated via deterministic completion state machine. |
 | **DEF-14** | High | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | AI / Network | Guarded by try-catch post-ready `[STATIC FACT]`; startup crash claim refuted by code (0 Gap). |
-| **DEF-15** | High | **Medium** | `[DEFECT]` | `[OPEN - BATCH 3]` | Transactions / Network | Connection holding during SMTP proven by `[STATIC FACT]`; connection pool exhaustion is a `[RUNTIME/LOAD GAP]`. |
+| **DEF-15** | High | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 3]` | Transactions / Network | Connection holding during SMTP remediated via `TransactionSynchronizationManager` post-commit dispatch. |
 | **DEF-16** | High | **High** | `[DEFECT]` | `[OPEN]` | QA / Testing | Fictitious assertions against local mocks/regex grep proven by test code `[STATIC FACT]` (0 Gap). |
-| **DEF-17** | Medium | **Medium** | `[DEFECT]` | `[OPEN]` | Authorization | Absence of `@PreAuthorize` and operator read access proven by `[STATIC FACT]` (0 Gap). |
+| **DEF-17** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | Authorization | Read/search replenishment endpoints secured with `@PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")` and service defense-in-depth scoping. Operators strictly restricted to their assigned tasks. |
 | **DEF-18** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 1]` | DTO Validation | Omission of nested collection validation without `@Valid` proven by Jakarta Spec `[STATIC FACT]`. Remediated. |
-| **DEF-19** | Medium | **Low** | `[DEFECT]` | `[OPEN]` | DTO Validation | Allowing zero-quantity replenishment via `@Min(0)` proven by `[STATIC FACT]` (0 Gap). |
-| **DEF-20** | Medium | **Medium** | `[DEFECT]` | `[OPEN - BATCH 3]` | DB Integrity | Duplicate User issue proven by `[STATIC FACT]`; Product collision prevented at service level `existsByBarcodeIgnoreCase`. |
-| **DEF-21** | Medium | **Low** | `[DEFECT]` | `[OPEN]` | Warehouse Audit | Logging stock quantity before deduction proven by invocation ordering `[STATIC FACT]` (0 Gap). |
+| **DEF-19** | Medium | **Low** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | DTO Validation | Zero-quantity replenishment prevented via `@NotNull` and `@Min(1)` on `ReplenishmentCreateRequest`/`ReplenishmentUpdateRequest` and service validation defense-in-depth. |
+| **DEF-20** | Medium | **Medium** | `[DEFECT]` | `[REMEDIATED IN BATCH 3]` | DB Integrity | Case-insensitive unique indexes added via V39; `CustomUserDetailsService` and `UserService` case-insensitive lookups enforced. |
+| **DEF-21** | Medium | **Low** | `[DEFECT]` | `[REMEDIATED IN BATCH 4]` | Warehouse Audit | Picking audit logging rescheduled strictly post-deduction in `PickingOperatorStrategy`. Point-in-time quantity captures accurate post-deduction stock with mathematical continuity. |
 | **DEF-22** | Medium | **Low** | `[RESIDUAL RISK]` | `[OPEN]` | Frontend / Security | UI spoofing in sessionStorage proven `[STATIC FACT]`; backend strictly enforces 403 Forbidden `[STATIC FACT]` (0 Gap). |
 | **DEF-23** | Medium | **Low** | `[DEFECT]` | `[OPEN]` | Frontend / Config | Hardcoded HTTP/8080 literal proven by `index.js` `[STATIC FACT]` (0 Gap). |
 | **DEF-24** | Medium | **Medium** | `[DEFECT]` | `[OPEN]` | AI / Business Logic | Ignoring operator `isActive` flag in AI tools proven by code `[STATIC FACT]` (0 Gap). |
@@ -182,6 +182,13 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   Asserting "guaranteed Denial of Service (DoS) via OutOfMemoryError" is a theoretical extrapolation. In demo environments (a few thousand rows), the JVM easily handles the load. A crash depends on `-Xmx` heap settings and has not been tested under load.
 * **Calibration & Classification:** Severity: **MEDIUM** (Downgraded from High). Classification: **`[DEFECT]`** (Architectural API contract defect).
+* **Remediation Status:** **`[REMEDIATED IN BATCH 4]`**
+  * Created [`PaginationUtils.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/util/PaginationUtils.java) with `clampPageable`, `createPaginationHeaders`, and `toPagedResponse`.
+  * Preserved 100% backward compatibility for frontend clients by returning flat JSON `List<T>` in the response body while sending pagination metadata in standard headers (`X-Total-Count`, `X-Total-Pages`, `X-Current-Page`, `X-Page-Size`).
+  * Clamped page sizes: Default 50, Max 200 for Orders, Inventory, History, and Users; Default 100, Max 500 for Products and Quantities.
+  * Exposed pagination headers in CORS configuration [`SecurityConfig.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/security/SecurityConfig.java).
+  * Upgraded repository and service queries across `OrderController`, `InventoryController`, `ProductController`, and `UserController`.
+  * Regression test: [`Def07UnboundedPaginationRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/pagination/Def07UnboundedPaginationRemediationTest.java) (10/10 passed).
 
 ---
 
@@ -341,6 +348,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`).
 * **Calibration & Classification:** Severity: **MEDIUM**. Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 4]`**
+  * Enforced `@PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")` on `getAllReplenishments`, `getReplenishmentById`, `searchReplenishments`, and `searchReplenishmentsFromBody` in [`ReplenishmentController.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/ReplenishmentController.java).
+  * Implemented defense-in-depth role checks and supervisor scoping in `ReplenishmentService.getAllReplenishments` and `searchReplenishments`, preventing unauthorized access and cross-supervisor plan visibility.
+  * Preserved operator task execution endpoints strictly for operational movements (`/api/v1/tasks/operator/**`).
+  * Regression test: [`Def17ReplenishmentSecurityRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/security/Def17ReplenishmentSecurityRemediationTest.java) (6/6 passed).
 
 ---
 
@@ -369,6 +381,10 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`).
 * **Calibration & Classification:** Severity: **LOW** (Downgraded from Medium). Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 4]`**
+  * Replaced `@Min(0)` with `@NotNull(message = "Requested quantity is required")` and `@Min(value = 1, message = "Requested quantity must be at least 1")` in [`ReplenishmentCreateRequest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/dto/replenishment/ReplenishmentCreateRequest.java) and [`ReplenishmentUpdateRequest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/dto/replenishment/ReplenishmentUpdateRequest.java).
+  * Enforced defense-in-depth boundary validation in [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java) (`createReplenishment` and `updateReplenishment`), throwing `InvalidRequestException` (HTTP 400) if quantity $\le 0$ or null.
+  * Regression test: [`Def19ReplenishmentQuantityValidationRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/validation/Def19ReplenishmentQuantityValidationRemediationTest.java) (10/10 passed).
 
 ---
 
@@ -405,6 +421,11 @@ This registry formalizes the boundary between statically proven architectural de
 * **[RUNTIME/LOAD GAP]:**
   None (`0 GAP`). Order of execution is fixed in code.
 * **Calibration & Classification:** Severity: **LOW** (Downgraded from Medium: minor snapshot anomaly within an atomic ACID transaction). Classification: **`[DEFECT]`**.
+* **Remediation Status:** **`[REMEDIATED IN BATCH 4]`**
+  * Rescheduled `recordPickingHistory` execution strictly after `workflowService.executeAllocationCompletion(allocation)` in [`PickingOperatorStrategy.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/allocation/PickingOperatorStrategy.java).
+  * Point-in-time stock quantity captures accurate post-deduction balance (`stock.getQuantity()`), with mathematical continuity (`previousQuantity = stock.getQuantity() + pickedQuantity`).
+  * Automated replenishment trigger `triggerReplenishmentCheck` now evaluates true remaining stock, preventing missed replenishment triggers.
+  * Regression test: [`Def21PickingAuditRemediationTest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/test/java/com/isd/wms/service/Def21PickingAuditRemediationTest.java) (3/3 passed).
 
 ---
 

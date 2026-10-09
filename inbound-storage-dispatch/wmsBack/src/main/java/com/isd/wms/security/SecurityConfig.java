@@ -82,7 +82,10 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(List.of(
             "Authorization", "Content-Type", "Cache-Control", "Accept", "Origin", "X-Requested-With"
         ));
-        configuration.setExposedHeaders(List.of("Authorization", "Content-Disposition"));
+        configuration.setExposedHeaders(List.of(
+            "Authorization", "Content-Disposition",
+            "X-Total-Count", "X-Total-Pages", "X-Current-Page", "X-Page-Size"
+        ));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 

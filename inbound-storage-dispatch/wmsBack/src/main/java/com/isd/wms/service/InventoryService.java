@@ -14,6 +14,8 @@ import com.isd.wms.service.imports.dto.StockInfo;
 import com.isd.wms.service.validation.SecurityFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -61,6 +63,11 @@ public class InventoryService {
         return stockRepository.findAllByAvailableIsTrue().stream()
             .map(stockMapper::toResponse)
             .toList();
+    }
+
+    public Page<StockResponse> getAllStock(Pageable pageable) {
+        return stockRepository.findAllByAvailableIsTrue(pageable)
+            .map(stockMapper::toResponse);
     }
 
     public StockResponse getStockById(Long stockId) {
@@ -184,6 +191,11 @@ public class InventoryService {
             .toList();
     }
 
+    public Page<InventoryHistoryResponse> getAllHistory(Pageable pageable) {
+        return inventoryHistoryRepository.findAll(pageable)
+            .map(inventoryHistoryMapper::toResponse);
+    }
+
     public List<InventoryHistoryResponse> getHistoryForStock(Long stockId) {
         Stock stock = getStock(stockId);
         Long productId = stock.getProduct().map(Product::getId).orElse(null);
@@ -194,6 +206,16 @@ public class InventoryService {
             .stream()
             .map(inventoryHistoryMapper::toResponse)
             .toList();
+    }
+
+    public Page<InventoryHistoryResponse> getHistoryForStock(Long stockId, Pageable pageable) {
+        Stock stock = getStock(stockId);
+        Long productId = stock.getProduct().map(Product::getId).orElse(null);
+        Long locationId = stock.getLocation().getId();
+        return inventoryHistoryRepository
+            .findByProductIdAndSourceLocationIdOrProductIdAndDestinationLocationId(
+                productId, locationId, productId, locationId, pageable)
+            .map(inventoryHistoryMapper::toResponse);
     }
 
     @Transactional

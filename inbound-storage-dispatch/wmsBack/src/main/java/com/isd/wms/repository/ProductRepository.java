@@ -3,6 +3,8 @@ package com.isd.wms.repository;
 import com.isd.wms.entity.Product;
 import com.isd.wms.enums.Zone;
 import com.isd.wms.repository.projections.ProductWithQuantityProjection;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -32,6 +34,18 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
           and (:categoryId is null or product.category.id = :categoryId)
         """)
     List<Product> search(@Param("name") String name, @Param("categoryId") Long categoryId);
+
+    @Query(value = """
+        select product from Product product
+        where (:name is null or lower(product.name) like lower(concat('%', :name, '%')))
+          and (:categoryId is null or product.category.id = :categoryId)
+        """,
+        countQuery = """
+        select count(product) from Product product
+        where (:name is null or lower(product.name) like lower(concat('%', :name, '%')))
+          and (:categoryId is null or product.category.id = :categoryId)
+        """)
+    Page<Product> search(@Param("name") String name, @Param("categoryId") Long categoryId, Pageable pageable);
 
     /**
      * Checks whether any product belongs to the given category.

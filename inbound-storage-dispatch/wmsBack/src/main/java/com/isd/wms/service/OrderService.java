@@ -23,6 +23,9 @@ import com.isd.wms.service.validation.SecurityFacade;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -218,6 +221,23 @@ public class OrderService {
             .toList();
     }
 
+    public Page<OrderResponse> getAllOrders(Pageable pageable) {
+        Page<Order> orderPage = securityFacade.hasRole(Role.ROLE_DEV)
+            ? orderRepository.findAll(pageable)
+            : orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername(), pageable);
+        if (orderPage.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        List<Order> orders = orderPage.getContent();
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
+        Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
+        List<OrderResponse> responses = orders.stream()
+            .map(order -> orderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
+            .toList();
+        return new PageImpl<>(responses, pageable, orderPage.getTotalElements());
+    }
+
     public OrderResponse getOrderById(@NonNull Long orderId) {
         Order order = getOrder(orderId);
         validateOrderAccess(order);
@@ -351,6 +371,28 @@ public class OrderService {
             .toList();
     }
 
+    public Page<OrderResponse> searchOrders(OrderSearchRequest request, Pageable pageable) {
+        Page<Order> orderPage = orderRepository.filter(
+                request.logicId(),
+                request.destinationLocationId(),
+                request.status(),
+                request.createdAt(),
+                request.updatedAt(),
+                pageable
+            );
+        if (orderPage.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        List<Order> orders = orderPage.getContent();
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
+        Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
+        List<OrderResponse> responses = orders.stream()
+            .map(order -> orderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
+            .toList();
+        return new PageImpl<>(responses, pageable, orderPage.getTotalElements());
+    }
+
     public List<ExtendedOrderResponse> getAllExtendedOrders() {
         List<Order> orders = securityFacade.hasRole(Role.ROLE_DEV)
             ? orderRepository.findAll()
@@ -364,6 +406,23 @@ public class OrderService {
         return orders.stream()
             .map(order -> extendedOrderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
             .toList();
+    }
+
+    public Page<ExtendedOrderResponse> getAllExtendedOrders(Pageable pageable) {
+        Page<Order> orderPage = securityFacade.hasRole(Role.ROLE_DEV)
+            ? orderRepository.findAll(pageable)
+            : orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername(), pageable);
+        if (orderPage.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        List<Order> orders = orderPage.getContent();
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
+        Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
+        List<ExtendedOrderResponse> responses = orders.stream()
+            .map(order -> extendedOrderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
+            .toList();
+        return new PageImpl<>(responses, pageable, orderPage.getTotalElements());
     }
 
     @Transactional
@@ -433,6 +492,22 @@ public class OrderService {
             .sorted((left, right) ->
                 right.updatedAt().compareTo(left.updatedAt()))
             .toList();
+    }
+
+    public Page<ShortageOrderResponse> getShortageOrders(Pageable pageable) {
+        List<Order> orders = securityFacade.hasRole(Role.ROLE_DEV)
+            ? orderRepository.findAll()
+            : orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
+        List<ShortageOrderResponse> allShortage = orders.stream()
+            .filter(this::isShortageOrder)
+            .map(this::toShortageOrderResponse)
+            .sorted((left, right) ->
+                right.updatedAt().compareTo(left.updatedAt()))
+            .toList();
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), allShortage.size());
+        List<ShortageOrderResponse> pageContent = (start <= allShortage.size()) ? allShortage.subList(start, end) : Collections.emptyList();
+        return new PageImpl<>(pageContent, pageable, allShortage.size());
     }
 
     public ShortageDetailsResponse getShortageDetails(Long orderId) {

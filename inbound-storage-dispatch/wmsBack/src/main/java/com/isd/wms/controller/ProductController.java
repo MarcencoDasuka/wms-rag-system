@@ -9,6 +9,8 @@ import com.isd.wms.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
+import com.isd.wms.util.PaginationUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -54,9 +56,10 @@ public class ProductController {
      * @return {@code 200 OK} with a list of all {@link ProductResponse} objects
      */
     @GetMapping
-    public ResponseEntity<List<ProductResponse>> getAllProducts() {
+    public ResponseEntity<List<ProductResponse>> getAllProducts(Pageable pageable) {
         log.info("Get all products request");
-        return ResponseEntity.ok(productService.getAllProducts());
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.PRODUCT_DEFAULT_SIZE, PaginationUtils.PRODUCT_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(productService.getAllProducts(clamped));
     }
 
     /**
@@ -67,8 +70,9 @@ public class ProductController {
      * objects including quantity data
      */
     @GetMapping("/quantities")
-    public ResponseEntity<List<ProductWithQuantityProjection>> getAllProductsWithQuantity(@RequestParam Zone zone) {
-        return ResponseEntity.ok(productService.getAllProductsWithQuantity(zone));
+    public ResponseEntity<List<ProductWithQuantityProjection>> getAllProductsWithQuantity(@RequestParam Zone zone, Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.PRODUCT_DEFAULT_SIZE, PaginationUtils.PRODUCT_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(productService.getAllProductsWithQuantity(zone, clamped));
     }
 
     /**
@@ -123,10 +127,12 @@ public class ProductController {
     @GetMapping("/search")
     public ResponseEntity<List<ProductResponse>> searchProducts(
         @RequestParam(required = false) String name,
-        @RequestParam(required = false) Long categoryId
+        @RequestParam(required = false) Long categoryId,
+        Pageable pageable
     ) {
         log.info("Search products request: name={}, categoryId={}", name, categoryId);
-        return ResponseEntity.ok(productService.searchProducts(name, categoryId));
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.PRODUCT_DEFAULT_SIZE, PaginationUtils.PRODUCT_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(productService.searchProducts(name, categoryId, clamped));
     }
 
     /**

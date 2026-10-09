@@ -4,6 +4,8 @@ import com.isd.wms.entity.Order;
 import com.isd.wms.entity.Task;
 import com.isd.wms.enums.OrderStatus;
 import com.isd.wms.repository.projections.OrderOperatorProjection;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -63,6 +65,38 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         @Param("updatedAt") LocalDateTime updatedAt
     );
 
+    @EntityGraph(attributePaths = {"destinationLocation"})
+    @Query(value = """
+        SELECT DISTINCT o FROM Order o
+        JOIN OrderLine ol ON ol.order = o
+        JOIN Task t ON t = ol.task
+        JOIN User u ON u = t.supervisor
+        WHERE (:logicId IS NULL OR o.logicId = :logicId)
+        AND (:destinationId IS NULL OR o.destinationLocation.id = :destinationId)
+        AND (:status IS NULL OR o.status = :status)
+        AND (cast(:createdAt as timestamp) IS NULL OR o.createdAt = :createdAt)
+        AND (cast(:updatedAt as timestamp) IS NULL OR o.updatedAt = :updatedAt)
+        """,
+        countQuery = """
+        SELECT COUNT(DISTINCT o) FROM Order o
+        JOIN OrderLine ol ON ol.order = o
+        JOIN Task t ON t = ol.task
+        JOIN User u ON u = t.supervisor
+        WHERE (:logicId IS NULL OR o.logicId = :logicId)
+        AND (:destinationId IS NULL OR o.destinationLocation.id = :destinationId)
+        AND (:status IS NULL OR o.status = :status)
+        AND (cast(:createdAt as timestamp) IS NULL OR o.createdAt = :createdAt)
+        AND (cast(:updatedAt as timestamp) IS NULL OR o.updatedAt = :updatedAt)
+        """)
+    Page<Order> filter(
+        @Param("logicId") String logicId,
+        @Param("destinationId") Long destinationId,
+        @Param("status") OrderStatus status,
+        @Param("createdAt") LocalDateTime createdAt,
+        @Param("updatedAt") LocalDateTime updatedAt,
+        Pageable pageable
+    );
+
     /**
      * Checks whether an order targeting the given destination location exists with any of the specified statuses.
      *
@@ -88,6 +122,23 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         WHERE LOWER(o.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
         """)
     List<Order> findAllAccessibleBySupervisor(@Param("username") String username);
+
+    @EntityGraph(attributePaths = {"destinationLocation"})
+    @Query(value = """
+        SELECT DISTINCT o FROM Order o
+        LEFT JOIN o.orderLines ol
+        LEFT JOIN ol.task t
+        LEFT JOIN t.supervisor u
+        WHERE LOWER(o.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
+        """,
+        countQuery = """
+        SELECT COUNT(DISTINCT o) FROM Order o
+        LEFT JOIN o.orderLines ol
+        LEFT JOIN ol.task t
+        LEFT JOIN t.supervisor u
+        WHERE LOWER(o.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
+        """)
+    Page<Order> findAllAccessibleBySupervisor(@Param("username") String username, Pageable pageable);
 
    /**
      * Backward-compatible alias for findAllAccessibleBySupervisor.

@@ -1,6 +1,8 @@
 package com.isd.wms.repository;
 
 import com.isd.wms.entity.InventoryHistory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -20,6 +22,10 @@ public interface InventoryHistoryRepository extends JpaRepository<InventoryHisto
     @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
     List<InventoryHistory> findAll();
 
+    @Override
+    @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
+    Page<InventoryHistory> findAll(Pageable pageable);
+
     /**
      * Finds inventory history records that involve a given product and location
      * as either the source or destination.
@@ -36,5 +42,14 @@ public interface InventoryHistoryRepository extends JpaRepository<InventoryHisto
         Long sourceLocationId,
         Long destinationProductId,
         Long destinationLocationId
+    );
+
+    @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
+    Page<InventoryHistory> findByProductIdAndSourceLocationIdOrProductIdAndDestinationLocationId(
+        Long sourceProductId,
+        Long sourceLocationId,
+        Long destinationProductId,
+        Long destinationLocationId,
+        Pageable pageable
     );
 }

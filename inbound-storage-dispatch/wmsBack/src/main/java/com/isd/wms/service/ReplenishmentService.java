@@ -133,6 +133,10 @@ public class ReplenishmentService {
         log.info("Creating replenishment: productId={}, requestedQuantity={}, destinationLocationId={}",
             request.productId(), request.requestedQuantity(), request.destinationLocationId());
 
+        if (request.requestedQuantity() == null || request.requestedQuantity() <= 0) {
+            throw new InvalidRequestException("Requested quantity must be at least 1");
+        }
+
         Product product = getProduct(request.productId());
         Location destinationLocation = getLocation(request.destinationLocationId());
 
@@ -150,6 +154,10 @@ public class ReplenishmentService {
     @Transactional
     public ReplenishmentResponse updateReplenishment(Long id, ReplenishmentUpdateRequest request) {
         log.info("Updating replenishment: id={}, status={}", id, request.status());
+
+        if (request.requestedQuantity() == null || request.requestedQuantity() <= 0) {
+            throw new InvalidRequestException("Requested quantity must be at least 1");
+        }
 
         Replenishment replenishment = getReplenishment(id);
         validateReplenishmentAccess(replenishment);
@@ -311,6 +319,9 @@ public class ReplenishmentService {
     }
 
     public List<ReplenishmentResponse> getAllReplenishments() {
+        if (!securityFacade.hasRole(Role.ROLE_DEV) && !securityFacade.hasRole(Role.ROLE_SUPERVISOR)) {
+            throw new AccessDeniedException("Access denied: only SUPERVISOR or DEV can view replenishments");
+        }
         List<Replenishment> replenishments;
         if (securityFacade.hasRole(Role.ROLE_SUPERVISOR) && !securityFacade.hasRole(Role.ROLE_DEV)) {
             replenishments = replenishmentRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername());
@@ -328,6 +339,9 @@ public class ReplenishmentService {
     }
 
     public List<ReplenishmentResponse> searchReplenishments(ReplenishmentSearchRequest request) {
+        if (!securityFacade.hasRole(Role.ROLE_DEV) && !securityFacade.hasRole(Role.ROLE_SUPERVISOR)) {
+            throw new AccessDeniedException("Access denied: only SUPERVISOR or DEV can search replenishments");
+        }
         List<Replenishment> tasks = replenishmentRepository.filter(
             request.id(),
             request.taskId(),
@@ -336,6 +350,17 @@ public class ReplenishmentService {
             request.status(),
             request.destinationLocationId()
         );
+        if (securityFacade.hasRole(Role.ROLE_SUPERVISOR) && !securityFacade.hasRole(Role.ROLE_DEV)) {
+            String currentUsername = securityFacade.getCurrentUsername();
+            tasks = tasks.stream()
+                .filter(r -> {
+                    boolean isCreator = r.getCreatedBy() != null && r.getCreatedBy().equalsIgnoreCase(currentUsername);
+                    String taskSupervisor = r.getTask().map(Task::getSupervisor).map(User::getUsername).orElse(null);
+                    boolean isTaskSupervisor = taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
+                    return isCreator || isTaskSupervisor;
+                })
+                .toList();
+        }
         if (tasks.isEmpty()) {
             return Collections.emptyList();
         }

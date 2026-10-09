@@ -1,6 +1,8 @@
 package com.isd.wms.repository;
 
 import com.isd.wms.entity.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -68,6 +70,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return list of active users
      */
     List<User> findAllByIsActiveTrue();
+
+    Page<User> findAllByIsActiveTrue(Pageable pageable);
 
     /**
      * Finds all users whose email is not verified and whose verification token

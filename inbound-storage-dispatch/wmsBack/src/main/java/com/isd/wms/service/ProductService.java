@@ -18,10 +18,14 @@ import com.isd.wms.service.imports.ImportService;
 import com.isd.wms.service.imports.dto.ProductInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -150,8 +154,22 @@ public class ProductService {
         return products;
     }
 
+    public Page<ProductResponse> getAllProducts(Pageable pageable) {
+        log.info("Getting all products paged");
+        return productRepository.findAll(pageable)
+            .map(productMapper::toResponse);
+    }
+
     public List<ProductWithQuantityProjection> getAllProductsWithQuantity(Zone zone) {
         return productRepository.getProductsWithQuantities(zone);
+    }
+
+    public Page<ProductWithQuantityProjection> getAllProductsWithQuantity(Zone zone, Pageable pageable) {
+        List<ProductWithQuantityProjection> list = productRepository.getProductsWithQuantities(zone);
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), list.size());
+        List<ProductWithQuantityProjection> pageContent = (start <= list.size()) ? list.subList(start, end) : Collections.emptyList();
+        return new PageImpl<>(pageContent, pageable, list.size());
     }
 
     /**
@@ -176,6 +194,18 @@ public class ProductService {
         log.info("Product search completed: name={}, categoryId={}, count={}",
             searchName, categoryId, products.size());
         return products;
+    }
+
+    public Page<ProductResponse> searchProducts(String name, Long categoryId, Pageable pageable) {
+        log.info("Searching products paged: name={}, categoryId={}", name, categoryId);
+        String searchName = name == null || name.isBlank() ? null : name.trim();
+        if (searchName == null && categoryId == null) {
+            log.warn("Invalid product search request: missing search parameters");
+            throw new InvalidRequestException("At least one search parameter is required");
+        }
+
+        return productRepository.search(searchName, categoryId, pageable)
+            .map(productMapper::toResponse);
     }
 
     private Product getProduct(Long productId) {

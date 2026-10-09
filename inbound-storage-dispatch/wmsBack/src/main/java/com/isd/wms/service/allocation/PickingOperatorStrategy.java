@@ -60,12 +60,6 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
 
         orderLine.setDeliveredQuantity(currentDelivered + pickedQuantity);
 
-        if (pickedQuantity > 0) {
-            inventoryService.recordPickingHistory(allocation.getStock(), pickedQuantity, operator,
-                shortageQuantity > 0 ? InventoryAdjustmentReason.PICKING_SHORTAGE : null,
-                shortageQuantity > 0 ? "Picking shortage" : null);
-        }
-
         if (partialPick) {
             inventoryService.recordShortageAdjustment(allocation.getStock(), shortageQuantity, operator,
                 InventoryOperationType.PICKING_SHORTAGE, "Picking shortage");
@@ -82,6 +76,12 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
         }
 
         AllocationCompletionResult result = workflowService.executeAllocationCompletion(allocation);
+
+        if (pickedQuantity > 0) {
+            inventoryService.recordPickingHistory(allocation.getStock(), pickedQuantity, operator,
+                shortageQuantity > 0 ? InventoryAdjustmentReason.PICKING_SHORTAGE : null,
+                shortageQuantity > 0 ? "Picking shortage" : null);
+        }
 
         if (allocation.getStock().getQuantity() == 0 && allocation.getStock().getReservedQuantity() == 0) {
             allocation.getStock().setAvailable(false);

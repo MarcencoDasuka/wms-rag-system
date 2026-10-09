@@ -6,6 +6,8 @@ import com.isd.wms.dto.order.shortage.ShortageOrderResponse;
 import com.isd.wms.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import com.isd.wms.util.PaginationUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -37,8 +39,9 @@ public class OrderController {
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<OrderResponse>> getOrders() {
-        return ResponseEntity.ok(orderService.getAllOrders());
+    public ResponseEntity<List<OrderResponse>> getOrders(Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(orderService.getAllOrders(clamped));
     }
 
     /**
@@ -48,8 +51,9 @@ public class OrderController {
      */
     @GetMapping("/extended")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<ExtendedOrderResponse>> getExtendedOrders() {
-        return ResponseEntity.ok(orderService.getAllExtendedOrders());
+    public ResponseEntity<List<ExtendedOrderResponse>> getExtendedOrders(Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(orderService.getAllExtendedOrders(clamped));
     }
 
     /**
@@ -149,8 +153,9 @@ public class OrderController {
      */
     @GetMapping("/filter")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<OrderResponse>> searchOrders(@ModelAttribute OrderSearchRequest request) {
-        return ResponseEntity.ok(orderService.searchOrders(request));
+    public ResponseEntity<List<OrderResponse>> searchOrders(@ModelAttribute OrderSearchRequest request, Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(orderService.searchOrders(request, clamped));
     }
 
     /**
@@ -173,8 +178,9 @@ public class OrderController {
      */
     @GetMapping("/shortages")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<ShortageOrderResponse>> getShortageOrders() {
-        return ResponseEntity.ok(orderService.getShortageOrders());
+    public ResponseEntity<List<ShortageOrderResponse>> getShortageOrders(Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(orderService.getShortageOrders(clamped));
     }
 
     /**

@@ -14,7 +14,7 @@
 | **Batch 1 (Wave 1 Core)** | Critical business & baseline security stoppers | **DEF-02, DEF-13, DEF-18, DEF-05** | **`COMPLETED`** | 16/16 Passed (13.1s) |
 | **Batch 2 (Wave 1 & 2 Auth/Schema)** | Object authorization (BOLA/IDOR), schema index & deletion guards | **DEF-03, DEF-04, DEF-06, DEF-11, DEF-12** | **`COMPLETED`** | 32/32 Passed (10.9s) |
 | **Batch 3 (Wave 2 Concurrency)** | Concurrency controls, versioning, async dispatch & integrity | **DEF-09, DEF-10, DEF-15, DEF-20** | **`COMPLETED`** | 21/21 Passed (5.8s) |
-| **Batch 4 (Wave 3 REST & DTO)** | Pagination, authorization scopes & input boundary validation | **DEF-07, DEF-17, DEF-19, DEF-21** | `QUEUED` | — |
+| **Batch 4 (Wave 3 REST & DTO)** | Pagination, authorization scopes & input boundary validation | **DEF-07, DEF-17, DEF-19, DEF-21** | **`COMPLETED`** | 29/29 Passed (6.6s) |
 | **Batch 5 (Wave 4 AI, Frontend & QA)** | AI tool boundaries, frontend config & authentic test harness | **DEF-01, DEF-14, DEF-16, DEF-22, DEF-23, DEF-24, DEF-25, DEF-26** | `QUEUED` | — |
 
 ---
@@ -126,16 +126,28 @@
 *Priority: Medium (Prevents DoS, invalid data ingestion, and audit divergence).*
 
 ### Task 3.1: Enforce REST API Pagination (`DEF-07`)
-* **Status:** `OPEN` (Scheduled for Batch 4)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 4)
 * **Severity:** `MEDIUM`
-* **Affected Controllers:** `OrderController`, `InventoryController`, `ProductController`, `UserController`.
+* **Affected Files:**
+  * [`PaginationUtils.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/util/PaginationUtils.java)
+  * [`SecurityConfig.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/security/SecurityConfig.java)
+  * `OrderController.java`, `InventoryController.java`, `ProductController.java`, `UserController.java`
+  * Corresponding Service and Repository layers
+* **Invariant:** Return flat JSON `List<T>` body with standard pagination headers (`X-Total-Count`, `X-Total-Pages`, `X-Current-Page`, `X-Page-Size`), preventing OOM without breaking Vue frontend array contract.
+* **Remediation Note:** Implemented utility clamp limits (Orders/Inventory/Users: default 50, max 200; Products: default 100, max 500), CORS exposed headers, and Pageable query delegates.
+* **Verification:** `Def07UnboundedPaginationRemediationTest` (10/10 passed).
 
 ---
 
 ### Task 3.2: Method Security on Replenishments (`DEF-17`)
-* **Status:** `OPEN` (Scheduled for Batch 4)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 4)
 * **Severity:** `MEDIUM`
-* **Affected Files:** `ReplenishmentController.java`
+* **Affected Files:**
+  * [`ReplenishmentController.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/controller/ReplenishmentController.java)
+  * [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
+* **Invariant:** Only `SUPERVISOR` and `DEV` can read, list, and search replenishment plans. Operators are restricted strictly to `/api/v1/tasks/operator/**`.
+* **Remediation Note:** Added `@PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")` across replenishment read endpoints and service defense-in-depth scoping.
+* **Verification:** `Def17ReplenishmentSecurityRemediationTest` (6/6 passed).
 
 ---
 
@@ -148,9 +160,15 @@
 ---
 
 ### Task 3.4: Replenishment Positive Quantity Validation (`DEF-19`)
-* **Status:** `OPEN` (Scheduled for Batch 4)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 4)
 * **Severity:** `LOW`
-* **Affected Files:** `ReplenishmentCreateRequest.java`
+* **Affected Files:**
+  * [`ReplenishmentCreateRequest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/dto/replenishment/ReplenishmentCreateRequest.java)
+  * [`ReplenishmentUpdateRequest.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/dto/replenishment/ReplenishmentUpdateRequest.java)
+  * [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
+* **Invariant:** Requested replenishment quantities must be strictly positive integers $\ge 1$.
+* **Remediation Note:** Enforced `@NotNull` and `@Min(1)` at DTO validation level and defense-in-depth boundary validation throwing `InvalidRequestException` in `ReplenishmentService`.
+* **Verification:** `Def19ReplenishmentQuantityValidationRemediationTest` (10/10 passed).
 
 ---
 
@@ -168,9 +186,13 @@
 ---
 
 ### Task 3.6: Synchronize Picking Audit Quantity (`DEF-21`)
-* **Status:** `OPEN` (Scheduled for Batch 4)
+* **Status:** **`COMPLETED [VERIFIED]`** (Remediated in Batch 4)
 * **Severity:** `LOW`
-* **Affected Files:** `AllocationExecutionService.java`
+* **Affected Files:**
+  * [`PickingOperatorStrategy.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/allocation/PickingOperatorStrategy.java)
+* **Invariant:** Audit trail `recordPickingHistory` must record actual remaining stock post-deduction, preserving point-in-time accuracy and mathematical audit continuity.
+* **Remediation Note:** Rescheduled `recordPickingHistory` post-deduction after `executeAllocationCompletion`. Point-in-time quantity captures `stock.getQuantity()` and `previousQuantity = stock.getQuantity() + pickedQuantity`. Post-deduction replenishment trigger verified.
+* **Verification:** `Def21PickingAuditRemediationTest` (3/3 passed).
 
 ---
 

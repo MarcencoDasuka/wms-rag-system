@@ -5,6 +5,8 @@ import com.isd.wms.service.InventoryAdjustmentService;
 import com.isd.wms.service.InventoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import com.isd.wms.util.PaginationUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,8 +41,9 @@ public class InventoryController {
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<StockResponse>> getAllStock() {
-        return ResponseEntity.ok(inventoryService.getAllStock());
+    public ResponseEntity<List<StockResponse>> getAllStock(Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.INVENTORY_DEFAULT_SIZE, PaginationUtils.INVENTORY_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(inventoryService.getAllStock(clamped));
     }
 
     /**
@@ -125,8 +128,9 @@ public class InventoryController {
      */
     @GetMapping("/history")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<InventoryHistoryResponse>> getAllHistory() {
-        return ResponseEntity.ok(inventoryService.getAllHistory());
+    public ResponseEntity<List<InventoryHistoryResponse>> getAllHistory(Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.INVENTORY_DEFAULT_SIZE, PaginationUtils.INVENTORY_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(inventoryService.getAllHistory(clamped));
     }
 
     /**
@@ -137,8 +141,9 @@ public class InventoryController {
      */
     @GetMapping("/{stockId}/history")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<InventoryHistoryResponse>> getStockHistory(@PathVariable Long stockId) {
-        return ResponseEntity.ok(inventoryService.getHistoryForStock(stockId));
+    public ResponseEntity<List<InventoryHistoryResponse>> getStockHistory(@PathVariable Long stockId, Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.INVENTORY_DEFAULT_SIZE, PaginationUtils.INVENTORY_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(inventoryService.getHistoryForStock(stockId, clamped));
     }
 
     /**

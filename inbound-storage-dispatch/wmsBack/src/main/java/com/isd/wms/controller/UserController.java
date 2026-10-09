@@ -6,6 +6,8 @@ import com.isd.wms.dto.user.UserUpdateRequest;
 import com.isd.wms.service.UserService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import com.isd.wms.util.PaginationUtils;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -50,8 +52,9 @@ public class UserController {
      * @return {@code 200 OK} with a list of {@link UserResponse} objects
      */
     @GetMapping
-    public ResponseEntity<List<UserResponse>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public ResponseEntity<List<UserResponse>> getAllUsers(Pageable pageable) {
+        Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.USER_DEFAULT_SIZE, PaginationUtils.USER_MAX_SIZE);
+        return PaginationUtils.toPagedResponse(userService.getAllUsers(clamped));
     }
 
     /**

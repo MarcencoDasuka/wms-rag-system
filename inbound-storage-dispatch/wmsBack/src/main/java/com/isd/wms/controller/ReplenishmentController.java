@@ -53,6 +53,7 @@ public class ReplenishmentController {
      * @return {@code 200 OK} with a list of all {@link ReplenishmentResponse} objects
      */
     @GetMapping
+    @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
     public ResponseEntity<List<ReplenishmentResponse>> getAllReplenishments() {
         return ResponseEntity.ok(replenishmentService.getAllReplenishments());
     }
@@ -64,6 +65,7 @@ public class ReplenishmentController {
      * @return {@code 200 OK} with the {@link ReplenishmentResponse} for the specified task
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
     public ResponseEntity<ReplenishmentResponse> getReplenishmentById(@PathVariable Long id) {
         return ResponseEntity.ok(replenishmentService.getReplenishmentById(id));
     }
@@ -101,6 +103,7 @@ public class ReplenishmentController {
      * @return {@code 200 OK} with a list of matching {@link ReplenishmentResponse} objects
      */
     @PostMapping("/filter")
+    @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
     public ResponseEntity<List<ReplenishmentResponse>> searchReplenishments(@ModelAttribute ReplenishmentSearchRequest request) {
         return ResponseEntity.ok(replenishmentService.searchReplenishments(request));
     }
@@ -112,6 +115,7 @@ public class ReplenishmentController {
      * @return {@code 200 OK} with a list of matching {@link ReplenishmentResponse} objects
      */
     @PostMapping("/search")
+    @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
     public ResponseEntity<List<ReplenishmentResponse>> searchReplenishmentsFromBody(@RequestBody ReplenishmentSearchRequest request) {
         return ResponseEntity.ok(replenishmentService.searchReplenishments(request));
     }
