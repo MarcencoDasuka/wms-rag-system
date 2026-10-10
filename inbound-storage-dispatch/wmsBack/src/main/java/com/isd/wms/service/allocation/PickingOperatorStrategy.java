@@ -61,7 +61,7 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
         orderLine.setDeliveredQuantity(currentDelivered + pickedQuantity);
 
         if (partialPick) {
-            inventoryService.recordShortageAdjustment(allocation.getStock(), shortageQuantity, operator,
+            inventoryService.recordShortageAdjustment(allocation.getStock(), pickedQuantity, operator,
                 InventoryOperationType.PICKING_SHORTAGE, "Picking shortage");
         }
 
@@ -100,8 +100,16 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
         List<Allocation> orderedAllocations = pickingFlowService.orderAllocationsBySourceLocation(allocationRepository.findAllByOrder(order));
         Allocation currentAllocation = pickingFlowService.findCurrentExecutableAllocation(orderedAllocations).orElse(null);
 
-        String message = pickedQuantity == 0 && shortageAllocations.isEmpty() ? "No stock found. Order line canceled." :
-            (shortageQuantity > 0 ? (shortageAllocations.isEmpty() ? "Partially completed." : "New task created.") : "Completed.");
+        String message;
+        if (pickedQuantity == 0 && shortageAllocations.isEmpty()) {
+            message = "No stock found. Order line canceled.";
+        } else if (shortageQuantity > 0) {
+            message = shortageAllocations.isEmpty() ? "Partially completed." : "New task created.";
+        } else if (currentAllocation == null) {
+            message = "Picking finished. Proceed to dispatch ramp.";
+        } else {
+            message = "Item picked. Proceed to next location.";
+        }
 
         return new AllocationCompletionResponse(
             result.status(), result.taskType(), result.id(), pickedQuantity, shortageQuantity,
@@ -121,7 +129,10 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
     private void handleOrderCompletion(Order order) {
         List<Allocation> allOrderAllocations = allocationRepository.findAllByOrder(order);
         boolean processingFinished = allOrderAllocations.stream().allMatch(a ->
-            a.getStatus() == Status.COMPLETED || a.getStatus() == Status.PARTIALLY_COMPLETED || a.getStatus() == Status.CANCELED);
+            a.getStatus() == Status.COMPLETED
+                || a.getStatus() == Status.PARTIALLY_COMPLETED
+                || a.getStatus() == Status.CANCELED
+                || a.getPickedQuantity().isPresent());
 
         if (processingFinished) {
             List<OrderLine> lines = orderLineRepository.findAllByOrderId(order.getId());
@@ -130,20 +141,7 @@ public class PickingOperatorStrategy implements OperatorExecutionStrategy {
                 releaseTuForOrder(order);
                 order.setStatus(OrderStatus.CANCELED);
             } else {
-                boolean hasIncompleteOrPartial = lines.stream().anyMatch(l ->
-                    l.getStatus() == Status.CANCELED
-                        || l.getStatus() == Status.SHORTAGE
-                        || l.getStatus() == Status.PARTIALLY_COMPLETED
-                        || (l.getShortageQuantity() != null && l.getShortageQuantity() > 0)
-                        || (l.getDeliveredQuantity() != null && l.getRequestedQuantity() != null && l.getDeliveredQuantity() < l.getRequestedQuantity())
-                );
-                boolean allCompleted = !lines.isEmpty() && lines.stream().allMatch(l -> l.getStatus() == Status.COMPLETED);
-
-                if (allCompleted && !hasIncompleteOrPartial) {
-                    order.setStatus(OrderStatus.COMPLETED);
-                } else {
-                    order.setStatus(OrderStatus.PARTIALLY_COMPLETED);
-                }
+                order.setStatus(OrderStatus.PICKED);
             }
             orderRepository.save(order);
         }

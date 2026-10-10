@@ -64,6 +64,17 @@ class PickingAllocationCompletionStrategyTest {
     }
 
     @Test
+    void result_returnsInProgressStatus_whenOrderIsPicked() {
+        order.setStatus(OrderStatus.PICKED);
+        when(orderRepository.getOrderByTask(task)).thenReturn(Optional.of(order));
+
+        AllocationCompletionResult result = strategy.result(task);
+
+        assertThat(result.status()).isEqualTo(AllocationCompletionStatus.IN_PROGRESS);
+        assertThat(result.taskType()).isEqualTo(TaskType.PICKING_ORDER);
+    }
+
+    @Test
     void updateStatus_computesPartialCompletionCorrectly() {
         orderLine.setDeliveredQuantity(5);
         when(orderLineRepository.findByTaskId(1L)).thenReturn(Optional.of(orderLine));
@@ -74,7 +85,7 @@ class PickingAllocationCompletionStrategyTest {
 
         assertThat(res).isTrue();
         assertThat(orderLine.getStatus()).isEqualTo(Status.PARTIALLY_COMPLETED);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PARTIALLY_COMPLETED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PICKED);
         verify(orderRepository).save(order);
     }
 }

@@ -15,14 +15,14 @@ import java.util.List;
  */
 public final class PaginationUtils {
 
-    public static final int ORDER_DEFAULT_SIZE = 50;
-    public static final int ORDER_MAX_SIZE = 200;
+    public static final int ORDER_DEFAULT_SIZE = 100;
+    public static final int ORDER_MAX_SIZE = 500;
 
-    public static final int INVENTORY_DEFAULT_SIZE = 50;
-    public static final int INVENTORY_MAX_SIZE = 200;
+    public static final int INVENTORY_DEFAULT_SIZE = 200;
+    public static final int INVENTORY_MAX_SIZE = 1000;
 
-    public static final int USER_DEFAULT_SIZE = 50;
-    public static final int USER_MAX_SIZE = 200;
+    public static final int USER_DEFAULT_SIZE = 100;
+    public static final int USER_MAX_SIZE = 500;
 
     public static final int PRODUCT_DEFAULT_SIZE = 100;
     public static final int PRODUCT_MAX_SIZE = 500;
@@ -36,7 +36,7 @@ public final class PaginationUtils {
     public static Pageable clampPageable(Pageable pageable, int defaultSize, int maxSize) {
         int pageNumber = 0;
         int pageSize = defaultSize;
-        Sort sort = Sort.unsorted();
+        Sort sort = Sort.by("id").ascending();
 
         if (pageable != null && pageable.isPaged()) {
             pageNumber = Math.max(0, pageable.getPageNumber());
@@ -46,7 +46,9 @@ public final class PaginationUtils {
             } else {
                 pageSize = Math.min(requestedSize, maxSize);
             }
-            sort = pageable.getSort();
+            if (pageable.getSort().isSorted()) {
+                sort = pageable.getSort();
+            }
         }
 
         return PageRequest.of(pageNumber, pageSize, sort);

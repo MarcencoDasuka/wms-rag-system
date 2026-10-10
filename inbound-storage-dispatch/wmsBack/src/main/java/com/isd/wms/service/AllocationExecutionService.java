@@ -15,6 +15,7 @@ import com.isd.wms.repository.OrderLineRepository;
 import com.isd.wms.repository.OrderRepository;
 import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.StockRepository;
+import com.isd.wms.repository.TaskRepository;
 import com.isd.wms.repository.TransportUnitRepository;
 import com.isd.wms.service.allocation.OperatorExecutionStrategy;
 import com.isd.wms.service.validation.SecurityFacade;
@@ -39,6 +40,7 @@ public class AllocationExecutionService {
     private final OrderRepository orderRepository;
     private final ReplenishmentRepository replenishmentRepository;
     private final TransportUnitRepository tuRepository;
+    private final TaskRepository taskRepository;
     private final SecurityFacade securityFacade;
     private final PickingFlowService pickingFlowService;
     private final OperatorSummaryMapper summaryMapper;
@@ -49,8 +51,7 @@ public class AllocationExecutionService {
         return findCurrentAssignment(securityFacade.getCurrentUsername())
             .map(this::buildSummary)
             .or(() -> findPickedOrderAwaitingCompletion(securityFacade.getCurrentUser())
-                .map(this::buildPickingSummary)
-                .filter(summary -> summary.currentAllocation() != null));
+                .map(this::buildPickingSummary));
     }
 
     @Transactional
@@ -58,7 +59,9 @@ public class AllocationExecutionService {
         CurrentAssignment assignment = findCurrentAssignment(securityFacade.getCurrentUsername())
             .orElseThrow(() -> new InvalidRequestException("No assigned task found for current operator"));
 
-        startAllocationExecution(assignment.allocation(), assignment.order());
+        if (assignment.allocation() != null) {
+            startAllocationExecution(assignment.allocation(), assignment.order());
+        }
         return buildSummary(assignment);
     }
 
@@ -67,7 +70,7 @@ public class AllocationExecutionService {
         Order order = findPickedOrderAwaitingCompletion(securityFacade.getCurrentUser())
             .orElseThrow(() -> new InvalidRequestException("No assigned order found for current operator"));
 
-        if (order.getStatus() != OrderStatus.PICKED && order.getStatus() != OrderStatus.PARTIALLY_COMPLETED) {
+        if (order.getStatus() != OrderStatus.PICKED) {
             throw new InvalidRequestException("Order is not ready for final completion");
         }
 
@@ -86,13 +89,29 @@ public class AllocationExecutionService {
         }
 
         List<Allocation> allocations = allocationRepository.findAllByOrder(order);
-        boolean allAllocationsCompleted = allocations.stream().allMatch(allocation ->
+        boolean allAllocationsReady = allocations.stream().allMatch(allocation ->
             allocation.getStatus() == Status.COMPLETED
                 || allocation.getStatus() == Status.PARTIALLY_COMPLETED
                 || allocation.getStatus() == Status.CANCELED
+                || (allocation.getStatus() == Status.IN_PROGRESS && allocation.getPickedQuantity().isPresent())
         );
-        if (!allAllocationsCompleted) {
-            throw new InvalidRequestException("All allocations must be completed before final confirmation");
+        if (!allAllocationsReady) {
+            throw new InvalidRequestException("All allocations must be completed or picked before final confirmation");
+        }
+
+        for (Allocation allocation : allocations) {
+            if (allocation.getStatus() == Status.IN_PROGRESS && allocation.getPickedQuantity().isPresent()) {
+                int picked = allocation.getPickedQuantity().get();
+                if (picked == 0) {
+                    allocation.setStatus(Status.CANCELED);
+                } else if (picked < allocation.getQuantity()) {
+                    allocation.setStatus(Status.PARTIALLY_COMPLETED);
+                } else {
+                    allocation.setStatus(Status.COMPLETED);
+                }
+                allocationRepository.save(allocation);
+            }
+            taskRepository.markTaskAsCompleted(allocation.getTask().getId());
         }
 
         boolean allCanceled = orderLines.stream().allMatch(line -> line.getStatus() == Status.CANCELED);
@@ -210,7 +229,7 @@ public class AllocationExecutionService {
             throw new InvalidRequestException("Picked quantity cannot exceed required quantity");
         }
 
-        allocation.setStatus(pickedQuantity == 0 ? Status.CANCELED : (pickedQuantity < allocation.getQuantity() ? Status.PARTIALLY_COMPLETED : Status.COMPLETED));
+        allocation.setStatus(pickedQuantity == 0 ? Status.CANCELED : Status.IN_PROGRESS);
 
         Allocation savedAllocation = allocationRepository.save(allocation);
 
@@ -305,22 +324,24 @@ public class AllocationExecutionService {
         if (first.getTask().getTaskType() == TaskType.PICKING_ORDER) {
             Order order = orderLineRepository.findByTaskId(first.getTask().getId()).map(OrderLine::getOrder).orElseThrow(() -> new InvalidRequestException("Order not found for picking task"));
             List<Allocation> ord = pickingFlowService.orderAllocationsBySourceLocation(allocationRepository.findAllByOrder(order));
-            return pickingFlowService.findCurrentExecutableAllocation(ord).map(a -> new CurrentAssignment(a, TaskType.PICKING_ORDER, order));
+            return pickingFlowService.findCurrentExecutableAllocation(ord).map(a -> new CurrentAssignment(a, TaskType.PICKING_ORDER, order, first.getTask()));
         }
 
         List<Allocation> replAllocations = allocationRepository.findAllByTaskId(first.getTask().getId());
         List<Allocation> orderedReplAllocations = pickingFlowService.orderAllocationsBySourceLocation(replAllocations);
-        return pickingFlowService.findCurrentExecutableAllocation(orderedReplAllocations).map(a -> new CurrentAssignment(a, TaskType.REPLENISHMENT, null));
+        Allocation nextAlloc = pickingFlowService.findCurrentExecutableAllocation(orderedReplAllocations).orElse(null);
+        return Optional.of(new CurrentAssignment(nextAlloc, TaskType.REPLENISHMENT, null, first.getTask()));
     }
 
     private OperatorTaskSummaryResponse buildSummary(CurrentAssignment assignment) {
         if (assignment.taskType() == TaskType.PICKING_ORDER) return buildPickingSummary(assignment.order());
 
-        Replenishment replenishment = replenishmentRepository.findByTaskId(assignment.allocation().getTask().getId()).orElseThrow(() -> new InvalidRequestException("Replenishment not found"));
-        List<Allocation> taskAllocations = allocationRepository.findAllByTaskId(assignment.allocation().getTask().getId()).stream()
+        Task task = assignment.task() != null ? assignment.task() : assignment.allocation().getTask();
+        Replenishment replenishment = replenishmentRepository.findByTaskId(task.getId()).orElseThrow(() -> new InvalidRequestException("Replenishment not found"));
+        List<Allocation> taskAllocations = allocationRepository.findAllByTaskId(task.getId()).stream()
             .sorted(Comparator.comparing(Allocation::getCreatedAt).thenComparing(Allocation::getId)).toList();
 
-        return summaryMapper.toReplenishmentSummary(assignment.allocation().getTask(), replenishment, taskAllocations, assignment.allocation(), tuRepository.existsByReplenishment(replenishment));
+        return summaryMapper.toReplenishmentSummary(task, replenishment, taskAllocations, assignment.allocation(), tuRepository.existsByReplenishment(replenishment));
     }
 
     private OperatorTaskSummaryResponse buildPickingSummary(Order order) {
@@ -334,5 +355,5 @@ public class AllocationExecutionService {
         return orderRepository.findOldestPickedOrderAssignedToOperator(operator.getId());
     }
 
-    private record CurrentAssignment(Allocation allocation, TaskType taskType, Order order) {}
+    private record CurrentAssignment(Allocation allocation, TaskType taskType, Order order, Task task) {}
 }

@@ -39,6 +39,7 @@ class AllocationExecutionServiceTest {
     @Mock private OrderLineRepository orderLineRepository;
     @Mock private OrderRepository orderRepository;
     @Mock private TransportUnitRepository tuRepository;
+    @Mock private TaskRepository taskRepository;
     @Mock private UserRepository userRepository;
     @Mock private InventoryService inventoryService;
     @Mock private SecurityFacade securityFacade;
@@ -110,7 +111,7 @@ class AllocationExecutionServiceTest {
         );
         ReplenishmentOperatorStrategy replenishmentStrategy = new ReplenishmentOperatorStrategy(
             allocationRepository, replenishmentRepository, locationRepository, tuRepository, stockRepository,
-            inventoryService, workflowService, shortageResolver, pickingFlowService, summaryMapper
+            taskRepository, inventoryService, workflowService, shortageResolver, pickingFlowService, summaryMapper
         );
         ReflectionTestUtils.setField(allocationExecutionService, "executionStrategies", List.of(pickingStrategy, replenishmentStrategy));
     }
@@ -162,7 +163,7 @@ class AllocationExecutionServiceTest {
 
         AllocationCompletionResponse response = allocationExecutionService.completeAllocation(50L);
 
-        verify(inventoryService).recordShortageAdjustment(eq(stock), eq(3), eq(operator), eq(InventoryOperationType.PICKING_SHORTAGE), eq("Picking shortage"));
+        verify(inventoryService).recordShortageAdjustment(eq(stock), eq(7), eq(operator), eq(InventoryOperationType.PICKING_SHORTAGE), eq("Picking shortage"));
 
         verify(allocationRepository).saveAll(argThat(list -> {
             List<Allocation> savedList = (List<Allocation>) list;

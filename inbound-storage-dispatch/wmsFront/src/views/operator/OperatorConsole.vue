@@ -659,6 +659,13 @@ const loadCurrentTask = async () => {
 
     hydrateState(response.data)
 
+    if (response.data.readyForCompletion || !response.data.currentAllocation) {
+      showFinalSummary.value = true
+      showTuScan.value = false
+      showDestinationScan.value = false
+      return
+    }
+
     if (response.data.status === 'STARTED' || (response.data.currentAllocation && response.data.currentAllocation.status === 'IN_PROGRESS')) {
       const isTuScannedOnBackend = response.data.currentAllocation?.tuScanned
 
@@ -853,18 +860,25 @@ const submitPickedQuantity = async () => {
       hydrateCompletionSummary(completion)
       showFinalSummary.value = true
       showDestinationScan.value = false
+
+      toast.add({
+        severity: 'info',
+        summary: 'Picking Finished',
+        detail: isReplenishmentTask.value ? 'Proceed to destination shelf.' : 'Proceed to dispatch ramp.',
+        life: 4000,
+      })
     } else {
       hydrateCompletionSummary(completion)
       showFinalSummary.value = false
       showDestinationScan.value = false
-    }
 
-    toast.add({
-      severity: completion.newProcessCreated ? 'warn' : 'success',
-      summary: 'Picking updated',
-      detail: completion.message || 'Allocation completed.',
-      life: 4000,
-    })
+      toast.add({
+        severity: 'info',
+        summary: 'Picking Updated',
+        detail: completion.message || 'Item picked.',
+        life: 3000,
+      })
+    }
 
     if (completion.newProcessCreated) {
       toast.add({
@@ -908,6 +922,13 @@ const submitDestinationScan = async () => {
     if (!isReplenishmentTask.value) {
       await allocationApi.completeCurrentOrder()
     }
+
+    toast.add({
+      severity: 'success',
+      summary: 'Task Completed',
+      detail: isReplenishmentTask.value ? 'Replenishment completed successfully.' : 'Order completed and dispatched successfully.',
+      life: 4000,
+    })
 
     resetState()
     await loadCurrentTask()

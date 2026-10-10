@@ -103,14 +103,17 @@ The core WMS backend enforces strict transactional, concurrency, and security in
 |-----------|-----------------------|-------------------------|
 | **Stock Reservation & Lock Ordering** | Pessimistic write locking (`findByIdWithLock`, `findAllByIdInWithLock` with `ORDER BY s.id ASC`) + DB check | Eliminates deadlocks between allocations and inventory adjustments, prevents over-reservation |
 | **Order Picking Concurrency** | Pessimistic write locking on `OrderLine` (`findByTaskIdWithLock`) | Serializes concurrent allocation completions, preventing lost updates on `deliveredQuantity` |
+| **Picking & Replenishment Execution Lifecycle** | Deferred completion state machine (`completeCurrentOrder()`, `dispatch()`) | Goods in transit remain in cart/allocation `IN_PROGRESS`; order completion is deferred strictly until dispatch ramp scan |
+| **Auto-Replenishment Shared Queue** | Scoped supervisor query + optimistic concurrency control (`@Version`) | Shared visibility for system-generated replenishments across all supervisors with mutual exclusion on assignment (HTTP 409) |
 | **Location Monopoly** | Partial unique index (`uk_stocks_active_location`) + row lock on `Location` | Guarantees that a single warehouse location can never hold multiple distinct product types |
 | **Allocation vs Adjustment Race Protection** | Pessimistic write locks (`findByIdWithLock`, `findActiveByStockIdWithLock`) | Prevents phantom picks on canceled allocations during stock adjustments |
 | **Data Cleanup Safety** | Terminal status restriction (`COMPLETED`, `CANCELED`) in cleanup queries | Protects active orders, lines, and allocations from premature deletion by background cron job |
-| **AI Tool Security Boundaries** | Two-phase confirmation tokens + role check (`ROLE_SUPERVISOR` / `ROLE_DEV`) | Prevents unconfirmed or unauthorized state mutations via AI assistant tools |
-| **Object-Level Access (BOLA/IDOR)** | Ownership validation (`enforceOrderAccess`, `enforceReplenishmentAccess`) | Restricts supervisor AI operations strictly to their authorized orders and operators |
-| **Account Lifecycle & Security** | Active flag enforcement in `CustomUserDetailsService` + SHA-256 fingerprint check | Denies authentication to deactivated users, blocks self-reactivation via `/register`, rejects compromised secrets |
+| **AI Tool Security Boundaries** | Human-in-the-loop pending requests + role check (`ROLE_SUPERVISOR` / `ROLE_DEV`) | Prevents autonomous state mutations via AI assistant tools without explicit user approval |
+| **Object-Level Access (BOLA/IDOR)** | Ownership validation (`validateOrderAccess`, `validateReplenishmentAccess`) | Restricts supervisor access strictly to their authorized orders and operator tasks |
+| **Bounded Pagination & DoS Prevention** | Server-side clamping (`PaginationUtils`, `@PageableDefault`) + CORS headers | Prevents memory exhaustion on large collections while ensuring client-side tables render up to 500 records smoothly |
+| **Account Lifecycle & Security** | Active flag enforcement + `email_verified` check in `CustomUserDetailsService` | Denies authentication to deactivated or unverified accounts, ensures seed users login cleanly |
 
-For full architectural details and code snippets, see the [WMS Architecture and Fixes Guide](../docs/WMS_FIXES_AND_ARCHITECTURE_GUIDE.md).
+For full architectural details, verification matrices, and remediation roadmaps, see the [WMS Defect Verification Catalog](../docs/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md) and [WMS Remediation Roadmap](../docs/WMS_REMEDIATION_ROADMAP.md).
 
 ---
 

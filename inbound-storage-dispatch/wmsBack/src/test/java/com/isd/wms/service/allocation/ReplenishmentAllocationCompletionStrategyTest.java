@@ -86,7 +86,7 @@ class ReplenishmentAllocationCompletionStrategyTest {
     }
 
     @Test
-    void updateStatus_withPartialHistoryAndNoPending_setsPartiallyCompleted() {
+    void updateStatus_withNoPendingAllocations_remainsInProgressUntilDispatch() {
         allocation.setStatus(Status.SHORTAGE);
 
         when(replenishmentRepository.findByTaskId(1L)).thenReturn(Optional.of(replenishment));
@@ -95,7 +95,21 @@ class ReplenishmentAllocationCompletionStrategyTest {
         boolean result = strategy.updateStatus(task);
 
         assertThat(result).isTrue();
-        assertThat(replenishment.getStatus()).isEqualTo(Status.PARTIALLY_COMPLETED);
+        assertThat(replenishment.getStatus()).isEqualTo(Status.IN_PROGRESS);
+        verify(replenishmentRepository).save(replenishment);
+    }
+
+    @Test
+    void updateStatus_withAllCanceledAllocations_setsCanceled() {
+        allocation.setStatus(Status.CANCELED);
+
+        when(replenishmentRepository.findByTaskId(1L)).thenReturn(Optional.of(replenishment));
+        when(allocationRepository.findAllByTaskId(1L)).thenReturn(List.of(allocation));
+
+        boolean result = strategy.updateStatus(task);
+
+        assertThat(result).isTrue();
+        assertThat(replenishment.getStatus()).isEqualTo(Status.CANCELED);
         verify(replenishmentRepository).save(replenishment);
     }
 

@@ -173,8 +173,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<OrderOperatorProjection> findOperatorIdsByOrderIds(@Param("orderIds") Collection<Long> orderIds);
 
     /**
-     * Finds the oldest PICKED or PARTIALLY_COMPLETED order for an operator.
-     * Used to continue picking after dispatch.
+     * Finds the oldest PICKED order for an operator awaiting ramp completion.
      *
      * @param operatorId the operator's user ID
      * @return an Optional containing the order, if any
@@ -184,7 +183,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         JOIN order_lines ol ON o.id = ol.order_id
         JOIN tasks t ON ol.task_id = t.id
         WHERE t.operator_id = :operatorId
-          AND o.status IN ('PICKED', 'PARTIALLY_COMPLETED')
+          AND o.status = 'PICKED'
         ORDER BY o.created_at, o.id
         LIMIT 1
     """, nativeQuery = true)

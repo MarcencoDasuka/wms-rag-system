@@ -576,7 +576,7 @@ const getLocationLabel = (locationId) => {
 }
 
 const isAssignmentLocked = (order) =>
-  ['IN_PROGRESS', 'COMPLETED', 'CANCELED', 'CANCELLED', 'PARTIALLY_COMPLETED'].includes(
+  ['IN_PROGRESS', 'COMPLETED', 'CANCELED', 'CANCELLED', 'PARTIALLY_COMPLETED', 'PICKED'].includes(
     String(order?.status || order?.Status).toUpperCase().replace(/ /g, '_'),
   )
 
@@ -641,6 +641,7 @@ const getStatusSeverity = (status) =>
     ASSIGNED: 'warning',
     IN_PROGRESS: 'warning',
     ALLOCATED: 'success',
+    PICKED: 'info',
     PARTIALLY_COMPLETED: 'warning',
     SHORTAGE: 'warning',
     COMPLETED: 'success',

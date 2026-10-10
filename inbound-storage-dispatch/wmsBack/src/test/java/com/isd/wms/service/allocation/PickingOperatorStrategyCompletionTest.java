@@ -127,7 +127,7 @@ class PickingOperatorStrategyCompletionTest {
     }
 
     @Test
-    @DisplayName("PRE-FIX/POST-FIX: When 100% of order lines and allocations are COMPLETED, order status must be COMPLETED")
+    @DisplayName("When 100% of order lines and allocations are COMPLETED, order status must be PICKED until ramp dispatch")
     void handleOrderCompletion_allCompleted_orderStatusMustBeCompleted() {
         linesToReturn = List.of(line1, line2);
 
@@ -135,8 +135,8 @@ class PickingOperatorStrategyCompletionTest {
         ReflectionTestUtils.invokeMethod(strategy, "handleOrderCompletion", order);
 
         assertThat(order.getStatus())
-                .as("100% picked order must transition to COMPLETED, never PARTIALLY_COMPLETED")
-                .isEqualTo(OrderStatus.COMPLETED);
+                .as("100% picked order at shelf must transition to PICKED, not COMPLETED")
+                .isEqualTo(OrderStatus.PICKED);
 
         assertThat(orderSaved.get()).isTrue();
     }
@@ -158,7 +158,7 @@ class PickingOperatorStrategyCompletionTest {
     }
 
     @Test
-    @DisplayName("When some lines are completed but others have shortage, order status must be PARTIALLY_COMPLETED")
+    @DisplayName("When some lines are completed but others have shortage, order status must be PICKED until ramp dispatch")
     void handleOrderCompletion_partialShortage_orderStatusMustBePartiallyCompleted() {
         line2.setStatus(Status.SHORTAGE);
         line2.setShortageQuantity(3);
@@ -166,19 +166,19 @@ class PickingOperatorStrategyCompletionTest {
 
         ReflectionTestUtils.invokeMethod(strategy, "handleOrderCompletion", order);
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PARTIALLY_COMPLETED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PICKED);
         assertThat(orderSaved.get()).isTrue();
     }
 
     @Test
-    @DisplayName("When one line is completed and another is canceled, order status must be PARTIALLY_COMPLETED")
+    @DisplayName("When one line is completed and another is canceled, order status must be PICKED until ramp dispatch")
     void handleOrderCompletion_completedAndCanceledMix_orderStatusMustBePartiallyCompleted() {
         allocation2.setStatus(Status.CANCELED);
         line2.setStatus(Status.CANCELED);
 
         ReflectionTestUtils.invokeMethod(strategy, "handleOrderCompletion", order);
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PARTIALLY_COMPLETED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PICKED);
         assertThat(orderSaved.get()).isTrue();
     }
 }

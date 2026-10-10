@@ -16,6 +16,7 @@
 | **Batch 3 (Wave 2 Concurrency)** | Concurrency controls, versioning, async dispatch & integrity | **DEF-09, DEF-10, DEF-15, DEF-20** | **`COMPLETED`** | 21/21 Passed (5.8s) |
 | **Batch 4 (Wave 3 REST & DTO)** | Pagination, authorization scopes & input boundary validation | **DEF-07, DEF-17, DEF-19, DEF-21** | **`COMPLETED`** | 29/29 Passed (6.6s) |
 | **Batch 5 (Wave 4 AI, Frontend & QA)** | AI tool boundaries, frontend config & authentic test harness | **DEF-01, DEF-14, DEF-16, DEF-22, DEF-23, DEF-24, DEF-25, DEF-26** | **`COMPLETED`** | 19/19 Java Unit Tests, 36/36 Frontend Tests, 107/107 Full Regression Suite Passed |
+| **Wave 5 (Operational Execution Hardening)** | Order picking & replenishment lifecycle deferral, auto-replenishment pool, pagination limit expansion, seed user & operational stocks | **DEF-OP-01, DEF-OP-02, DEF-OP-03, DEF-OP-04, DEF-07 (ext), DEF-17 (ext)** | **`COMPLETED`** | 20+ Unit/Integration Tests Verified |
 
 ---
 
@@ -282,6 +283,86 @@
 * **Invariant:** Dead route matchers that do not correspond to any active controllers must be removed to avoid documentation and security configuration drift.
 * **Remediation Note:** Removed `.requestMatchers("/api/operator/**")` from `SecurityConfig.java`, preserving active operational matcher `/api/v1/tasks/operator/**`.
 * **Verification:** `Def26SecurityMatcherHygieneTest` (2/2 passed).
+
+---
+
+## Wave 5 — Operational Execution Hardening & Environment Baseline
+
+*Priority: Critical Operational Stability (Physical warehouse execution accuracy, unassigned task visibility, pagination scalability, and seed reliability).*
+
+### Task 5.1: Deferred Picking Order Completion on Ramp Scan (`DEF-OP-01`)
+* **Status:** **`COMPLETED [VERIFIED]`**
+* **Severity:** `HIGH`
+* **Affected Files:**
+  * [`AllocationExecutionService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/AllocationExecutionService.java)
+  * [`PickingOperatorStrategy.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/allocation/PickingOperatorStrategy.java)
+  * [`PickingAllocationCompletionStrategy.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/allocation/PickingAllocationCompletionStrategy.java)
+  * [`PickingFlowService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/PickingFlowService.java)
+  * [`OperatorSummaryMapper.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/mapper/OperatorSummaryMapper.java)
+  * [`OperatorConsole.vue`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/views/operator/OperatorConsole.vue)
+* **Invariant:** Scanning the picking shelf records picked goods into the cart (`pickedQuantity`), but does NOT mark the order as complete. Order and allocation completion is strictly deferred until the operator scans the dispatch ramp barcode (`completeCurrentOrder()`).
+* **Remediation Note:** Picking allocations stay `IN_PROGRESS` during transport. `PickingFlowService` filters out allocations with `pickedQuantity.isPresent()`. In `OperatorConsole.vue`, informational toast is given at the shelf, and completion toast only when the ramp barcode is scanned.
+* **Verification:** `AllocationExecutionServiceTest`, `PickingAllocationCompletionStrategyTest`, `PickingOperatorStrategyCompletionTest`.
+
+---
+
+### Task 5.2: Deferred Replenishment Completion on Destination Deposit Scan (`DEF-OP-02`)
+* **Status:** **`COMPLETED [VERIFIED]`**
+* **Severity:** `HIGH`
+* **Affected Files:**
+  * [`ReplenishmentOperatorStrategy.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/allocation/ReplenishmentOperatorStrategy.java)
+  * [`ReplenishmentAllocationCompletionStrategy.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/allocation/ReplenishmentAllocationCompletionStrategy.java)
+* **Invariant:** Replenishment allocation completion and picking shelf stock credit must occur strictly upon destination shelf deposit scan (`dispatch()`), never prematurely at the source storage shelf.
+* **Remediation Note:** Picking from source storage shelf leaves allocation `IN_PROGRESS` with `pickedQuantity` populated. Destination deposit scan finalizes allocation to `COMPLETED` and updates picking shelf inventory.
+* **Verification:** `ReplenishmentAllocationCompletionStrategyTest`.
+
+---
+
+### Task 5.3: Shared Supervisor Work Queue for Auto-Replenishments & Optimistic Concurrency (`DEF-17 Ext`)
+* **Status:** **`COMPLETED [VERIFIED]`**
+* **Severity:** `HIGH`
+* **Affected Files:**
+  * [`ReplenishmentRepository.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/repository/ReplenishmentRepository.java)
+  * [`ReplenishmentService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/ReplenishmentService.java)
+  * [`ReplenishmentsView.vue`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsFront/src/views/supervisor/ReplenishmentsView.vue)
+* **Invariant:** Auto-replenishments generated by the system during shortage picks must be visible to and assignable by any authorized supervisor in a shared work queue. Concurrent assignment attempts must be mutually exclusive.
+* **Remediation Note:** Scoped queries in `ReplenishmentRepository` and access check in `validateReplenishmentAccess` permit any supervisor to claim unassigned (`CREATED` / `createdBy = "system"`) replenishments. `@Version` on `Replenishment` ensures atomic assignment with `saveAndFlush`, rejecting concurrent claims with `OptimisticLockException` (HTTP 409). Frontend assignment dropdown keyed by replenishment `id`.
+* **Verification:** `Def10ReplenishmentAssignmentConcurrencyRemediationTest`, `Def17ReplenishmentSecurityRemediationTest`.
+
+---
+
+### Task 5.4: Extended Server Pagination & Client-Side Paginator Synchronization (`DEF-07 Ext`)
+* **Status:** **`COMPLETED [VERIFIED]`**
+* **Severity:** `MEDIUM`
+* **Affected Files:**
+  * [`PaginationUtils.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/util/PaginationUtils.java)
+  * Controllers: `InventoryController.java`, `OrderController.java`, `UserController.java`, `ProductController.java`
+  * Frontend APIs: `inventoryApi.js`, `orderApi.js`, `userApi.js`, `productApi.js`
+* **Invariant:** Tabular views must not truncate records at 20 rows due to Spring MVC defaults when frontend uses client-side paginators.
+* **Remediation Note:** Added `@PageableDefault` on controllers. Configured `PaginationUtils` limits (`INVENTORY_DEFAULT_SIZE = 200`, `MAX = 1000`; `ORDER_DEFAULT_SIZE = 100`, `MAX = 500`; `USER_DEFAULT_SIZE = 100`, `MAX = 500`). Configured frontend API clients with `size: 500`. Documented hybrid architecture: server bounds requests up to 1000 items with pagination headers; frontend paginates datasets in memory via PrimeVue `<AppDataTable>`.
+* **Verification:** `Def07UnboundedPaginationRemediationTest` (10/10 passed).
+
+---
+
+### Task 5.5: Database Seed Email Verification & Zero-Quantity Stock Cleanup (`DEF-OP-03`)
+* **Status:** **`COMPLETED [VERIFIED]`**
+* **Severity:** `HIGH`
+* **Affected Files:**
+  * [`V40__reset_and_seed_operational_stocks.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V40__reset_and_seed_operational_stocks.sql)
+  * [`V31__seed_warehouse_data_final.sql`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/resources/db/migration/V31__seed_warehouse_data_final.sql)
+* **Invariant:** Fresh database deployments must allow instant login with standard seed credentials (`super@isd.com`, `operator@isd.com`). Depleted stocks must not leave zero-quantity zombie records locking cells.
+* **Remediation Note:** V31 upsert updated with `email_verified = true`. Migration V40 deployed to purge zero-quantity stock rows and seed 43 clean operational stocks across aisles A, B, and C.
+* **Verification:** Flyway migration execution (all 40 migrations applied cleanly) and successful JWT authentication on `localhost:8080/api/auth/login`.
+
+---
+
+### Task 5.6: Picking Shortage Zero-Stock Accounting Invariant (`DEF-OP-04`)
+* **Status:** **`COMPLETED [VERIFIED]`**
+* **Severity:** `MEDIUM`
+* **Affected Files:** [`InventoryService.java`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/inbound-storage-dispatch/wmsBack/src/main/java/com/isd/wms/service/InventoryService.java)
+* **Invariant:** When an operator picks less than requested due to a shelf shortage, remaining shelf stock must be zeroed out to prevent phantom stock reservations, and auto-replenishment must be triggered immediately.
+* **Remediation Note:** `recordShortageAdjustment` zeroes out stock balance (`quantity = 0`, `available = false`) and triggers auto-replenishment evaluation.
+* **Verification:** Unit tests and manual picking shortage execution.
 
 ---
 

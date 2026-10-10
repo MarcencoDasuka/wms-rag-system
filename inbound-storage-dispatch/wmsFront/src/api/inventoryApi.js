@@ -1,8 +1,8 @@
 import apiClient from './index'
 
 export const inventoryApi = {
-  getAllStock() {
-    return apiClient.get('/inventory')
+  getAllStock(params = { size: 500 }) {
+    return apiClient.get('/inventory', { params })
   },
   getStockById(stockId) {
     return apiClient.get(`/inventory/${stockId}`)

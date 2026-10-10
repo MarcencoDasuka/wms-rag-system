@@ -39,7 +39,9 @@ public class OrderController {
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<OrderResponse>> getOrders(Pageable pageable) {
+    public ResponseEntity<List<OrderResponse>> getOrders(
+        @org.springframework.data.web.PageableDefault(size = PaginationUtils.ORDER_DEFAULT_SIZE, sort = "id") Pageable pageable
+    ) {
         Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
         return PaginationUtils.toPagedResponse(orderService.getAllOrders(clamped));
     }
@@ -51,7 +53,9 @@ public class OrderController {
      */
     @GetMapping("/extended")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<ExtendedOrderResponse>> getExtendedOrders(Pageable pageable) {
+    public ResponseEntity<List<ExtendedOrderResponse>> getExtendedOrders(
+        @org.springframework.data.web.PageableDefault(size = PaginationUtils.ORDER_DEFAULT_SIZE, sort = "id") Pageable pageable
+    ) {
         Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
         return PaginationUtils.toPagedResponse(orderService.getAllExtendedOrders(clamped));
     }
@@ -153,7 +157,10 @@ public class OrderController {
      */
     @GetMapping("/filter")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<OrderResponse>> searchOrders(@ModelAttribute OrderSearchRequest request, Pageable pageable) {
+    public ResponseEntity<List<OrderResponse>> searchOrders(
+        @ModelAttribute OrderSearchRequest request,
+        @org.springframework.data.web.PageableDefault(size = PaginationUtils.ORDER_DEFAULT_SIZE, sort = "id") Pageable pageable
+    ) {
         Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
         return PaginationUtils.toPagedResponse(orderService.searchOrders(request, clamped));
     }
@@ -178,7 +185,9 @@ public class OrderController {
      */
     @GetMapping("/shortages")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<List<ShortageOrderResponse>> getShortageOrders(Pageable pageable) {
+    public ResponseEntity<List<ShortageOrderResponse>> getShortageOrders(
+        @org.springframework.data.web.PageableDefault(size = PaginationUtils.ORDER_DEFAULT_SIZE, sort = "id") Pageable pageable
+    ) {
         Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.ORDER_DEFAULT_SIZE, PaginationUtils.ORDER_MAX_SIZE);
         return PaginationUtils.toPagedResponse(orderService.getShortageOrders(clamped));
     }

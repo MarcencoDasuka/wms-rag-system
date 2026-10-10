@@ -69,9 +69,11 @@ public class PickingAllocationCompletionStrategy implements AllocationCompletion
         Order order = orderRepository.getOrderByTask(task)
             .orElseThrow(() -> new RuntimeException("No order found for task with id " + task.getId()));
         return new AllocationCompletionResult(
-            order.getStatus() == OrderStatus.COMPLETED || order.getStatus() == OrderStatus.PARTIALLY_COMPLETED || order.getStatus() == OrderStatus.CANCELED
+            order.getStatus() == OrderStatus.COMPLETED
+                || order.getStatus() == OrderStatus.PARTIALLY_COMPLETED
+                || order.getStatus() == OrderStatus.CANCELED
                 ? AllocationCompletionStatus.COMPLETED
-                : AllocationCompletionStatus.PICKING,
+                : AllocationCompletionStatus.IN_PROGRESS,
             TaskType.PICKING_ORDER,
             order.getId()
         );
@@ -88,14 +90,7 @@ public class PickingAllocationCompletionStrategy implements AllocationCompletion
             return OrderStatus.CANCELED;
         }
 
-        boolean hasPartialHistory = orderLines.stream().anyMatch(line ->
-            line.getStatus() == Status.CANCELED
-                || line.getStatus() == Status.SHORTAGE
-                || resolveDeliveredQuantity(line) < line.getRequestedQuantity()
-                || line.getShortageQuantity() > 0
-                || line.getStatus() == Status.PARTIALLY_COMPLETED
-        );
-        return hasPartialHistory ? OrderStatus.PARTIALLY_COMPLETED : OrderStatus.COMPLETED;
+        return OrderStatus.PICKED;
     }
 
     private int resolveDeliveredQuantity(OrderLine line) {
@@ -123,8 +118,8 @@ public class PickingAllocationCompletionStrategy implements AllocationCompletion
             boolean hasPendingAllocations = orderLine.getTask()
                 .map(task -> allocationRepository.findAllByTaskId(task.getId()).stream().anyMatch(allocation ->
                     allocation.getStatus() == Status.ASSIGNED
-                        || allocation.getStatus() == Status.IN_PROGRESS
                         || allocation.getStatus() == Status.CREATED
+                        || (allocation.getStatus() == Status.IN_PROGRESS && allocation.getPickedQuantity().isEmpty())
                 ))
                 .orElse(false);
 

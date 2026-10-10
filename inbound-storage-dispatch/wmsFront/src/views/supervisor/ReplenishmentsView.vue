@@ -157,7 +157,7 @@
       <Column field="assignedOperatorName" header="Assigned Operator" filter>
         <template #body="slotProps">
           <Dropdown
-            v-model="assignmentByTaskId[slotProps.data.taskId]"
+            v-model="assignmentByReplenishmentId[slotProps.data.id]"
             :options="operators"
             optionLabel="username"
             optionValue="id"
@@ -166,7 +166,7 @@
             class="w-full"
             :disabled="isAssignmentLocked(slotProps.data) || editMode"
             @change="
-              assignReplenishment(slotProps.data.id, assignmentByTaskId[slotProps.data.taskId])
+              assignReplenishment(slotProps.data.id, assignmentByReplenishmentId[slotProps.data.id])
             "
           />
         </template>
@@ -395,7 +395,7 @@ const handleImport = async (formData) => {
   return replenishmentApi.importReplenishments(formData)
 }
 
-const assignmentByTaskId = ref({})
+const assignmentByReplenishmentId = ref({})
 
 const replenishmentFilterFields = [
   { field: 'logicId', label: 'Logic ID' },
@@ -520,8 +520,8 @@ const applyFilters = async () => {
     originalReplenishments.value = cloneRows(replenishments.value)
     modifiedReplenishmentIds.value = new Set()
 
-    assignmentByTaskId.value = Object.fromEntries(
-      replenishments.value.map((task) => [task.taskId, task.assignedOperatorId || null]),
+    assignmentByReplenishmentId.value = Object.fromEntries(
+      replenishments.value.map((task) => [task.id, task.assignedOperatorId || null]),
     )
   } catch (error) {
     toast.add({
@@ -715,6 +715,13 @@ const handleCreate = async () => {
     })
     createDialogVisible.value = false
     await loadData()
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: 'Creation Failed',
+      detail: getErrorMessage(error),
+      life: 5000,
+    })
   } finally {
     actionLoading.value = false
   }

@@ -144,7 +144,13 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
         SELECT r FROM Replenishment r
         LEFT JOIN r.task t
         LEFT JOIN t.supervisor u
-        WHERE LOWER(r.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
+        WHERE r.status = com.isd.wms.enums.Status.CREATED
+           OR r.task IS NULL
+           OR t.supervisor IS NULL
+           OR r.createdBy IS NULL
+           OR LOWER(r.createdBy) = 'system'
+           OR LOWER(r.createdBy) = LOWER(:username)
+           OR LOWER(u.username) = LOWER(:username)
         """)
     List<Replenishment> findAllAccessibleBySupervisor(@Param("username") String username);
 
@@ -159,7 +165,13 @@ public interface ReplenishmentRepository extends JpaRepository<Replenishment, Lo
         SELECT r FROM Replenishment r
         LEFT JOIN r.task t
         LEFT JOIN t.supervisor u
-        WHERE LOWER(r.createdBy) = LOWER(:username) OR LOWER(u.username) = LOWER(:username)
+        WHERE r.status = com.isd.wms.enums.Status.CREATED
+           OR r.task IS NULL
+           OR t.supervisor IS NULL
+           OR r.createdBy IS NULL
+           OR LOWER(r.createdBy) = 'system'
+           OR LOWER(r.createdBy) = LOWER(:username)
+           OR LOWER(u.username) = LOWER(:username)
         """)
     List<Replenishment> findAllByCreatedByUsername(@Param("username") String username);
 

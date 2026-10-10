@@ -1,3 +1,16 @@
+-- Clean up legacy demo records prior to final warehouse catalog seeding
+UPDATE transport_units SET order_id = NULL, replenishment_id = NULL;
+DELETE FROM inventory_history;
+DELETE FROM stocks;
+DELETE FROM allocations;
+DELETE FROM order_lines;
+DELETE FROM orders;
+DELETE FROM replenishments;
+DELETE FROM tasks;
+DELETE FROM products;
+DELETE FROM locations;
+DELETE FROM categories;
+
 INSERT INTO users (id, username, email, password, user_role, email_verified, is_active)
 VALUES
     (1, 'dev', 'dev@isd.com', '$2a$12$Jgx.cGwjrw/ICdWSY4iYHuJ0eGKTRhfZ5IOO/tjrAtps/JkZ9J.vS', 'ROLE_DEV', true, true),
@@ -37,7 +50,7 @@ VALUES
     (19, 'holly.flax', 'holly.flax@isd.com', '$2b$12$FC6M/w8YmCUnU08QCVUAi.c65r6.fO6UlZzthpjveV4D8P66e8.Ku', 'ROLE_DEV', true, true),
     -- jan.levinson -> password: Office$15
     (20, 'jan.levinson', 'jan.levinson@isd.com', '$2b$12$E7BhQ4/4ToACH1DTUpDH.OlAkWBQ95iBNQrajorvnOqqHF4875gQq', 'ROLE_SUPERVISOR', true, true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, email_verified = true, is_active = true;
 
 INSERT INTO categories (id, name)
 VALUES

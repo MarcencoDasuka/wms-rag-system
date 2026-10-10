@@ -5,6 +5,7 @@ import com.isd.wms.entity.Allocation;
 import com.isd.wms.entity.Stock;
 import com.isd.wms.entity.Task;
 import com.isd.wms.enums.Status;
+import com.isd.wms.enums.TaskType;
 import com.isd.wms.exception.InvalidRequestException;
 import com.isd.wms.repository.AllocationRepository;
 import com.isd.wms.repository.StockRepository;
@@ -138,7 +139,10 @@ public class WorkflowService {
         boolean hasActiveAllocations = allocationRepository.findAllByTaskId(task.getId()).stream()
             .anyMatch(a -> a.getStatus() == Status.CREATED || a.getStatus() == Status.ASSIGNED || a.getStatus() == Status.IN_PROGRESS);
 
-        if (!hasActiveAllocations) {
+        boolean allCanceled = !hasActiveAllocations && allocationRepository.findAllByTaskId(task.getId()).stream()
+            .allMatch(a -> a.getStatus() == Status.CANCELED);
+
+        if (!hasActiveAllocations && (task.getTaskType() != TaskType.REPLENISHMENT || allCanceled)) {
             taskRepository.markTaskAsCompleted(task.getId());
         }
 

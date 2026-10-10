@@ -56,7 +56,9 @@ public class ProductController {
      * @return {@code 200 OK} with a list of all {@link ProductResponse} objects
      */
     @GetMapping
-    public ResponseEntity<List<ProductResponse>> getAllProducts(Pageable pageable) {
+    public ResponseEntity<List<ProductResponse>> getAllProducts(
+        @org.springframework.data.web.PageableDefault(size = PaginationUtils.PRODUCT_DEFAULT_SIZE, sort = "id") Pageable pageable
+    ) {
         log.info("Get all products request");
         Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.PRODUCT_DEFAULT_SIZE, PaginationUtils.PRODUCT_MAX_SIZE);
         return PaginationUtils.toPagedResponse(productService.getAllProducts(clamped));

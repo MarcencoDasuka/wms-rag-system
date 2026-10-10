@@ -29,7 +29,9 @@ public class OperatorSummaryMapper {
             .toList();
 
         long completedAllocationCount = orderedAllocations.stream()
-            .filter(allocation -> allocation.getStatus() == Status.COMPLETED)
+            .filter(allocation -> allocation.getStatus() == Status.COMPLETED
+                || allocation.getStatus() == Status.PARTIALLY_COMPLETED
+                || allocation.getPickedQuantity().isPresent())
             .count();
 
         boolean readyForCompletion = (order.getStatus() == OrderStatus.PICKED
@@ -38,6 +40,7 @@ public class OperatorSummaryMapper {
             allocation.getStatus() == Status.COMPLETED
                 || allocation.getStatus() == Status.PARTIALLY_COMPLETED
                 || allocation.getStatus() == Status.CANCELED
+                || (allocation.getStatus() == Status.IN_PROGRESS && allocation.getPickedQuantity().isPresent())
         );
 
         Long taskId = currentAllocation != null ? currentAllocation.getTask().getId()
@@ -68,7 +71,9 @@ public class OperatorSummaryMapper {
         boolean isTuScanned) {
 
         long completedAllocationCount = taskAllocations.stream()
-            .filter(allocation -> allocation.getStatus() == Status.COMPLETED)
+            .filter(allocation -> allocation.getStatus() == Status.COMPLETED
+                || allocation.getStatus() == Status.PARTIALLY_COMPLETED
+                || allocation.getPickedQuantity().isPresent())
             .count();
 
         return new OperatorTaskSummaryResponse(

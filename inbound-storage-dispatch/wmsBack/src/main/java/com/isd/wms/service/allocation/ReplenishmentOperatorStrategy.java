@@ -12,6 +12,7 @@ import com.isd.wms.repository.AllocationRepository;
 import com.isd.wms.repository.LocationRepository;
 import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.StockRepository;
+import com.isd.wms.repository.TaskRepository;
 import com.isd.wms.repository.TransportUnitRepository;
 import com.isd.wms.service.InventoryService;
 import com.isd.wms.service.PickingFlowService;
@@ -33,6 +34,7 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
     private final LocationRepository locationRepository;
     private final TransportUnitRepository tuRepository;
     private final StockRepository stockRepository;
+    private final TaskRepository taskRepository;
     private final InventoryService inventoryService;
     private final WorkflowService workflowService;
     private final ShortageResolver shortageResolver;
@@ -50,7 +52,7 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
         int shortageQuantity = partialPick ? Math.max(0, allocation.getQuantity() - pickedQuantity) : 0;
 
         if (shortageQuantity > 0) {
-            inventoryService.recordShortageAdjustment(allocation.getStock(), shortageQuantity, operator,
+            inventoryService.recordShortageAdjustment(allocation.getStock(), pickedQuantity, operator,
                 InventoryOperationType.REPLENISHMENT_SHORTAGE, "Replenishment shortage");
         }
 
@@ -74,7 +76,7 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
 
         String message = shortageQuantity > 0
             ? (shortageAllocations.isEmpty() ? "No alternative stock found. Partially completed." : "Alternative stock found. New task created.")
-            : "Allocation completed successfully.";
+            : (currentAllocation == null ? "Items picked. Proceed to destination shelf." : "Item picked. Proceed to next location.");
 
         return new AllocationCompletionResponse(
             result.status(), result.taskType(), result.id(), pickedQuantity, shortageQuantity,
@@ -97,7 +99,7 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
 
         List<Allocation> taskAllocations = allocationRepository.findAllByTaskId(task.getId());
         for (Allocation alloc : taskAllocations) {
-            if (alloc.getStatus() == Status.COMPLETED || alloc.getStatus() == Status.PARTIALLY_COMPLETED) {
+            if (alloc.getStatus() == Status.COMPLETED || alloc.getStatus() == Status.PARTIALLY_COMPLETED || alloc.getStatus() == Status.IN_PROGRESS) {
                 int quantityToMove = alloc.getPickedQuantity().orElse(alloc.getQuantity());
                 if (quantityToMove > 0) {
                     Product product = alloc.getStock().getProduct().orElseThrow();
@@ -132,8 +134,28 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
                         throw new IllegalStateException("Location is already occupied by a different product!", e);
                     }
                 }
+                if (alloc.getStatus() == Status.IN_PROGRESS) {
+                    int picked = alloc.getPickedQuantity().orElse(0);
+                    if (picked == 0) {
+                        alloc.setStatus(Status.CANCELED);
+                    } else if (picked < alloc.getQuantity()) {
+                        alloc.setStatus(Status.PARTIALLY_COMPLETED);
+                    } else {
+                        alloc.setStatus(Status.COMPLETED);
+                    }
+                    allocationRepository.save(alloc);
+                }
             }
         }
+        boolean hasPartialHistory = taskAllocations.stream().anyMatch(alloc ->
+            alloc.getStatus() == Status.CANCELED
+                || alloc.getStatus() == Status.SHORTAGE
+                || alloc.getStatus() == Status.PARTIALLY_COMPLETED
+                || alloc.getPickedQuantity().orElse(alloc.getQuantity()) < alloc.getQuantity()
+        );
+        replenishment.setStatus(hasPartialHistory ? Status.PARTIALLY_COMPLETED : Status.COMPLETED);
+        replenishmentRepository.save(replenishment);
+        taskRepository.markTaskAsCompleted(task.getId());
         releaseTu(allocation);
     }
 
@@ -158,7 +180,8 @@ public class ReplenishmentOperatorStrategy implements OperatorExecutionStrategy 
     private Allocation findCurrentAllocation(Long taskId) {
         return allocationRepository.findAllByTaskId(taskId).stream()
             .sorted(Comparator.comparing(Allocation::getCreatedAt).thenComparing(Allocation::getId))
-            .filter(a -> a.getStatus() == Status.CREATED || a.getStatus() == Status.ASSIGNED || a.getStatus() == Status.IN_PROGRESS)
+            .filter(a -> (a.getStatus() == Status.CREATED || a.getStatus() == Status.ASSIGNED || a.getStatus() == Status.IN_PROGRESS)
+                && a.getPickedQuantity().isEmpty())
             .findFirst().orElse(null);
     }
 }

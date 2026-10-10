@@ -242,32 +242,30 @@ public class InventoryService {
     @Transactional
     public void recordShortageAdjustment(
         Stock stock,
-        Integer shortageQuantity,
+        Integer pickedQuantity,
         User user,
         InventoryOperationType operationType,
         String comment
     ) {
-        if (shortageQuantity == null || shortageQuantity <= 0) {
-            return;
-        }
-        int quantityAfterChange = Math.max(0, stock.getQuantity() - shortageQuantity);
+        int picked = (pickedQuantity == null || pickedQuantity < 0) ? 0 : pickedQuantity;
+        int currentQuantity = stock.getQuantity();
+        int phantomShortage = Math.max(0, currentQuantity - picked);
 
-        stock.setQuantity(quantityAfterChange);
-        stock.setReservedQuantity(Math.max(0, stock.getReservedQuantity() - shortageQuantity));
-
-        if (stock.getQuantity() == 0 && stock.getReservedQuantity() == 0) {
-            stock.setAvailable(false);
-        }
+        stock.setQuantity(0);
+        stock.setReservedQuantity(0);
+        stock.setAvailable(false);
         stockRepository.save(stock);
 
-        InventoryAdjustmentReason reason = (operationType == InventoryOperationType.PICKING_SHORTAGE)
-            ? InventoryAdjustmentReason.PICKING_SHORTAGE : null;
+        if (phantomShortage > 0) {
+            InventoryAdjustmentReason reason = (operationType == InventoryOperationType.PICKING_SHORTAGE)
+                ? InventoryAdjustmentReason.PICKING_SHORTAGE : null;
 
-        createHistory(stock, -shortageQuantity, quantityAfterChange, stock.getLocation(), null,
-            operationType, reason, comment, user);
+            createHistory(stock, -phantomShortage, 0, currentQuantity, stock.getLocation(), null,
+                operationType, reason, comment, user);
 
-        log.info("Shortage adjustment recorded: stockId={}, operationType={}, shortageQuantity={}, quantityAfterChange={}",
-            stock.getId(), operationType.name(), shortageQuantity, quantityAfterChange);
+            log.info("Shortage adjustment recorded: stockId={}, operationType={}, phantomShortage={}, previousQuantity={}",
+                stock.getId(), operationType.name(), phantomShortage, currentQuantity);
+        }
 
         triggerReplenishmentCheck(stock);
     }
@@ -276,6 +274,7 @@ public class InventoryService {
         Stock stock,
         Integer alteredQuantity,
         Integer quantityAfterChange,
+        Integer previousQuantity,
         Location sourceLocation,
         Location destinationLocation,
         InventoryOperationType operationType,
@@ -289,7 +288,7 @@ public class InventoryService {
             product == null ? null : product.getBarcode(),
             alteredQuantity,
             quantityAfterChange,
-            stock.getQuantity() - alteredQuantity,
+            previousQuantity,
             sourceLocation,
             destinationLocation,
             operationType,
@@ -299,6 +298,21 @@ public class InventoryService {
         );
         history.setTimestamp(LocalDateTime.now());
         inventoryHistoryRepository.save(history);
+    }
+
+    private void createHistory(
+        Stock stock,
+        Integer alteredQuantity,
+        Integer quantityAfterChange,
+        Location sourceLocation,
+        Location destinationLocation,
+        InventoryOperationType operationType,
+        InventoryAdjustmentReason adjustmentReason,
+        String comment,
+        User user
+    ) {
+        createHistory(stock, alteredQuantity, quantityAfterChange, stock.getQuantity() - alteredQuantity,
+            sourceLocation, destinationLocation, operationType, adjustmentReason, comment, user);
     }
 
     private void triggerReplenishmentCheck(Stock stock) {

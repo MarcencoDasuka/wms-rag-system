@@ -37,14 +37,7 @@ public class ReplenishmentAllocationCompletionStrategy implements AllocationComp
             replenishment.setStatus(Status.IN_PROGRESS);
         } else {
             boolean allCanceled = !allocations.isEmpty() && allocations.stream().allMatch(allocation -> allocation.getStatus() == Status.CANCELED);
-            boolean hasPartialHistory = allocations.stream().anyMatch(allocation ->
-                allocation.getStatus() == Status.CANCELED
-                    || allocation.getStatus() == Status.SHORTAGE
-                    || allocation.getStatus() == Status.PARTIALLY_COMPLETED
-                    || resolvedDeliveredQuantity(allocation) < Optional.ofNullable(allocation.getQuantity()).orElse(0)
-            );
-
-            replenishment.setStatus(allCanceled ? Status.CANCELED : hasPartialHistory ? Status.PARTIALLY_COMPLETED : Status.COMPLETED);
+            replenishment.setStatus(allCanceled ? Status.CANCELED : Status.IN_PROGRESS);
         }
 
         replenishmentRepository.save(replenishment);

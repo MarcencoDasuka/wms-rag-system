@@ -54,9 +54,10 @@ public class PickingFlowService {
      */
     public Optional<Allocation> findCurrentExecutableAllocation(List<Allocation> allocations) {
         return orderAllocationsBySourceLocation(allocations).stream()
-            .filter(allocation -> allocation.getStatus() == Status.CREATED
+            .filter(allocation -> (allocation.getStatus() == Status.CREATED
                 || allocation.getStatus() == Status.ASSIGNED
                 || allocation.getStatus() == Status.IN_PROGRESS)
+                && allocation.getPickedQuantity().isEmpty())
             .findFirst();
     }
 
@@ -79,9 +80,10 @@ public class PickingFlowService {
 
         for (int index = completedIndex + 1; index < orderedAllocations.size(); index++) {
             Allocation allocation = orderedAllocations.get(index);
-            if (allocation.getStatus() == Status.CREATED
+            if ((allocation.getStatus() == Status.CREATED
                 || allocation.getStatus() == Status.ASSIGNED
-                || allocation.getStatus() == Status.IN_PROGRESS) {
+                || allocation.getStatus() == Status.IN_PROGRESS)
+                && allocation.getPickedQuantity().isEmpty()) {
                 return Optional.of(allocation);
             }
         }

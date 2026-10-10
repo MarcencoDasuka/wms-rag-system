@@ -105,11 +105,20 @@ public class ReplenishmentService {
             return;
         }
         String currentUsername = securityFacade.getCurrentUsername();
-        boolean isCreator = replenishment.getCreatedBy() != null && replenishment.getCreatedBy().equalsIgnoreCase(currentUsername);
         String taskSupervisor = replenishment.getTask()
             .map(Task::getSupervisor)
             .map(User::getUsername)
             .orElse(null);
+
+        boolean isUnassigned = replenishment.getStatus() == Status.CREATED
+            || replenishment.getTask().isEmpty()
+            || taskSupervisor == null;
+        boolean isSystem = replenishment.getCreatedBy() == null || "system".equalsIgnoreCase(replenishment.getCreatedBy());
+
+        if ((isUnassigned || isSystem) && securityFacade.hasRole(Role.ROLE_SUPERVISOR)) {
+            return;
+        }
+        boolean isCreator = replenishment.getCreatedBy() != null && replenishment.getCreatedBy().equalsIgnoreCase(currentUsername);
         boolean isTaskSupervisor = taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
 
         if (!isCreator && !isTaskSupervisor) {
@@ -142,7 +151,12 @@ public class ReplenishmentService {
 
         validateDestinationLocation(product, destinationLocation);
 
-        Replenishment replenishment = new Replenishment(product, request.requestedQuantity(), destinationLocation, securityFacade.getCurrentUsername());
+        String creator = securityFacade.getCurrentUsername();
+        if (creator == null || creator.isBlank() || securityFacade.hasRole(Role.ROLE_OPERATOR)) {
+            creator = "system";
+        }
+
+        Replenishment replenishment = new Replenishment(product, request.requestedQuantity(), destinationLocation, creator);
         replenishment.setStatus(Status.CREATED);
         replenishment.setLogicId(generateUniqueLogicId());
 
@@ -354,10 +368,12 @@ public class ReplenishmentService {
             String currentUsername = securityFacade.getCurrentUsername();
             tasks = tasks.stream()
                 .filter(r -> {
+                    boolean isSystem = r.getCreatedBy() == null || "system".equalsIgnoreCase(r.getCreatedBy());
                     boolean isCreator = r.getCreatedBy() != null && r.getCreatedBy().equalsIgnoreCase(currentUsername);
                     String taskSupervisor = r.getTask().map(Task::getSupervisor).map(User::getUsername).orElse(null);
                     boolean isTaskSupervisor = taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
-                    return isCreator || isTaskSupervisor;
+                    boolean isUnassigned = r.getStatus() == Status.CREATED || r.getTask().isEmpty() || taskSupervisor == null;
+                    return isSystem || isCreator || isTaskSupervisor || isUnassigned;
                 })
                 .toList();
         }

@@ -1,8 +1,8 @@
 import apiClient from './index'
 
 export const userApi = {
-  getAll() {
-    return apiClient.get('/supervisor/users')
+  getAll(params = { size: 500 }) {
+    return apiClient.get('/supervisor/users', { params })
   },
   register(payload) {
     return apiClient.post('/supervisor/users/register', payload)

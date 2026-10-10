@@ -52,7 +52,9 @@ public class UserController {
      * @return {@code 200 OK} with a list of {@link UserResponse} objects
      */
     @GetMapping
-    public ResponseEntity<List<UserResponse>> getAllUsers(Pageable pageable) {
+    public ResponseEntity<List<UserResponse>> getAllUsers(
+        @org.springframework.data.web.PageableDefault(size = PaginationUtils.USER_DEFAULT_SIZE, sort = "id") Pageable pageable
+    ) {
         Pageable clamped = PaginationUtils.clampPageable(pageable, PaginationUtils.USER_DEFAULT_SIZE, PaginationUtils.USER_MAX_SIZE);
         return PaginationUtils.toPagedResponse(userService.getAllUsers(clamped));
     }

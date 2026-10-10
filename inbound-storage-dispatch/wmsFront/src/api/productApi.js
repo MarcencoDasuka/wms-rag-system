@@ -1,8 +1,8 @@
 import apiClient from './index'
 
 export const productApi = {
-  getAllProducts() {
-    return apiClient.get('/products')
+  getAllProducts(params) {
+    return apiClient.get('/products', { params: { size: 100, sort: 'id,asc', ...params } })
   },
   getProductById(productId) {
     return apiClient.get(`/products/${productId}`)

@@ -1,8 +1,8 @@
 import apiClient from './index'
 
 export const orderApi = {
-  getAll() {
-    return apiClient.get('/v1/orders/extended')
+  getAll(params = { size: 500 }) {
+    return apiClient.get('/v1/orders/extended', { params })
   },
   getById(id) {
     return apiClient.get(`/v1/orders/extended/${id}`)
