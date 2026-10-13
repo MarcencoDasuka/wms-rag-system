@@ -41,3 +41,10 @@ server:
   host: "127.0.0.1"
   port: 8000
   auth_token: ""
+
+ospysin:
+  enabled: true
+  docs_dir: "../Ospysin/docs"
+  collection_name: "ospysin_docs_knowledge"
+  chunk_max_chars: 1200
+  chunk_overlap_chars: 150

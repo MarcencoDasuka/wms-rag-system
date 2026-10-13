@@ -46,6 +46,18 @@ class ServerConfig(BaseModel):
     auth_token: Optional[str] = None
 
 
+class OspysinDocsConfig(BaseModel):
+    """Isolated documentation index for the Ospysin project (separate Chroma collection)."""
+
+    enabled: bool = False
+    docs_dir: str = "../Ospysin/docs"
+    collection_name: str = "ospysin_docs_knowledge"
+    extensions: List[str] = [".md"]
+    # Character budget per chunk body (breadcrumb prefix is added on top).
+    chunk_max_chars: int = 1200
+    chunk_overlap_chars: int = 150
+
+
 class AppConfig(BaseModel):
     codebase: CodebaseConfig = Field(default_factory=CodebaseConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
@@ -53,6 +65,7 @@ class AppConfig(BaseModel):
     vector_db: VectorDBConfig = Field(default_factory=VectorDBConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    ospysin: OspysinDocsConfig = Field(default_factory=OspysinDocsConfig)
 
 
 def load_config(config_path: str = "config.yaml") -> AppConfig:
@@ -74,6 +87,10 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
         config.codebase.target_dir = env_target
     if env_chroma := os.environ.get("CHROMA_PERSIST_DIR"):
         config.vector_db.persist_dir = env_chroma
+    if env_ospysin := os.environ.get("OSPYSIN_DOCS_PATH"):
+        config.ospysin.docs_dir = env_ospysin
+    if env_ospysin_enabled := os.environ.get("OSPYSIN_ENABLED"):
+        config.ospysin.enabled = env_ospysin_enabled.lower() in ("true", "1", "yes")
     if env_host := os.environ.get("MCP_HOST"):
         config.server.host = env_host
     if env_port := os.environ.get("MCP_PORT"):

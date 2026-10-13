@@ -76,8 +76,12 @@ class CodeRetriever:
 
         return filtered[:n]
 
-    def format_for_agent(self, results: List[Tuple[CodeChunk, float]]) -> str:
-        """Formats retrieved chunks into secure, structurally isolated context for agent."""
+    def format_for_agent(self, results: List[Tuple[CodeChunk, float]], exact: bool = False) -> str:
+        """Formats retrieved chunks into secure, structurally isolated context for agent.
+
+        ``exact=True`` marks results of deterministic lookups: snippets report
+        ``relevance="exact"`` instead of a similarity score.
+        """
         if not results:
             return "No relevant code or documentation found in WMS codebase (no matching chunks passed the relevance threshold)."
 
@@ -122,9 +126,10 @@ class CodeRetriever:
             safe_symbol = str(chunk.symbol_name).replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
             safe_lang = str(chunk.language).replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
 
+            relevance_label = "exact" if exact else f"{score:.3f}"
             snippet = (
                 f'<untrusted_code_snippet index="{i}" file="{safe_file}" lines="{chunk.start_line}-{chunk.end_line}" '
-                f'symbol="{safe_symbol}" relevance="{score:.3f}" data_boundary="untrusted_passive_data">\n'
+                f'symbol="{safe_symbol}" relevance="{relevance_label}" data_boundary="untrusted_passive_data">\n'
                 f"{fence}{safe_lang}\n"
                 f"{safe_content}\n"
                 f"{fence}\n"

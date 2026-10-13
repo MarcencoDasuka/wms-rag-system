@@ -26,6 +26,16 @@ config = load_config()
 indexer = CodebaseIndexer(config)
 retriever = CodeRetriever(config, store=indexer.store)
 
+# Optional, fully isolated Ospysin documentation index (separate Chroma collection).
+ospysin_service = None
+if config.ospysin.enabled:
+    from src.doc_indexer import OspysinDocsIndexer
+    from src.doc_service import OspysinDocsService
+
+    _ospysin_indexer = OspysinDocsIndexer(config, embedder=indexer.embedder)
+    _ospysin_retriever = CodeRetriever(config, store=_ospysin_indexer.store)
+    ospysin_service = OspysinDocsService(_ospysin_indexer, _ospysin_retriever)
+
 # Initialize FastMCP Server
 mcp = FastMCP(
     name="wms-code-rag",
@@ -191,7 +201,7 @@ def search_wms_security(topic: str) -> str:
 def get_rag_status() -> str:
     """Returns current status and statistics of the WMS Codebase RAG index."""
     count = indexer.store.count()
-    return (
+    status = (
         f"WMS Codebase RAG Status:\n"
         f"- Target Codebase: {config.codebase.target_dir}\n"
         f"- Total Indexed Chunks: {count}\n"
@@ -199,6 +209,66 @@ def get_rag_status() -> str:
         f"- Reranker: {config.reranking.model_name} (Enabled: {config.reranking.enabled})\n"
         f"- ChromaDB Path: {config.vector_db.persist_dir}\n"
     )
+    if ospysin_service is not None:
+        status += "\n" + ospysin_service.status()
+    return status
+
+
+if ospysin_service is not None:
+
+    @mcp.tool()
+    def search_ospysin_docs(query: str, top_n: int = 4) -> str:
+        """Semantic search across the Ospysin architecture/spec documentation (specs 00-15 and ADRs).
+
+        Answers: 'Which Ospysin spec sections are relevant to this question?'
+        Results are relevance evidence only. For an exact document, ADR, or section use 'get_ospysin_doc'.
+        Each result carries its source file and heading path (breadcrumb) and the indexed git revision.
+
+        Args:
+            query: Natural-language question or exact term (e.g. 'SSRF protection policy', 'POST /api/sessions').
+            top_n: Number of chunks to return (default: 4, max: 10).
+        """
+        if err := validate_query(query, "query"):
+            return err
+        return ospysin_service.search(query, clamp_top_n(top_n, default=4, max_val=10))
+
+    @mcp.tool()
+    def get_ospysin_doc(name_or_id: str, section: Optional[str] = None) -> str:
+        """Deterministically returns an indexed Ospysin document, ADR, or one section of it.
+
+        Reference forms: spec number ('5' or '05'), file stem or fragment ('tool-catalog',
+        '05-TOOL-CATALOG'), ADR ('adr-3', 'adr 3', '0003'). Returns FOUND, NOT_FOUND (with the list of
+        available documents), AMBIGUOUS, or SECTION_NOT_FOUND. Serves only indexed content; it never
+        reads arbitrary paths.
+
+        Args:
+            name_or_id: Document reference as described above.
+            section: Optional case-insensitive substring of a heading (e.g. 'dns_lookup', 'Decision').
+        """
+        if err := validate_query(name_or_id, "name_or_id"):
+            return err
+        if section and (err := validate_query(section, "section")):
+            return err
+        return ospysin_service.get_doc(name_or_id, section)
+
+    @mcp.tool()
+    def reindex_ospysin_docs(confirm: bool = False, auth_token: str | None = None) -> str:
+        """Clears and rebuilds ONLY the Ospysin docs collection from the configured docs directory.
+
+        The WMS code index is not affected.
+
+        Args:
+            confirm: Must be True to proceed.
+            auth_token: Required authorization token when server authentication is configured.
+        """
+        expected_token = config.server.auth_token or os.environ.get("MCP_AUTH_TOKEN")
+        if expected_token:
+            import hmac
+            clean_token = (auth_token or "").strip()
+            if not clean_token or not hmac.compare_digest(clean_token, expected_token):
+                return "Error: Unauthorized. Valid auth_token required to execute destructive reindexing."
+        return ospysin_service.reindex(confirm)
+
 
 
 class AuthMiddleware:
@@ -385,6 +455,17 @@ def main():
             name="initial-indexer"
         )
         index_thread.start()
+
+    if ospysin_service is not None and ospysin_service.store.count() == 0:
+        import threading
+
+        def _initial_ospysin_index() -> None:
+            try:
+                ospysin_service.indexer.scan_and_index(clear_first=False)
+            except RuntimeError as exc:
+                logging.getLogger("ospysin_indexer").error("Initial Ospysin docs indexing failed: %s", exc)
+
+        threading.Thread(target=_initial_ospysin_index, daemon=True, name="initial-ospysin-indexer").start()
 
     if args.transport in ("sse", "http", "streamable-http"):
         import uvicorn

@@ -1,0 +1,58 @@
+# Ground-truth queries for the Ospysin docs index.
+# Expected targets were derived from the heading structure of ../Ospysin/docs (clone of
+# MarcencoDasuka/Ospysin). `heading` is matched case-insensitively as a substring of the LEAF heading;
+# an empty heading means "any section of that file". A query passes if ANY listed target is hit.
+# Types: exact_term | concept | table | near_miss | negative
+# Negatives expect NO result (search returns nothing above threshold) and are reported separately.
+
+queries:
+  # --- exact identifiers / endpoints -------------------------------------------------
+  - {id: Q01, type: exact_term, query: "dns_lookup tool parameters", expected: [{file: "05-TOOL-CATALOG.md", heading: "dns_lookup"}]}
+  - {id: Q02, type: exact_term, query: "whois_lookup", expected: [{file: "05-TOOL-CATALOG.md", heading: "whois_lookup"}]}
+  - {id: Q03, type: exact_term, query: "tls_info", expected: [{file: "05-TOOL-CATALOG.md", heading: "tls_info"}]}
+  - {id: Q04, type: exact_term, query: "subdomain_takeover_check", expected: [{file: "05-TOOL-CATALOG.md", heading: "subdomain_takeover_check"}]}
+  - {id: Q05, type: exact_term, query: "cve_matcher", expected: [{file: "05-TOOL-CATALOG.md", heading: "cve_matcher"}]}
+  - {id: Q06, type: exact_term, query: "js_secrets_scanner", expected: [{file: "05-TOOL-CATALOG.md", heading: "js_secrets_scanner"}]}
+  - {id: Q07, type: exact_term, query: "POST /api/sessions/{id}/tools/{toolId}/run", expected: [{file: "04-API-CONTRACTS.md", heading: "/tools/{toolId}/run"}]}
+  - {id: Q08, type: exact_term, query: "RFC 9457 error format", expected: [{file: "04-API-CONTRACTS.md", heading: "Standard Error Format"}]}
+  - {id: Q09, type: exact_term, query: "GET /api/sessions/{id}/report", expected: [{file: "04-API-CONTRACTS.md", heading: "/report"}]}
+
+  # --- ADR / rationale (conceptual) --------------------------------------------------
+  - {id: Q10, type: concept, query: "why does the LLM not execute tools autonomously", expected: [{file: "adr/0003-llm-as-advisor.md", heading: ""}, {file: "adr/0004-user-triggered-tools.md", heading: ""}]}
+  - {id: Q11, type: concept, query: "why a modular monolith instead of microservices", expected: [{file: "adr/0001-modular-monolith.md", heading: ""}, {file: "02-ARCHITECTURE.md", heading: "Why Modular Monolith"}]}
+  - {id: Q12, type: concept, query: "Postgres-backed job queue instead of a message broker", expected: [{file: "adr/0002-postgres-queue.md", heading: ""}]}
+  - {id: Q13, type: concept, query: "why must tools be triggered by the human operator", expected: [{file: "adr/0004-user-triggered-tools.md", heading: ""}, {file: "adr/0003-llm-as-advisor.md", heading: ""}]}
+  - {id: Q14, type: concept, query: "offline operation without cloud services", expected: [{file: "adr/0005-local-first.md", heading: ""}]}
+
+  # --- security / policy / LLM / ops -------------------------------------------------
+  - {id: Q15, type: concept, query: "SSRF mitigation for tool inputs", expected: [{file: "08-THREAT-MODEL.md", heading: "Server-Side Request Forgery"}, {file: "07-POLICY-ENGINE.md", heading: ""}]}
+  - {id: Q16, type: concept, query: "DNS rebinding TOCTOU protection with IP pinning", expected: [{file: "08-THREAT-MODEL.md", heading: "TOCTOU"}, {file: "07-POLICY-ENGINE.md", heading: "DNS Pre-Flight"}]}
+  - {id: Q17, type: concept, query: "prompt injection from target web content", expected: [{file: "08-THREAT-MODEL.md", heading: "Indirect Prompt Injection"}]}
+  - {id: Q18, type: concept, query: "decompression bomb and resource exhaustion limits", expected: [{file: "08-THREAT-MODEL.md", heading: "Resource Exhaustion"}, {file: "07-POLICY-ENGINE.md", heading: "Payload"}]}
+  - {id: Q19, type: concept, query: "token budget for the 2048 context window", expected: [{file: "06-LLM-INTEGRATION.md", heading: "Context Window"}, {file: "06-LLM-INTEGRATION.md", heading: "Memory Budget"}]}
+  - {id: Q20, type: concept, query: "progressive summarization of chat history", expected: [{file: "06-LLM-INTEGRATION.md", heading: "Progressive Summarization"}]}
+  - {id: Q21, type: concept, query: "how to pull the Dolphin3-Cyber model with Ollama", expected: [{file: "12-DEPLOYMENT.md", heading: ""}]}
+  - {id: Q22, type: concept, query: "PostgreSQL backup and restore procedure", expected: [{file: "12-DEPLOYMENT.md", heading: "Backup"}, {file: "12-DEPLOYMENT.md", heading: "Restore"}]}
+  - {id: Q23, type: concept, query: "LOCAL versus PUBLIC operational mode", expected: [{file: "07-POLICY-ENGINE.md", heading: "Operational Modes"}]}
+  - {id: Q24, type: concept, query: "rate limiting and concurrency controls", expected: [{file: "07-POLICY-ENGINE.md", heading: "Rate Limiting"}]}
+
+  # --- data model / glossary ---------------------------------------------------------
+  - {id: Q25, type: table, query: "audit_events append-only ledger table columns", expected: [{file: "11-DATA-MODEL.md", heading: "audit_events"}]}
+  - {id: Q26, type: table, query: "tool_results immutable table schema", expected: [{file: "11-DATA-MODEL.md", heading: "tool_results"}]}
+  - {id: Q27, type: near_miss, query: "findings table schema", expected: [{file: "11-DATA-MODEL.md", heading: "findings"}]}
+  - {id: Q28, type: concept, query: "what is a scope acknowledgment", expected: [{file: "15-GLOSSARY.md", heading: "Scope Acknowledgment"}]}
+
+  # --- true negatives: nothing in the docs covers these ------------------------------
+  - {id: N01, type: negative, query: "Kubernetes helm chart horizontal autoscaling", expected: []}
+  - {id: N02, type: negative, query: "GraphQL subscriptions schema stitching", expected: []}
+  - {id: N03, type: negative, query: "mobile push notifications for findings", expected: []}
+
+# Deterministic get_ospysin_doc checks: (name_or_id, section) -> expected response prefix
+lookups:
+  - {name: "adr-3", section: null, prefix: "FOUND document: adr/0003-llm-as-advisor.md"}
+  - {name: "5", section: "tls_info", prefix: "FOUND document: 05-TOOL-CATALOG.md"}
+  - {name: "tool-catalog", section: null, prefix: "FOUND document: 05-TOOL-CATALOG.md"}
+  - {name: "adr-9", section: null, prefix: "NOT_FOUND"}
+  - {name: "99", section: null, prefix: "NOT_FOUND"}
+  - {name: "05", section: "port_scanner", prefix: "SECTION_NOT_FOUND"}
+  - {name: "../../etc/passwd", section: null, prefix: "NOT_FOUND"}

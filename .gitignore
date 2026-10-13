@@ -54,3 +54,8 @@ ehthumbs.db
 .env
 .env.local
 .env.*.local
+
+# ==========================================
+# External docs clone indexed by wms-code-rag (own git repo)
+# ==========================================
+Ospysin/
