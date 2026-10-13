@@ -1,64 +1,64 @@
-# Ospysin Documentation RAG — Комплексное исследование и дорожная карта исправлений
+# Ospysin Documentation RAG — Comprehensive Investigation and Remediation Roadmap
 
-**Дата исследования:** 13 октября 2026 г.  
-**Рабочее дерево Git (исходное состояние):** Branch `main`, чистая синхронизация с `origin/main`. Незакоммиченные изменения:
+**Investigation Date:** October 13, 2026  
+**Git Working Tree (Baseline State):** Branch `main`, clean synchronization with `origin/main`. Uncommitted changes:
 - `modified:` `.gitignore`, `wms-code-rag/config.yaml`, `wms-code-rag/docker-compose.yml`, `wms-code-rag/src/config.py`, `wms-code-rag/src/mcp_server.py`, `wms-code-rag/src/retriever.py`
 - `untracked:` `wms-code-rag/eval/`, `wms-code-rag/src/doc_chunker.py`, `wms-code-rag/src/doc_indexer.py`, `wms-code-rag/src/doc_service.py`, `wms-code-rag/tests/test_ospysin_docs.py`  
-**Ревизия документации Ospysin:** `052701ec936f255ff03b8713a9294432942f4e57` (репозиторий `../Ospysin`, 21 файл спецификаций и ADR).  
-**Целевой статус документа:** Инженерная дорожная карта и доказательная база для последующих фаз remediation. Никакие изменения в коде, конфигурациях и данных в рамках данной задачи не производились.
+**Ospysin Documentation Revision:** `052701ec936f255ff03b8713a9294432942f4e57` (repository `../Ospysin`, 21 specification and ADR files).  
+**Target Document Status:** Engineering roadmap and evidence base for subsequent remediation phases. No changes to code, configurations, or data were performed within the audit task itself.
 
 ---
 
 ## 1. Executive Summary
 
-Настоящий документ представляет собой комплексное, доказательное инженерное исследование текущей интеграции подсистемы **Ospysin Documentation RAG** в инфраструктуру сервера **WMS Code RAG**.
+This document presents a comprehensive, evidence-first engineering investigation into the integration of the **Ospysin Documentation RAG** subsystem into the **WMS Code RAG** server infrastructure.
 
-### 1.1. Ключевые результаты исследования
-1. **Функциональная работоспособность:** Базовый контур интеграции **дееспособен и проверен в runtime**. В Docker-контейнере `wms-code-rag-server` сервер FastMCP успешно поднимается, регистрирует все 3 специализированных инструмента (`search_ospysin_docs`, `get_ospysin_doc`, `reindex_ospysin_docs`) и обрабатывает живые запросы через транспорт SSE.
-2. **Изоляция векторных коллекций:** Инвариант изоляции между индексами склада WMS (`wms_codebase_knowledge`, 1826 чанков) и документации Ospysin (`ospysin_docs_knowledge`, 246 чанков) **полностью подтверждён**. Коллекции разнесены физически и логически; переиндексация и удаление чанков строго изолированы.
-3. **Превосходство специализированного чанкера:** Новый [`MarkdownSpecChunker`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_chunker.py#L81-L145) превосходит прежний легаси-чанкер WMS: на эталонном positive-наборе из 28 запросов достигнуты метрики **Hit@1 = 1.000, Hit@4 = 1.000, MRR = 1.000** (против Hit@1 = 0.893, MRR = 0.902 у baseline).
-4. **Критические точки отказа и дефекты:**
-   - **DEF-01 (Порог отсечения, P1):** Порог отсечения реранкера [`min_score: -7.0`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml#L30) унаследован из кода WMS и является чрезмерно мягким для документации. Ложные предпосылки (запросы про Kafka, Redis/Celery) и несуществующие функции (push-уведомления) получают скоры от `-3.5` до `-4.0` и проникают в контекст агента как валидные результаты. При отключении реранкера порог `similarity_threshold: 0.10` пропускает **100% нерелевантных запросов**.
-   - **DEF-02 (Ревизия Git в Docker, P1):** В production Docker-контейнере утилита `git` отсутствует, а каталог `.git` не смонтирован. Метаданные `source_commit` перманентно равны `"unknown"`, нарушая инвариант трассируемости источника.
-   - **DEF-03 (Тестовая среда, P1):** Разрыв между хостовым и контейнерным окружением: 5 файлов тестов WMS и 1 интеграционный тест падают на хосте из-за отсутствия пакета `mcp`, а в Docker тесты не смонтированы и `pytest` не установлен.
-   - **DEF-04 (Производительность `get_doc`, P2):** Метод [`get_ospysin_doc`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L94-L152) при каждом вызове выгружает всю коллекцию (246 чанков) из ChromaDB в память Python, не используя фильтрацию `where={"doc_id": ...}`.
-   - **DEF-05 (Семантика XML-разметки, P2):** Контекст документации выдаётся под тегом `<untrusted_wms_codebase_context>`, что дезориентирует внешние LLM-агенты.
-   - **DEF-06 (Контракт CLI-флагов, P2):** Асимметрия флага `--auto-index`: фоновая индексация Ospysin стартует при пустой базе всегда, игнорируя флаг командной строки.
-   - **DEF-07 (Маскирование ассертов в тестах, P2):** В тестах `test_ospysin_docs.py` проверка поиска содержит условие `or out.startswith("NO_MATCH")`, что делает тест "зелёным" даже при полном падении качества retrieval.
-   - **DEF-08 (Отсутствие dev-контейнера, P2):** Отсутствует воспроизводимый профиль запуска тестов FastMCP внутри контейнера.
-   - **DEF-09 (Устойчивость к ошибкам I/O, P3):** Падение чтения одного файла прерывает весь цикл индексации вместо изолированного логирования ошибки.
+### 1.1. Key Investigation Findings
+1. **Functional Viability:** The basic integration loop is **operational and verified in runtime**. In the `wms-code-rag-server` Docker container, the FastMCP server boots successfully, registers all 3 specialized tools (`search_ospysin_docs`, `get_ospysin_doc`, `reindex_ospysin_docs`), and serves live requests over SSE transport.
+2. **Vector Collection Isolation:** The isolation invariant between the WMS warehouse codebase index (`wms_codebase_knowledge`, 1826 chunks) and the Ospysin documentation index (`ospysin_docs_knowledge`, 246 chunks) is **fully confirmed**. Collections are physically and logically segregated; reindexing and chunk deletion operations are strictly isolated.
+3. **Specialized Chunker Superiority:** The new [`MarkdownSpecChunker`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_chunker.py#L81-L145) significantly outperforms the legacy WMS chunker: on the benchmark positive set of 28 queries, it achieves **Hit@1 = 1.000, Hit@4 = 1.000, MRR = 1.000** (compared to Hit@1 = 0.893, MRR = 0.902 for baseline).
+4. **Critical Failure Points & Defects:**
+   - **DEF-01 (Rejection Threshold, P1):** The reranker cutoff threshold [`min_score: -7.0`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml#L30) was inherited from WMS code and is excessively lenient for documentation. False premises (queries about Kafka, Redis/Celery) and nonexistent features (push notifications) yield scores between `-3.5` and `-4.0`, penetrating agent prompts as valid results. When reranking is disabled, the threshold `similarity_threshold: 0.10` admits **100% of irrelevant queries**.
+   - **DEF-02 (Git Revision in Docker, P1):** In the production Docker container, the `git` utility is absent and `.git` is not mounted. The metadata field `source_commit` is permanently `"unknown"`, violating the source traceability invariant.
+   - **DEF-03 (Test Environment Gap, P1):** Environment disparity between host and container: 5 WMS test files and 1 integration test fail on the host due to the missing `mcp` package, while the container lacks `pytest` and does not mount tests.
+   - **DEF-04 (`get_doc` Retrieval Performance, P2):** Method [`get_ospysin_doc`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L94-L152) dumps the entire collection (246 chunks) from ChromaDB into Python memory on every call, bypassing indexed filtering (`where={"doc_id": ...}`).
+   - **DEF-05 (XML Tag Semantics, P2):** Documentation context is returned under the `<untrusted_wms_codebase_context>` tag, misleading downstream LLM agents.
+   - **DEF-06 (CLI Flag Contract, P2):** Asymmetry in `--auto-index`: background Ospysin indexing triggers unconditionally on an empty database, ignoring the CLI flag.
+   - **DEF-07 (Masked Test Assertions, P2):** In `test_ospysin_docs.py`, search validation includes `or out.startswith("NO_MATCH")`, keeping the test green even under complete retrieval failure.
+   - **DEF-08 (Absence of Dev Container, P2):** Lacks a reproducible Docker profile for executing FastMCP integration tests.
+   - **DEF-09 (I/O Fault Tolerance, P3):** Read errors on a single file crash the entire indexing run rather than logging an isolated warning.
 
 ---
 
 ## 2. Scope, Methodology & Limitations
 
-### 2.1. Границы исследования (Scope)
-- **Исследуемые модули:** Вся подсистема Ospysin Docs RAG ([`doc_chunker.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_chunker.py), [`doc_indexer.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py), [`doc_service.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py)), точки сопряжения в [`config.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/config.py), [`config.yaml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml), [`mcp_server.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/mcp_server.py), [`retriever.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py), контур развертывания ([`Dockerfile`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/Dockerfile), [`docker-compose.yml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml)), тестовый набор [`tests/test_ospysin_docs.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_ospysin_docs.py) и evaluation-модуль [`eval/run_eval.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/eval/run_eval.py).
-- **Смежные модули (read-only аудит на совместимость):** Поисковик кода WMS ([`indexer.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/indexer.py), [`chunker.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/chunker.py), [`vector_store.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/vector_store.py)), существующие тесты WMS.
+### 2.1. Investigation Scope
+- **Target Modules:** The entire Ospysin Docs RAG subsystem ([`doc_chunker.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_chunker.py), [`doc_indexer.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py), [`doc_service.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py)), integration points in [`config.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/config.py), [`config.yaml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml), [`mcp_server.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/mcp_server.py), [`retriever.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py), deployment infrastructure ([`Dockerfile`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/Dockerfile), [`docker-compose.yml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml)), test harness [`tests/test_ospysin_docs.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_ospysin_docs.py), and evaluation benchmark [`eval/run_eval.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/eval/run_eval.py).
+- **Adjacent Modules (Read-Only Compatibility Audit):** WMS code search pipeline ([`indexer.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/indexer.py), [`chunker.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/chunker.py), [`vector_store.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/vector_store.py)), existing WMS tests.
 
-### 2.2. Методология проверки
-1. **Evidence-First & Zero Mutation:** Никаких правок кода, конфигов или сброса индексов. Все динамические проверки проводились либо через read-only вызовы живого MCP-сервера, либо во временных disposable-директориях (`tempfile.TemporaryDirectory`).
-2. **Runtime Falsification:** Проверка утверждений предыдущего аудита прямыми обращениями к контейнеру через `docker exec`, проверкой файловых дескрипторов и инспекцией логов.
-3. **Adversarial Retrieval Evaluation:** Создание независимой матрицы из 23 запросов по 12 ортогональным категориям сложности с фиксацией точных сырых скоров кросс-энкодера и векторного сходства.
-4. **Статический анализ путей и границ безопасности:** Трассировка вызовов от точки входа MCP до базы ChromaDB, анализ регулярных выражений, экранирования и потоков данных.
+### 2.2. Verification Methodology
+1. **Evidence-First & Zero Mutation:** No production edits to code, configs, or indexes. All dynamic tests were run either via read-only calls to the live MCP server or in disposable temporary directories (`tempfile.TemporaryDirectory`).
+2. **Runtime Falsification:** Verification of earlier audit claims through direct container queries via `docker exec`, file descriptor inspection, and log analysis.
+3. **Adversarial Retrieval Evaluation:** Construction of an independent matrix of 23 queries across 12 orthogonal difficulty tiers, recording raw cross-encoder logits and vector cosine similarities.
+4. **Static Security and Path Analysis:** Call tracing from MCP endpoints down to ChromaDB, regular expression analysis, character escaping, and data flow validation.
 
-### 2.3. Ограничения окружения (Limitations)
-- На хостовой машине установлен Python 3.14.0 без пакета `mcp` (библиотека FastMCP не входит в системный Python). Вследствие этого тесты, импортирующие `src.mcp_server`, не могут быть собраны `pytest` на хосте без симуляции окружения.
-- В боевом Docker-контейнере установлен Python 3.11 с пакетом `mcp`, но отсутствует тестовый фреймворк `pytest`, и каталог `tests/` не смонтирован. Запуск pytest внутри боевого контейнера невозможен без модификации образа.
-- Доступные тесты запускались на хосте выборочно с изоляцией от несовместимых модулей.
+### 2.3. Environment Limitations
+- Host OS has Python 3.14.0 without the `mcp` package (FastMCP is not installed in system Python). Consequently, tests importing `src.mcp_server` cannot be collected by `pytest` on the host without environment shims or skips.
+- The production Docker container runs Python 3.11 with `mcp`, but lacks `pytest` and does not mount `tests/`. Running `pytest` inside the production container requires a dedicated test stage or image.
+- Available tests were run selectively on the host with isolation from incompatible modules.
 
 ---
 
 ## 3. Current Architecture
 
-Подсистема документации спроектирована как надстройка над ядром WMS Code RAG, использующая разделяемый пул ресурсов (Embedder, Reranker, ChromaDB Client), но изолированные пространства хранения и сервисные слои.
+The documentation subsystem is designed as an extension atop the WMS Code RAG core, sharing heavy resources (Embedder, Reranker, ChromaDB Client) while strictly segregating storage spaces and service layers.
 
 ```
                               +-------------------------------------------+
                               |      MCP Client / AI Assistant (LLM)     |
                               +-------------------------------------------+
                                                     |
-                                          HTTP SSE / stdio
+                                           HTTP SSE / stdio
                                                     v
 +-------------------------------------------------------------------------------------------------------+
 |  wms-code-rag (FastMCP Server, port 8000)                                                             |
@@ -67,7 +67,7 @@
 |   - search_wms_code                                - search_ospysin_docs                              |
 |   - find_symbol_declaration                        - get_ospysin_doc                                  |
 |   - get_entity_and_schema                          - reindex_ospysin_docs                             |
-|   - search_wms_security                            - get_rag_status (комбинированный статус)          |
+|   - search_wms_security                            - get_rag_status (combined status report)          |
 |   - reindex_wms_codebase                                                                              |
 |           |                                                 |                                         |
 |           v                                                 v                                         |
@@ -94,27 +94,27 @@
 +-------------------------------------------------------------------------------------------------------+
 ```
 
-### 3.1. Ключевые компоненты
-- **[`doc_chunker.py:MarkdownSpecChunker`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_chunker.py#L81):** Heading-aware парсер спецификаций Markdown. Строит стек заголовков H1–H6, префиксирует каждый чанк строкой хлебных крошек `[rel_path | H1 > H2 > H3]`. Обеспечивает атомарность таблиц и блоков кода, повторяет заголовок Markdown-таблицы при разбиении, переоткрывает code fences.
-- **[`doc_indexer.py:OspysinDocsIndexer`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py#L52):** Сканирует каталог спецификаций (`../Ospysin/docs`), фильтрует симлинки, скрытые каталоги и посторонние расширения, генерирует детерминированные SHA-256 chunk ID, рассчитывает векторные эмбеддинги пакетами по 32 элемента, выполняет upsert и удаляет устаревшие чанки через `prune_stale_chunks()`. Записывает метаданные индексации в `.ospysin_index_meta.json`.
-- **[`doc_service.py:OspysinDocsService`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L55):** Сервисный слой без зависимостей от FastMCP (для прямого модульного тестирования). Предоставляет семантический поиск с проверкой пустого индекса, детерминированный поиск документа/секции `get_doc()` с нормализацией ключей (`adr-3`, `05`, `tool-catalog`) и безопасную переиндексацию с флагом `confirm=True`.
-- **[`mcp_server.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/mcp_server.py):** Точка входа сервера. При `config.ospysin.enabled: true` инициирует экземпляр `ospysin_service` и регистрирует 3 инструмента с валидацией длины запросов (`validate_query`) и ограничением диапазона возвращаемых чанков (`clamp_top_n`).
+### 3.1. Key Components
+- **[`doc_chunker.py:MarkdownSpecChunker`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_chunker.py#L81):** Heading-aware Markdown specification parser. Builds a persistent H1–H6 heading stack, prefixing each chunk with breadcrumbs `[rel_path | H1 > H2 > H3]`. Preserves atomicity of tables and code blocks, repeats Markdown table headers across chunk splits, and re-opens fences.
+- **[`doc_indexer.py:OspysinDocsIndexer`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py#L52):** Scans the specification directory (`../Ospysin/docs`), filters symlinks, hidden files, and irrelevant extensions, generates deterministic SHA-256 chunk IDs, batches embeddings (size 32), upserts chunks, and removes stale entries via `prune_stale_chunks()`. Writes metadata to `.ospysin_index_meta.json`.
+- **[`doc_service.py:OspysinDocsService`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L55):** FastMCP-free service layer (enabling direct unit testing). Delivers semantic search with empty index guards, deterministic document/section lookups via `get_doc()` with alias normalization (`adr-3`, `05`, `tool-catalog`), and protected reindexing gated by `confirm=True`.
+- **[`mcp_server.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/mcp_server.py):** Server entry point. When `config.ospysin.enabled: true`, instantiates `ospysin_service` and registers 3 MCP tools with input query bounds validation (`validate_query`) and chunk clamping (`clamp_top_n`).
 
 ---
 
 ## 4. Current Runtime and Configuration State
 
-### 4.1. Фактический статус контейнера и портов
-Команда `docker ps` подтверждает работу контейнера:
+### 4.1. Container and Port Status
+Execution of `docker ps` verifies the active container:
 ```
 CONTAINER ID   IMAGE                       STATUS                    PORTS                      NAMES
 754461787fe6   wms-code-rag-wms-code-rag   Up 10 minutes (healthy)   127.0.0.1:8000->8000/tcp   wms-code-rag-server
 ```
-- Endpoint `/health`: отвечает HTTP 200 OK.
-- Transport: HTTP SSE на `http://127.0.0.1:8000/sse`.
+- Endpoint `/health`: responds HTTP 200 OK.
+- Transport: HTTP SSE at `http://127.0.0.1:8000/sse`.
 
-### 4.2. Фактическое состояние хранилищ ChromaDB
-Через прямой вызов `get_rag_status()` получены параметры обоих индексов:
+### 4.2. ChromaDB Storage Status
+Direct invocation of `get_rag_status()` reports parameters for both indexes:
 - **WMS Codebase Index:**
   - Collection: `wms_codebase_knowledge`
   - Total Indexed Chunks: **1826**
@@ -125,11 +125,11 @@ CONTAINER ID   IMAGE                       STATUS                    PORTS      
   - Collection: `ospysin_docs_knowledge`
   - Docs Dir: `/workspace/ospysin-docs`
   - Total Indexed Chunks: **246**
-  - Source Revision: **`unknown`** *(подтверждение DEF-02)*
+  - Source Revision: **`unknown`** *(confirms DEF-02)*
   - Indexed At: `2026-10-13T11:12:17.960814+00:00`
 
-### 4.3. Конфигурационные файлы
-Файл [`wms-code-rag/config.yaml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml):
+### 4.3. Configuration Files
+Configuration [`wms-code-rag/config.yaml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml):
 ```yaml
 codebase:
   target_dir: "../inbound-storage-dispatch"
@@ -142,7 +142,7 @@ reranking:
   enabled: true
   model_name: "cross-encoder/ms-marco-MiniLM-L-6-v2"
   top_n: 4
-  min_score: -7.0   # Общий порог для WMS и Ospysin (DEF-01)
+  min_score: -7.0   # Shared threshold for WMS and Ospysin (DEF-01)
 
 vector_db:
   persist_dir: "data/chroma"
@@ -169,345 +169,344 @@ ospysin:
 
 ## 5. Verified Working Components
 
-Следующие элементы интеграции **прямо проверены исполнением тестов, команд и runtime-вызовов**:
+The following integration elements have been **directly verified through tests, commands, and runtime execution**:
 
-1. **Регистрация инструментов в FastMCP (`[VERIFIED]`):**
-   - Вызов `asyncio.run(mcp.list_tools())` в Docker вернул полный список из 9 инструментов.
-2. **Семантический поиск `search_ospysin_docs` (`[VERIFIED]`):**
-   - Запрос `"SSRF protection policy"` вернул релевантные выдержки из `08-THREAT-MODEL.md` (score 0.567) и `07-POLICY-ENGINE.md` (score 0.482).
-3. **Детерминированный поиск `get_ospysin_doc` (`[VERIFIED]`):**
-   - `get_ospysin_doc("adr-1")` возвращает все 6 чанков ADR 0001 с меткой `relevance="exact"`.
-   - `get_ospysin_doc("5", "dns_lookup")` точно изолирует спецификацию утилиты `dns_lookup`.
-   - `get_ospysin_doc("model")` возвращает маркер неоднозначности `AMBIGUOUS` со списком кандидатов (`03-DOMAIN-MODEL.md`, `08-THREAT-MODEL.md`, `11-DATA-MODEL.md`).
-   - `get_ospysin_doc("5", "non_existent")` возвращает `SECTION_NOT_FOUND` с алфавитным перечнем доступных секций.
-4. **Защита от Path Traversal (`[VERIFIED]`):**
-   - Попытки передачи `../../etc/passwd` и `..\..\..\windows\win.ini` возвращают `NOT_FOUND` и список легитимных файлов спецификации.
-5. **Безопасность разметки и экранирование инъекций (`[VERIFIED]`):**
-   - Входные параметры санитизируются через `_esc()` (устранение `<` и `>`).
-   - Попытки преждевременного закрытия тегов `</untrusted_wms_codebase_context>` нейтрализуются регулярными выражениями с экранированием слэша.
-   - Двойные/тройные обратные кавычки в теле документов динамически оборачиваются внешним блоком кавычек увеличенной длины (`max_backticks + 1`).
-6. **Read-Only Mount в Docker (`[VERIFIED]`):**
-   - Попытка создания файла внутри смонтированного каталога документации `touch /workspace/ospysin-docs/test_write` отклонена ядром Linux с ошибкой `Read-only file system`.
-7. **Защита от случайной очистки боевого индекса (`[VERIFIED]`):**
-   - Метод `_assert_safe_mutation()` в `vector_store.py` прерывает выполнение тестов с `RuntimeError`, если тест пытается выполнить мутацию боевой директории `data/chroma`.
-8. **Независимость коллекций (`[VERIFIED]`):**
-   - Вызовы `store.clear()` для WMS и Ospysin адресуют строго свои коллекции.
+1. **FastMCP Tool Registration (`[VERIFIED]`):**
+   - Running `asyncio.run(mcp.list_tools())` in Docker returns all 9 tools.
+2. **Semantic Search `search_ospysin_docs` (`[VERIFIED]`):**
+   - Query `"SSRF protection policy"` retrieves relevant chunks from `08-THREAT-MODEL.md` (score 0.567) and `07-POLICY-ENGINE.md` (score 0.482).
+3. **Deterministic Search `get_ospysin_doc` (`[VERIFIED]`):**
+   - `get_ospysin_doc("adr-1")` returns all 6 chunks of ADR 0001 with `relevance="exact"`.
+   - `get_ospysin_doc("5", "dns_lookup")` cleanly extracts the `dns_lookup` tool specification.
+   - `get_ospysin_doc("model")` returns ambiguity marker `AMBIGUOUS` with candidate list (`03-DOMAIN-MODEL.md`, `08-THREAT-MODEL.md`, `11-DATA-MODEL.md`).
+   - `get_ospysin_doc("5", "non_existent")` returns `SECTION_NOT_FOUND` with alphabetized available sections.
+4. **Path Traversal Protection (`[VERIFIED]`):**
+   - Attempts passing `../../etc/passwd` and `..\..\..\windows\win.ini` return `NOT_FOUND` and legitimate specification lists.
+5. **Markup Escaping & Injection Neutralization (`[VERIFIED]`):**
+   - Input parameters sanitized via `_esc()` (neutralizing `<` and `>`).
+   - Early closing attempts for `</untrusted_wms_codebase_context>` neutralized via regex escaping.
+   - Code fences with nested backticks escalate enclosing backtick count to `max_backticks + 1`.
+6. **Docker Read-Only Mount (`[VERIFIED]`):**
+   - Attempting file write `touch /workspace/ospysin-docs/test_write` rejected with `Read-only file system`.
+7. **Production Storage Protection (`[VERIFIED]`):**
+   - Guard `_assert_safe_mutation()` in `vector_store.py` aborts tests with `RuntimeError` if mutating default `data/chroma`.
+8. **Collection Segregation (`[VERIFIED]`):**
+   - `store.clear()` calls for WMS and Ospysin mutate strictly their respective collections.
 
 ---
 
 ## 6. Complete Findings Register
 
-| ID | Краткое название | Статус | Приоритет | Уверенность | Затронутый компонент |
+| ID | Title | Status | Priority | Confidence | Impacted Component |
 |:---|:---|:---:|:---:|:---:|:---|
-| **DEF-01** | Слишком мягкий порог отсечения реранкера (`min_score: -7.0`) и отсутствие изоляции от WMS | **CONFIRMED** | **P1** | Высокая | `config.yaml`, `retriever.py`, `doc_service.py` |
-| **DEF-02** | Потеря `source_commit` в Docker (`unknown`) из-за отсутствия git и `.git` | **CONFIRMED** | **P1** | Высокая | `Dockerfile`, `docker-compose.yml`, `doc_indexer.py` |
-| **DEF-03** | Разрыв тестовой инфраструктуры и падение 6 тестов из-за `import mcp` | **CONFIRMED** | **P1** | Высокая | `tests/*`, `Dockerfile`, `docker-compose.yml` |
-| **DEF-04** | Неэффективный полный перебор всей коллекции при каждом вызове `get_doc` | **CONFIRMED** | **P2** | Высокая | `doc_service.py` (`_all_chunks`) |
-| **DEF-05** | Несоответствие XML-тега `<untrusted_wms_codebase_context>` документации Ospysin | **CONFIRMED** | **P2** | Высокая | `retriever.py` (`format_for_agent`) |
-| **DEF-06** | Асимметрия обработки флага `--auto-index` для Ospysin | **CONFIRMED** | **P2** | Высокая | `mcp_server.py` (L459) |
-| **DEF-07** | Фиктивный ассерт `or out.startswith("NO_MATCH")` в `test_ospysin_docs.py` | **CONFIRMED** | **P2** | Высокая | `tests/test_ospysin_docs.py` (L305) |
-| **DEF-08** | Отсутствие изолированного Docker-профиля для FastMCP integration тестов | **CONFIRMED** | **P2** | Средняя | `docker-compose.yml`, `Dockerfile` |
-| **DEF-09** | Прерывание индексации всех документов при ошибке I/O на одном файле | **CONFIRMED** | **P3** | Средняя | `doc_indexer.py` (L140-145) |
+| **DEF-01** | Excessively permissive reranker cutoff (`min_score: -7.0`) and lack of isolation from WMS | **CONFIRMED** | **P1** | High | `config.yaml`, `retriever.py`, `doc_service.py` |
+| **DEF-02** | Loss of `source_commit` in Docker (`unknown`) due to missing git and `.git` | **CONFIRMED** | **P1** | High | `Dockerfile`, `docker-compose.yml`, `doc_indexer.py` |
+| **DEF-03** | Broken test harness on host (6 tests fail due to `import mcp`) | **CONFIRMED** | **P1** | High | `tests/*`, `Dockerfile`, `docker-compose.yml` |
+| **DEF-04** | Inefficient full-table scan on every `get_doc` call | **CONFIRMED** | **P2** | High | `doc_service.py` (`_all_chunks`) |
+| **DEF-05** | Mismatched XML tag `<untrusted_wms_codebase_context>` for Ospysin docs | **CONFIRMED** | **P2** | High | `retriever.py` (`format_for_agent`) |
+| **DEF-06** | Asymmetric `--auto-index` CLI flag processing for Ospysin | **CONFIRMED** | **P2** | High | `mcp_server.py` (L459) |
+| **DEF-07** | Masked search assertion `or out.startswith("NO_MATCH")` in `test_ospysin_docs.py` | **CONFIRMED** | **P2** | High | `tests/test_ospysin_docs.py` (L305) |
+| **DEF-08** | Lack of isolated Docker profile for FastMCP integration tests | **CONFIRMED** | **P2** | Medium | `docker-compose.yml`, `Dockerfile` |
+| **DEF-09** | Full reindex aborted upon single file I/O error | **CONFIRMED** | **P3** | Medium | `doc_indexer.py` (L140-145) |
 
 ---
 
 ## 7. Detailed Defect Analysis
 
-### DEF-01: Слишком мягкий порог отсечения реранкера (`min_score: -7.0`) и отсутствие изолированного порога для документации
+### DEF-01: Excessively Permissive Reranker Cutoff (`min_score: -7.0`) and Shared WMS Threshold
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P1`** (Critical Retrieval Quality Risk)
-* **Уровень уверенности:** Высокая (подтверждено набором из 23 adversarial-запросов и измерением сырых логитов модели).
-* **Точное местоположение:**
-  - [`wms-code-rag/config.yaml:30`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml#L30): `min_score: -7.0` в секции `reranking`.
-  - [`wms-code-rag/src/retriever.py:70-75`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py#L70-L75): использование единого `self.config.reranking.min_score`.
-* **Доказательства:**
-  1. Запрос `mobile push notifications for findings` возвращает чанк `10-UI-UX-SPEC.md` с оценкой `-3.939` (проходит порог `-7.0`).
-  2. Запрос `how to configure the Redis cluster broker for Celery workers in Ospysin` возвращает `12-DEPLOYMENT.md` со скором `-3.564`.
-  3. Запрос `migrating Ospysin microservices to Apache Kafka event streaming` возвращает `14-ROADMAP.md` со скором `-3.859`.
-  4. При отключении реранкера (`--no-rerank`) порог `similarity_threshold: 0.10` пропускает абсолютно все 3 негативных запроса (`0/3` true negatives).
-* **Текущее поведение:** Порог `-7.0` пропускает в выдачу чанки, где встречаются общие слова запроса, даже если контекст кардинально противоречит запросу или описывает иные подсистемы.
-* **Ожидаемое поведение:** На запросы по несуществующим функциям и технологиям поиск должен возвращать `NO_MATCH`.
-* **Почему это проблема:** Агент на базе LLM получает нерелевантные фрагменты текста, помеченные как найденные доказательства, и начинает галлюцинировать о наличии в архитектуре Redis, Celery или push-уведомлений.
-* **Предлагаемое решение:**
-  1. Разделить конфигурацию порогов для исходного кода и архитектурной документации. Ввести параметр `config.ospysin.min_score`.
-  2. На основе калибровки установить базовый порог отсечения документации в диапазоне `[-2.5, -2.0]`. При таком пороге все ложные предпосылки отсекаются (их скоры `-3.5`...`-4.0`), а легитимные запросы сохраняются (их скоры `>= +1.4` для явных и `>= -1.0` для глубоких концептов).
-* **Затронутые файлы:** [`config.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/config.py), [`config.yaml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml), [`retriever.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py), [`doc_service.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py).
-* **Риски исправления:** Слишком высокий порог (например, `> 0.0`) может отсечь абстрактные смысловые запросы без ключевых слов. Требуется повторный прогон `run_eval.py` и калибровочной матрицы.
-* **Критерии приёмки:** Hit@4 на positive-наборе >= 0.95; True Negatives = 3/3; запросы по Redis/Kafka возвращают `NO_MATCH`.
-
----
-
-### DEF-02: Потеря метаданных ревизии Git в Docker (`source_commit="unknown"`)
-
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P1`** (Data Provenance & Traceability)
-* **Уровень уверенности:** Высокая (подтверждено `docker exec`).
-* **Точное местоположение:**
-  - [`wms-code-rag/Dockerfile:11-13`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/Dockerfile#L11-L13): отсутствует установка пакета `git`.
-  - [`wms-code-rag/docker-compose.yml:25`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml#L25): смонтирован путь `../Ospysin/docs:/workspace/ospysin-docs:ro`. Каталог `.git` находится в `../Ospysin/.git` и внутрь контейнера не попадает.
-  - [`wms-code-rag/src/doc_indexer.py:26-50`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py#L26-L50): метод `resolve_git_revision` выполняет `subprocess.run(["git", "-C", str(docs_dir), "rev-parse", "HEAD"])`.
-* **Доказательства:**
-  1. `docker exec wms-code-rag-server which git` завершается с кодом 1 (`git not found`).
-  2. `get_rag_status` возвращает `Source Revision: unknown`.
-  3. Все чанки в ChromaDB имеют метаданные `source_commit: "unknown"`.
-* **Текущее поведение:** Индексатор внутри контейнера всегда устанавливает ревизию `"unknown"`.
-* **Ожидаемое поведение:** Индексатор фиксирует точный Git SHA (например, `052701ec936f255ff03b8713a9294432942f4e57`).
-* **Почему это проблема:** Невозможно верифицировать, какая именно версия спецификаций проиндексирована в контейнере, изменялись ли файлы локально (`-dirty`) и соответствуют ли ответы текущему коммиту репозитория.
-* **Сравнение вариантов решения:**
-  - *Вариант A (Монтирование git + пакет в Dockerfile):* Добавить `git` в `apt-get install`, смонтировать `../Ospysin:/workspace/ospysin:ro` и запускать `git` внутри. *Минусы:* Увеличение размера образа, лишний бинарник в production-контейнере, необходимость настройки `safe.directory` для не-root пользователя `appuser`.
-  - *Вариант B (Передача через env/файл ревизии — Рекомендуемый):* Индексатор читает переменную окружения `OSPYSIN_SOURCE_COMMIT`, либо читает файл `.git-revision`, генерируемый хостом перед запуском / при CI-сборке. Если переменная/файл есть — берется она. Если нет — fallback на команду `git`. *Плюсы:* Соответствие Minimal Change Principle, отсутствие необходимости ставить Git в контейнер, безопасность и предсказуемость.
-* **Затронутые файлы:** [`doc_indexer.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py), [`docker-compose.yml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml).
-* **Критерии приёмки:** `get_rag_status` в контейнере выдает 40-значный хэш коммита или SHA с суффиксом `-dirty`.
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P1`** (Critical Retrieval Quality Risk)
+* **Confidence Level:** High (empirically confirmed across 23 adversarial queries and raw cross-encoder logit measurements).
+* **Exact Locations:**
+  - [`wms-code-rag/config.yaml:30`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml#L30): `min_score: -7.0` in `reranking` section.
+  - [`wms-code-rag/src/retriever.py:70-75`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py#L70-L75): shared `self.config.reranking.min_score`.
+* **Evidence:**
+  1. Query `mobile push notifications for findings` returns `10-UI-UX-SPEC.md` with score `-3.939` (passes `-7.0`).
+  2. Query `how to configure the Redis cluster broker for Celery workers in Ospysin` returns `12-DEPLOYMENT.md` with score `-3.564`.
+  3. Query `migrating Ospysin microservices to Apache Kafka event streaming` returns `14-ROADMAP.md` with score `-3.859`.
+  4. Disabling reranker (`--no-rerank`), default `similarity_threshold: 0.10` admits all 3 negative queries (`0/3` true negatives).
+* **Current Behavior:** Threshold `-7.0` admits chunks matching query tokens even if the context describes completely distinct subsystems.
+* **Expected Behavior:** Queries targeting absent features or foreign technologies must return `NO_MATCH`.
+* **Why It Matters:** Downstream LLM agents receive irrelevant text labelled as evidence and hallucinate Redis, Celery, or push notification capabilities.
+* **Remediation Plan:**
+  1. Segregate thresholds for source code and documentation. Introduce `config.ospysin.min_score`.
+  2. Calibrate documentation cutoff in range `[-2.5, -2.0]`. At `-2.5`, all false premises are rejected (`-3.5`...`-4.0`), while valid concepts remain (`>= +1.4` explicit, `>= -1.0` abstract).
+* **Impacted Files:** [`config.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/config.py), [`config.yaml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/config.yaml), [`retriever.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py), [`doc_service.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py).
+* **Fix Risks:** Excessively high cutoff (e.g., `> 0.0`) risks dropping abstract semantic concepts lacking exact keywords. Requires validation via `run_eval.py`.
+* **Acceptance Criteria:** Positive Hit@4 >= 0.95; True Negatives = 3/3; queries on Redis/Kafka return `NO_MATCH`.
 
 ---
 
-### DEF-03: Разрыв тестовой инфраструктуры и падение 6 тестов из-за отсутствия FastMCP на хосте
+### DEF-02: Missing Git Revision Metadata in Docker (`source_commit="unknown"`)
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P1`** (CI/CD & Regression Barrier)
-* **Уровень уверенности:** Высокая (подтверждено запуском `pytest`).
-* **Точное местоположение:**
-  - [`tests/test_declaration_and_symbol_lookup.py:631`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_declaration_and_symbol_lookup.py#L631): прямой импорт `from src.mcp_server import indexer, retriever`.
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P1`** (Data Provenance & Traceability)
+* **Confidence Level:** High (confirmed via `docker exec`).
+* **Exact Locations:**
+  - [`wms-code-rag/Dockerfile:11-13`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/Dockerfile#L11-L13): `git` package missing from `apt-get install`.
+  - [`wms-code-rag/docker-compose.yml:25`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml#L25): mounts `../Ospysin/docs:/workspace/ospysin-docs:ro`. `.git` repository resides at `../Ospysin/.git` and is not mounted.
+  - [`wms-code-rag/src/doc_indexer.py:26-50`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py#L26-L50): `resolve_git_revision` invokes `subprocess.run(["git", "-C", str(docs_dir), "rev-parse", "HEAD"])`.
+* **Evidence:**
+  1. `docker exec wms-code-rag-server which git` exits with 1 (`git not found`).
+  2. `get_rag_status` reports `Source Revision: unknown`.
+  3. All indexed ChromaDB chunks contain `source_commit: "unknown"`.
+* **Current Behavior:** Indexer in Docker permanently sets revision to `"unknown"`.
+* **Expected Behavior:** Indexer records exact Git commit SHA (e.g., `052701ec936f255ff03b8713a9294432942f4e57`).
+* **Why It Matters:** Impossibility of verifying which specification revision was indexed, whether local changes were present, or if outputs match repo HEAD.
+* **Option Comparison:**
+  - *Option A (Mount git + install package):* Add `git` to apt packages, mount `../Ospysin:/workspace/ospysin:ro`, configure `safe.directory` for non-root `appuser`. *Drawbacks:* Bloats image, introduces binary into production container.
+  - *Option B (Inject via env/revision file — Recommended):* Indexer reads `os.environ.get("OSPYSIN_SOURCE_COMMIT")` or `.git-revision` file generated prior to startup/build. Fallback to `git` command when available. *Benefits:* Follows Minimal Change Principle, zero additional container binaries, predictable and secure.
+* **Impacted Files:** [`doc_indexer.py`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py), [`docker-compose.yml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml).
+* **Acceptance Criteria:** `get_rag_status` in container returns 40-character commit hash or SHA with `-dirty` suffix.
+
+---
+
+### DEF-03: Test Harness Disparity and 6 Test Failures due to Missing FastMCP on Host
+
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P1`** (CI/CD & Regression Barrier)
+* **Confidence Level:** High (confirmed via `pytest`).
+* **Exact Locations:**
+  - [`tests/test_declaration_and_symbol_lookup.py:631`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_declaration_and_symbol_lookup.py#L631): direct import `from src.mcp_server import indexer, retriever`.
   - `tests/test_finding_01_auth.py:6`
   - `tests/test_finding_06_dos_and_concurrency.py:7`
   - `tests/test_finding_09_entity_schema.py:4`
   - `tests/test_finding_11_fastmcp_coupling.py:2`
   - `tests/test_security_invariants_suite.py:20`
-* **Доказательства:**
-  1. На хосте `python -m pytest tests/` выдает 5 ошибок collection и 1 failure из-за `ModuleNotFoundError: No module named 'mcp'`.
-  2. В контейнере `pytest` не установлен, `/app/tests` отсутствует.
-* **Текущее поведение:** Полный регрессионный сьют проекта невозможно запустить стандартными средствами без ручной установки FastMCP в хостовый интерпретатор.
-* **Ожидаемое поведение:** Тесты должны без сбоев выполняться как в контейнерной среде, так и на хосте (с пропуском специфичных для MCP тестов, если FastMCP не установлен).
-* **Почему это проблема:** Любой CI-пайплайн или сторонний разработчик не могут верифицировать систему одной командой `pytest`.
-* **Предлагаемое решение:**
-  1. В `tests/test_declaration_and_symbol_lookup.py:630` и 5 проблемных файлах использовать `pytest.importorskip("mcp")` на уровне модуля или фикстуры.
-  2. Создать тестовый профиль Docker Compose (`docker-compose.test.yml`) или команду запуска тестов в контейнере с установкой dev-зависимостей (`pytest`, `httpx`).
-* **Критерии приёмки:** Команда `python -m pytest tests/` на хосте завершается с кодом 0 (PASSED/SKIPPED без FAILED и ERRORS).
+* **Evidence:**
+  1. Host `python -m pytest tests/` produces 5 collection errors and 1 failure due to `ModuleNotFoundError: No module named 'mcp'`.
+  2. Production container lacks `pytest` and `/app/tests`.
+* **Current Behavior:** Regression suite cannot be executed cleanly out-of-the-box on developer host without installing FastMCP in system Python.
+* **Expected Behavior:** Tests run cleanly in both container and host environments (gracefully skipping FastMCP-coupled tests on the host when missing).
+* **Why It Matters:** Developers and CI runners cannot verify codebase health with a single `pytest` command.
+* **Remediation Plan:**
+  1. Add `pytest.importorskip("mcp")` to affected test files.
+  2. Create test container profile (`docker-compose.test.yml`) with dev dependencies installed.
+* **Acceptance Criteria:** `python -m pytest tests/` runs cleanly with exit code 0 (all PASSED or SKIPPED, zero FAILED/ERRORS).
 
 ---
 
-### DEF-04: Неэффективный полный перебор всей коллекции при каждом вызове `get_doc`
+### DEF-04: Inefficient Full-Table Scan on Every `get_doc` Invocation
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P2`** (Performance & Scalability)
-* **Уровень уверенности:** Высокая (анализ кода [`doc_service.py:83-88`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L83-L88)).
-* **Точное местоположение:**
-  - [`wms-code-rag/src/doc_service.py:83-88, 95`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L83-L88):
-    ```python
-    def _all_chunks(self) -> List[CodeChunk]:
-        data = self.store.collection.get(include=["documents", "metadatas"])
-        # ...
-        return [_chunk_from_row(i, d, m) for i, d, m in zip(ids, docs, metas)]
-    ```
-* **Доказательства:** В методе `get_doc()` на строке 95 безусловно вызывается `chunks = self._all_chunks()`. Все 246 документов и метаданных поднимаются из SQLite ChromaDB при каждом детерминированном запросе.
-* **Текущее поведение:** Полная выборка всех записей таблицы векторов и их десериализация в Python-объекты.
-* **Ожидаемое поведение:** Если пользователь запрашивает конкретный номер документа (`"05"`) или ADR (`"adr-3"`), запрос в ChromaDB должен содержать фильтр:
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P2`** (Performance & Scalability)
+* **Confidence Level:** High (source code inspection of [`doc_service.py:83-88`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L83-L88)).
+* **Exact Locations:** [`wms-code-rag/src/doc_service.py:83-88, 95`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_service.py#L83-L88):
+  ```python
+  def _all_chunks(self) -> List[CodeChunk]:
+      data = self.store.collection.get(include=["documents", "metadatas"])
+      # ...
+      return [_chunk_from_row(i, d, m) for i, d, m in zip(ids, docs, metas)]
+  ```
+* **Evidence:** `get_doc()` line 95 unconditionally calls `chunks = self._all_chunks()`. All 246 records and text documents are fetched from SQLite on every call.
+* **Current Behavior:** Full database table scan and deserialization into Python objects.
+* **Expected Behavior:** When querying a known document number (`"05"`) or ADR (`"adr-3"`), query ChromaDB with an exact filter:
   `collection.get(where={"doc_id": value}, include=["documents", "metadatas"])`.
-  Список доступных документов для ветки `NOT_FOUND` должен кешироваться при первом обращении или браться из легкого мета-запроса `get(include=[])`.
-* **Почему это проблема:** При текущем объёме (246 чанков) задержка составляет единицы миллисекунд. Однако при росте документации до нескольких тысяч чанков это приведет к повышенному потреблению CPU и памяти на каждый вызов инструмента.
-* **Предлагаемое решение:**
-  1. Для `kind in ("adr", "num")` выполнять `collection.get(where={"doc_id": value})`.
-  2. Кешировать список доступных файлов `available_documents` в экземпляре `OspysinDocsService` после индексации.
-* **Критерии приёмки:** `get_doc` обращается только к чанкам целевого документа; тесты `test_get_doc_*` проходят без изменений внешнего контракта.
+  Cache `available_documents` list in memory after initial index scan for `NOT_FOUND` fallbacks.
+* **Why It Matters:** Scales poorly to larger documentations, producing unnecessary CPU/memory allocations.
+* **Remediation Plan:**
+  1. For `kind in ("adr", "num")`, execute `collection.get(where={"doc_id": value})`.
+  2. Cache lightweight document catalog in `OspysinDocsService`.
+* **Acceptance Criteria:** `get_doc` queries only chunks belonging to target document; `test_get_doc_*` tests pass without contract modifications.
 
 ---
 
-### DEF-05: Несоответствие XML-тега `<untrusted_wms_codebase_context>` документации Ospysin
+### DEF-05: Mismatched XML Boundary Tag `<untrusted_wms_codebase_context>`
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P2`** (Domain Clarity & Prompt Boundaries)
-* **Уровень уверенности:** Высокая.
-* **Точное местоположение:** [`wms-code-rag/src/retriever.py:97, 137`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py#L97): хардкод тегов `<untrusted_wms_codebase_context>` в методе `format_for_agent`.
-* **Доказательства:** Вывод `search_ospysin_docs` и `get_ospysin_doc` оборачивает сниппеты документации в теги контекста кодовой базы WMS:
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P2`** (Domain Clarity & Prompt Boundaries)
+* **Confidence Level:** High.
+* **Exact Location:** [`wms-code-rag/src/retriever.py:97, 137`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/retriever.py#L97): hardcoded `<untrusted_wms_codebase_context>` in `format_for_agent`.
+* **Evidence:** `search_ospysin_docs` wraps documentation chunks in WMS codebase tags:
   ```xml
   <!-- BEGIN UNTRUSTED REPOSITORY CONTEXT -->
   <untrusted_wms_codebase_context>
   ...
   </untrusted_wms_codebase_context>
   ```
-* **Текущее поведение:** Контекст документации называется контекстом кодовой базы WMS.
-* **Ожидаемое поведение:** Тег должен отражать природу данных: `<untrusted_ospysin_docs_context>`.
-* **Почему это проблема:** Модель-ассистент downstream может интерпретировать спецификации внешней системы как внутренний исходный код склада WMS, допуская семантическую путаницу в рассуждениях.
-* **Предлагаемое решение:** Добавить необязательный параметр `context_tag: str = "untrusted_wms_codebase_context"` в метод `format_for_agent` и передавать `"untrusted_ospysin_docs_context"` из `doc_service.py`.
-* **Критерии приёмки:** Ответы Ospysin содержат `<untrusted_ospysin_docs_context>`, ответы WMS сохраняют `<untrusted_wms_codebase_context>`.
+* **Current Behavior:** Documentation snippets are tagged as WMS codebase code.
+* **Expected Behavior:** Chunks should be wrapped in `<untrusted_ospysin_docs_context>`.
+* **Why It Matters:** Downstream models can misinterpret architectural specifications as warehouse implementation code.
+* **Remediation Plan:** Add optional `context_tag: str = "untrusted_wms_codebase_context"` parameter to `format_for_agent` and pass `"untrusted_ospysin_docs_context"` from `doc_service.py`.
+* **Acceptance Criteria:** Ospysin tool responses contain `<untrusted_ospysin_docs_context>`, WMS code responses maintain `<untrusted_wms_codebase_context>`.
 
 ---
 
-### DEF-06: Асимметрия обработки флага `--auto-index` для Ospysin
+### DEF-06: Asymmetric `--auto-index` CLI Flag Handling for Ospysin
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P2`** (Lifecycle Contract Consistency)
-* **Уровень уверенности:** Высокая.
-* **Точное местоположение:** [`wms-code-rag/src/mcp_server.py:450-469`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/mcp_server.py#L450-L469):
-  - L450: `if args.auto_index and indexer.store.count() == 0:` (для WMS)
-  - L459: `if ospysin_service is not None and ospysin_service.store.count() == 0:` (для Ospysin — `args.auto_index` отсутствует).
-* **Доказательства:** Прямой анализ кода функции `main()`.
-* **Текущее поведение:** Если сервер запускается без флага `--auto-index`, индексация WMS блокируется, но индексация Ospysin все равно неявно запускается в фоновом потоке, если коллекция пуста.
-* **Ожидаемое поведение:** Фоновая автоиндексация должна подчиняться флагу командной строки `--auto-index` единообразно для обоих сервисов.
-* **Предлагаемое решение:** Привести проверку к виду: `if args.auto_index and ospysin_service is not None and ospysin_service.store.count() == 0:`.
-* **Критерии приёмки:** При запуске с `--no-auto-index` на пустой базе фоновый поток `initial-ospysin-indexer` не создается.
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P2`** (Lifecycle Contract Consistency)
+* **Confidence Level:** High.
+* **Exact Location:** [`wms-code-rag/src/mcp_server.py:450-469`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/mcp_server.py#L450-L469):
+  - L450: `if args.auto_index and indexer.store.count() == 0:` (for WMS)
+  - L459: `if ospysin_service is not None and ospysin_service.store.count() == 0:` (for Ospysin — ignores `args.auto_index`).
+* **Evidence:** Direct inspection of `main()`.
+* **Current Behavior:** Starting server without `--auto-index` skips WMS indexing, but unconditionally triggers Ospysin indexing on an empty collection.
+* **Expected Behavior:** Background auto-indexing must respect `--auto-index` consistently for both services.
+* **Remediation Plan:** Align condition to: `if args.auto_index and ospysin_service is not None and ospysin_service.store.count() == 0:`.
+* **Acceptance Criteria:** Starting with `--no-auto-index` on an empty database does not launch background Ospysin indexing.
 
 ---
 
-### DEF-07: Маскирование проверки качества поиска в `test_ospysin_docs.py`
+### DEF-07: Masked Assertion in `test_ospysin_docs.py`
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P2`** (Test Assertions Integrity)
-* **Уровень уверенности:** Высокая.
-* **Точное местоположение:** [`wms-code-rag/tests/test_ospysin_docs.py:305`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_ospysin_docs.py#L305):
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P2`** (Test Assertions Integrity)
+* **Confidence Level:** High.
+* **Exact Location:** [`wms-code-rag/tests/test_ospysin_docs.py:305`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_ospysin_docs.py#L305):
   ```python
   assert "BEGIN UNTRUSTED REPOSITORY CONTEXT" in out or out.startswith("NO_MATCH")
   ```
-* **Доказательства:** В юнит-тестах используется `FakeEmbedder`, генерирующий псевдослучайные векторы на основе sha256-хэша. При таком подходе векторная близость случайна, и автор теста замаскировал возможное отсутствие результатов дизъюнкцией `or out.startswith("NO_MATCH")`.
-* **Текущее поведение:** Тест успешен как при нахождении документа, так и при полном провале поиска.
-* **Ожидаемое поведение:** Тест должен явно разделять проверку формата ответа (wrapping) и семантическую проверку поиска (retrieval quality), либо использовать предсказуемые синтетические векторы, где косинусное сходство детерминированно превышает порог.
-* **Предлагаемое решение:** Сконструировать в `FakeEmbedder` управляемую матрицу подобия для тестовых ключевых слов.
+* **Evidence:** In unit tests, `FakeEmbedder` generates pseudo-random SHA-256 embeddings where cosine similarity is non-deterministic. The assertion masked missing results with `or out.startswith("NO_MATCH")`.
+* **Current Behavior:** Test passes both on successful retrieval and total retrieval failure.
+* **Expected Behavior:** Clear separation between response wrapping assertions and retrieval relevance tests using deterministic synthetic embeddings.
+* **Remediation Plan:** Implement deterministic mock embedder that guarantees cosine similarity above threshold for test queries.
 
 ---
 
-### DEF-08: Отсутствие изолированного Docker-профиля для FastMCP integration тестов
+### DEF-08: Absence of Isolated Docker Profile for FastMCP Integration Tests
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P2`** (Engineering Infrastructure)
-* **Уровень уверенности:** Средняя.
-* **Точное местоположение:** [`docker-compose.yml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml), [`Dockerfile`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/Dockerfile).
-* **Текущее поведение:** Dockerfile собирает минимальный production-образ без средств тестирования. Запустить сквозные тесты MCP в изолированном контейнере невозможно.
-* **Предлагаемое решение:** Добавить target `testing` в многоэтапный Dockerfile или отдельный `docker-compose.test.yml`, монтирующий каталог `tests` и запускающий `pytest`.
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P2`** (Engineering Infrastructure)
+* **Confidence Level:** Medium.
+* **Exact Locations:** [`docker-compose.yml`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/docker-compose.yml), [`Dockerfile`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/Dockerfile).
+* **Current Behavior:** Dockerfile builds minimal production runtime without test packages. Integration tests cannot run in container without workarounds.
+* **Remediation Plan:** Add `test` target to multi-stage Dockerfile and a dedicated `docker-compose.test.yml`.
 
 ---
 
-### DEF-09: Прерывание индексации всех документов при ошибке I/O на одном файле
+### DEF-09: Unhandled `OSError` Aborting Full Ingestion Loop
 
-* **Статус:** **`CONFIRMED`**
-* **Приоритет:** **`P3`** (Fault Tolerance)
-* **Уровень уверенности:** Средняя.
-* **Точное местоположение:** [`wms-code-rag/src/doc_indexer.py:140-145`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py#L140-L145).
-* **Доказательства:**
+* **Status:** **`CONFIRMED`**
+* **Priority:** **`P3`** (Fault Tolerance)
+* **Confidence Level:** Medium.
+* **Exact Location:** [`wms-code-rag/src/doc_indexer.py:140-145`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/src/doc_indexer.py#L140-L145).
+* **Evidence:**
   ```python
   for file_path in files:
       rel_path = file_path.relative_to(docs_dir).as_posix()
       for chunk in self.chunker.chunk_file(file_path, rel_path):
   ```
-  Если на одном из файлов возникнет `PermissionError` или повреждение дескриптора ОС, всё исключение всплывёт наружу, прервав индексацию остальных 20 файлов.
-* **Предлагаемое решение:** Обернуть `chunk_file` в `try-except OSError` с логированием `logger.warning("Skipping unreadable doc: %s", exc)` и продолжением цикла.
+  A permission error or transient descriptor error on one file aborts indexing of all remaining 20 files.
+* **Remediation Plan:** Wrap `chunk_file` call in `try...except OSError` with warning log and loop continuation.
 
 ---
 
 ## 8. Retrieval Evaluation: Results, Interpretation & Gaps
 
-### 8.1. Сопоставление с эталоном (28 positive, 3 negative)
-Сравнение выполнено в строгой изоляции на одинаковом наборе документов:
+### 8.1. Benchmark Comparison (28 Positive, 3 Negative)
+Evaluated in strict isolation over identical source documents:
 
-| Конфигурация | Чанков | Hit@1 | Hit@4 | MRR | True Negatives (0 совпадений) | Ложные срабатывания |
+| Configuration | Chunks | Hit@1 | Hit@4 | MRR | True Negatives (0 hits) | False Positives |
 |---|:---:|:---:|:---:|:---:|:---:|:---|
-| **Baseline (legacy chunker, rerank=ON)** | 250 | 0.893 | 0.929 | 0.902 | 2/3 (66.7%) | N03 (`mobile push notifications`), промахи Q07, Q09 |
+| **Baseline (legacy chunker, rerank=ON)** | 250 | 0.893 | 0.929 | 0.902 | 2/3 (66.7%) | N03 (`mobile push notifications`), misses on Q07, Q09 |
 | **New Chunker (rerank=ON, min_score=-7.0)** | 246 | **1.000** | **1.000** | **1.000** | 2/3 (66.7%) | N03 (`mobile push notifications`) |
-| **New Chunker (rerank=OFF, sim_thresh=0.10)**| 246 | 0.821 | 0.964 | 0.887 | **0/3 (0.0%)** | N01, N02, N03 — все пробивают порог 0.10 |
+| **New Chunker (rerank=OFF, sim_thresh=0.10)**| 246 | 0.821 | 0.964 | 0.887 | **0/3 (0.0%)** | N01, N02, N03 — all penetrate 0.10 threshold |
 
-### 8.2. Независимая adversarial-матрица (23 запроса)
-Результаты исполнения [`run_adversarial_eval.py`](file:///C:/Users/наш%20компухтер/.gemini/antigravity/brain/e1d66c19-e3e2-4a41-8193-018dae7b708f/scratch/run_adversarial_eval.py) подтвердили следующие распределения скоров кросс-энкодера:
+### 8.2. Independent Adversarial Matrix (23 Queries)
+Cross-encoder score distribution recorded during adversarial evaluation:
 
 ```
-[Диапазон скоров реранкера cross-encoder/ms-marco-MiniLM-L-6-v2]
--10.0   -8.0    -7.0 (порог)  -4.0     -2.5 (оптимум)  0.0     +2.0    +4.0    +7.0
+[Score Distribution for cross-encoder/ms-marco-MiniLM-L-6-v2]
+-10.0   -8.0    -7.0 (legacy) -4.0     -2.5 (calibrated) 0.0     +2.0    +4.0    +7.0
   |-------|-------|-------------|---------|-------------|-------|-------|-------|
           ^                     ^         ^                     ^
-    Нерелевантные       Ложные предпосылки  Рекомендуемый    Концепты    Точные совпадения
-    (склад WMS,         (Redis, Kafka,     порог            и абстракции (инструменты,
-     кулинария)         push-уведомления)                                API, таблицы)
+      Irrelevant        False Premises   Recommended       Concepts    Exact Matches
+      (WMS code,        (Redis, Kafka,   Threshold         & Abstract  (Tools, APIs,
+       unrelated)        push notices)                                  Tables)
 ```
 
-1. **Точные совпадения (инструменты, эндпоинты, таблицы):** Скоры от `+6.2` до `+7.7`.
-2. **Семантические концепты:** Скоры от `+1.4` до `+2.5`.
-3. **Глубокие абстракции без пересечения слов:** Скоры от `-1.0` до `+0.5` (например, `adr-0003` получил `-0.912`).
-4. **Ложные предпосылки и негативы со смежными терминами:** Скоры от `-3.5` до `-4.0`.
-5. **Абсолютно чужие предметные области:** Скоры ниже `-7.0` (отсечены).
+1. **Exact Matches (tools, endpoints, tables):** Scores range from `+6.2` to `+7.7`.
+2. **Semantic Concepts:** Scores range from `+1.4` to `+2.5`.
+3. **Deep Abstract Concepts (no token overlap):** Scores range from `-1.0` to `+0.5` (e.g., `adr-0003` scored `-0.912`).
+4. **False Premises and Negative Cross-Domain Queries:** Scores range from `-3.5` to `-4.0`.
+5. **Completely Foreign Domains:** Scores fall below `-7.0` (cleanly rejected).
 
-### 8.3. Интерпретация случая "Out-of-Scope Features"
-Запрос `automatic exploit generation and payload execution` вернул фрагмент `01-SCOPE.md#Out-of-Scope Features & Deferral Rationale` со скором `+2.503`.  
-**Инженерный вывод:** Это **НЕ false positive**, а корректный ответ retrieval-системы. Документация действительно содержит раздел, прямо заявляющий, что генерация эксплойтов исключена из проекта Ospysin. Попадание данного документа в контекст полезно для агента, так как позволяет дать обоснованный ответ о границах системы.
+### 8.3. Interpretation of "Out-of-Scope Features"
+Query `automatic exploit generation and payload execution` retrieved `01-SCOPE.md#Out-of-Scope Features & Deferral Rationale` with score `+2.503`.  
+**Engineering Conclusion:** This is **NOT a false positive**; it is an accurate retrieval match. The specification explicitly dedicates a section explaining why automated exploit execution was deferred from scope. Supplying this context to an agent is beneficial, enabling it to provide an authoritative answer regarding system boundaries.
 
 ---
 
 ## 9. Data Provenance and Index Lifecycle
 
-### 9.1. Инварианты жизненного цикла
-1. **Детерминированность chunk ID:** Хэш рассчитывается по формуле:  
+### 9.1. Lifecycle Invariants
+1. **Deterministic Chunk IDs:** Hash formula:  
    `sha256(f"{rel_path}:spec:{heading_path}:{occ}:{idx}")[:32]`.  
-   Номера строк (`start_line`, `end_line`) исключены из хэша. Правка пустых строк или добавление абзаца в начало документа не приводит к появлению дубликатов (ghost chunks).
-2. **Атомарность переиндексации:** Метод `scan_and_index()` сначала валидирует входные параметры, собирает чанки и рассчитывает эмбеддинги. Только после этого вызывается `store.clear()` или `store.add_chunks()`. Любая ошибка до момента генерации эмбеддингов оставляет старый индекс нетронутым.
-3. **Удаление устаревших данных:** Метод `prune_stale_chunks()` находит разницу между множеством активных ID и всеми ID в коллекции, гарантированно удаляя чанки переименованных или удаленных файлов.
+   Line numbers (`start_line`, `end_line`) are excluded from the hash. Editing empty lines or adding leading paragraphs does not generate ghost chunks.
+2. **Atomic Reindexing:** Method `scan_and_index()` validates parameters, gathers chunks, and computes embeddings before touching storage. Errors prior to embedding computation leave existing indexes intact.
+3. **Obsolete Chunk Pruning:** Method `prune_stale_chunks()` calculates difference between active IDs and all existing collection IDs, deterministically deleting orphaned chunks from renamed or removed files.
 
 ---
 
 ## 10. Test Infrastructure and Coverage
 
-### 10.1. Текущее покрытие
-- Модульные тесты чанкера: Иерархия H1–H6, H4–H6, fences, atomic tables, duplicate headings, private key redaction — **покрыты полностью** ([`test_ospysin_docs.py:78-166`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_ospysin_docs.py#L78-L166)).
-- Тесты изоляции коллекций: Разделение WMS и Ospysin — **покрыто** (L170-190).
-- Сервисные тесты: `get_doc`, нормализация ключей, защита от path traversal, инъекции разметки — **покрыты** (L228-291).
-- Пробелы в тестировании:
-  - Отсутствуют тесты реального семантического поиска с валидацией скоров.
-  - Отсутствуют тесты CLI флага `--auto-index`.
-  - Отсутствуют тесты механизма `resolve_git_revision` при недоступности Git.
+### 10.1. Current Test Coverage
+- Chunker Unit Tests: H1–H6 hierarchy, fence handling, table atomicity, duplicate headings, private key redaction — **fully covered** ([`test_ospysin_docs.py:78-166`](file:///c:/Users/наш%20компухтер/Desktop/Rag'n%20project/wms-code-rag/tests/test_ospysin_docs.py#L78-L166)).
+- Collection Isolation: Segregation between WMS and Ospysin — **covered** (L170-190).
+- Service Tests: `get_doc`, key normalization, path traversal protection, injection escaping — **covered** (L228-291).
+- Gaps in Coverage:
+  - Missing live semantic search tests with score validation.
+  - Missing CLI flag `--auto-index` tests.
+  - Missing tests for `resolve_git_revision` fallback paths when Git is missing.
 
 ---
 
 ## 11. Security, Isolation and Untrusted Context
 
-1. **Разграничение доверия (Untrusted Boundary):** Все фрагменты, возвращаемые инструментами, позиционируются как пассивные данные и оборачиваются в комментарии с предупреждением о недопустимости исполнения директив из текста.
-2. **Экранирование тегов:** Защита от попыток закрытия контекста доказана тестом `test_get_doc_neutralises_context_boundary_injection`.
-3. **Read-Only безопасность:** Документы Ospysin физически недоступны для перезаписи из контейнера.
+1. **Untrusted Boundary:** All snippets returned by tools are treated as untrusted data and wrapped with explicit guidance instructing downstream models not to execute instructions contained therein.
+2. **Tag Neutralization:** Protection against premature context boundary termination is verified by test `test_get_doc_neutralises_context_boundary_injection`.
+3. **Read-Only Storage:** Documentation files are physically mounted read-only inside the container.
 
 ---
 
 ## 12. Remediation Roadmap by Phase
 
-План исправлений разбит на 4 последовательные фазы по принципу минимизации рисков и приоритетности.
+The remediation plan is organized into 4 sequential phases following risk minimization and priority ordering:
 
 ```
 +---------------------------------------------------------------------------------------+
-| ФАЗА 1: Стабилизация тестового контура и версионирования (P1)                         |
+| PHASE 1: Test Harness Stabilization & Version Provenance (P1)                         |
 | [DEF-02, DEF-03]                                                                      |
-| - pytest.importorskip("mcp") в зависимых тестах                                       |
-| - Механизм OSPYSIN_SOURCE_COMMIT / git-fallback                                       |
+| - pytest.importorskip("mcp") in coupled test modules                                  |
+| - OSPYSIN_SOURCE_COMMIT env / .git-revision fallback resolution                       |
 +---------------------------------------------------------------------------------------+
                                            |
                                            v
 +---------------------------------------------------------------------------------------+
-| ФАЗА 2: Калибровка качества поиска и изоляция порогов (P1)                            |
+| PHASE 2: Retrieval Quality Calibration & Threshold Isolation (P1)                     |
 | [DEF-01, DEF-07]                                                                      |
-| - Конфигурационный параметр ospysin.min_score (-2.5)                                  |
-| - Индивидуальный порог в CodeRetriever для документации                               |
-| - Устранение маскирующих ассертов в тестах                                            |
+| - Configuration parameter ospysin.min_score (-2.5)                                    |
+| - Dedicated threshold in CodeRetriever for documentation                              |
+| - Elimination of masked test assertions                                               |
 +---------------------------------------------------------------------------------------+
                                            |
                                            v
 +---------------------------------------------------------------------------------------+
-| ФАЗА 3: Оптимизация производительности и унификация контрактов (P2)                  |
+| PHASE 3: Performance Optimization & Contract Unification (P2)                         |
 | [DEF-04, DEF-05, DEF-06]                                                              |
-| - Точечный запрос where={"doc_id": ...} в get_doc                                     |
-| - Параметризация XML-тега <untrusted_ospysin_docs_context>                            |
-| - Синхронизация флага --auto-index                                                    |
+| - Filtered where={"doc_id": ...} query in get_doc                                     |
+| - Parameterized XML tag <untrusted_ospysin_docs_context>                              |
+| - Symmetrical --auto-index flag synchronization                                       |
 +---------------------------------------------------------------------------------------+
                                            |
                                            v
 +---------------------------------------------------------------------------------------+
-| ФАЗА 4: Устойчивость к ошибкам и Dev/CI инфраструктура (P2, P3)                       |
+| PHASE 4: Fault Tolerance & Dev/CI Infrastructure (P2, P3)                             |
 | [DEF-08, DEF-09]                                                                      |
-| - Изолированная обработка OSError при чтении файлов в индексаторе                     |
-| - docker-compose.test.yml для автоматического запуска полного сьюта в CI              |
+| - Isolated OSError handling during file ingestion                                     |
+| - docker-compose.test.yml for automated end-to-end container testing                  |
 +---------------------------------------------------------------------------------------+
 ```
 
 ---
 
-### ФАЗА 1: Стабилизация тестового контура и версионирования (P1)
-* **Цель:** Обеспечить 100% прохождение существующих тестов на любой машине и восстановить аудит ревизии Git в Docker.
-* **Включённые дефекты:** **DEF-02, DEF-03**.
-* **Предпосылки:** Отсутствуют.
-* **Точные области кода:**
+### PHASE 1: Test Harness Stabilization & Version Provenance (P1)
+* **Goal:** Guarantee 100% green test execution across any environment and restore Git revision auditing in Docker.
+* **Included Defects:** **DEF-02, DEF-03**.
+* **Prerequisites:** None.
+* **Target Locations:**
   - `wms-code-rag/tests/test_declaration_and_symbol_lookup.py:631`
   - `wms-code-rag/tests/test_finding_01_auth.py:6`
   - `wms-code-rag/tests/test_finding_06_dos_and_concurrency.py:7`
@@ -516,132 +515,132 @@ ospysin:
   - `wms-code-rag/tests/test_security_invariants_suite.py:20`
   - `wms-code-rag/src/doc_indexer.py:26-50`
   - `wms-code-rag/docker-compose.yml:14`
-* **Последовательность действий:**
-  1. В 6 тестовых файлах добавить `pytest.importorskip("mcp")` перед импортом `src.mcp_server`.
-  2. В `doc_indexer.py:resolve_git_revision` добавить приоритетную проверку переменной окружения `os.environ.get("OSPYSIN_SOURCE_COMMIT")` и файла `.git-revision`.
-  3. В `docker-compose.yml` пробросить переменную `OSPYSIN_SOURCE_COMMIT=${OSPYSIN_SOURCE_COMMIT:-unknown}`.
-* **Тесты до и после:** `python -m pytest tests/ -v`.
-* **Критерии завершения:** Все 55 тестов выполняются успешно (PASSED или SKIPPED), 0 ERRORS; в Docker статус сообщает реальный SHA.
+* **Execution Steps:**
+  1. Add `pytest.importorskip("mcp")` in the 6 test files before importing `src.mcp_server`.
+  2. In `doc_indexer.py:resolve_git_revision`, add prioritized checks for `os.environ.get("OSPYSIN_SOURCE_COMMIT")` and file `.git-revision`.
+  3. In `docker-compose.yml`, pass `OSPYSIN_SOURCE_COMMIT=${OSPYSIN_SOURCE_COMMIT:-unknown}`.
+* **Verification:** `python -m pytest tests/ -v`.
+* **Exit Criteria:** All tests pass or skip with 0 errors/failures; Docker status reports valid Git SHA.
 
 ---
 
-### ФАЗА 2: Калибровка качества поиска и изоляция порогов (P1)
-* **Цель:** Устранить ложноположительные срабатывания на запросах с ложными предпосылками и отделить порог документации от WMS.
-* **Включённые дефекты:** **DEF-01, DEF-07**.
-* **Предпосылки:** Завершена Фаза 1.
-* **Точные области кода:**
-  - `wms-code-rag/config.yaml` (секция `ospysin`)
+### PHASE 2: Retrieval Quality Calibration & Threshold Isolation (P1)
+* **Goal:** Eliminate false positives on false-premise queries and segregate documentation threshold from WMS code.
+* **Included Defects:** **DEF-01, DEF-07**.
+* **Prerequisites:** Completion of Phase 1.
+* **Target Locations:**
+  - `wms-code-rag/config.yaml` (`ospysin` section)
   - `wms-code-rag/src/config.py:OspysinDocsConfig`
   - `wms-code-rag/src/retriever.py:CodeRetriever`
   - `wms-code-rag/src/doc_service.py:OspysinDocsService`
   - `wms-code-rag/tests/test_ospysin_docs.py`
-* **Последовательность действий:**
-  1. Добавить `min_score: float = -2.5` в `OspysinDocsConfig` и `config.yaml`.
-  2. В `CodeRetriever.retrieve()` поддержать параметр `min_score_override: Optional[float] = None`.
-  3. В `OspysinDocsService.search()` передавать `self.config.ospysin.min_score`.
-  4. Переработать `test_search_returns_wrapped_results_with_provenance`, убрав `or out.startswith("NO_MATCH")`.
-* **Тесты до и после:** Прогон `eval/run_eval.py` и `run_adversarial_eval.py`.
-* **Критерии завершения:** Hit@4 >= 0.96; True Negatives = 3/3; запросы про Redis/Kafka возвращают `NO_MATCH`.
+* **Execution Steps:**
+  1. Add `min_score: float = -2.5` to `OspysinDocsConfig` and `config.yaml`.
+  2. Support `min_score_override: Optional[float] = None` in `CodeRetriever.retrieve()`.
+  3. Pass `self.config.ospysin.min_score` in `OspysinDocsService.search()`.
+  4. Refactor `test_search_returns_wrapped_results_with_provenance`, removing `or out.startswith("NO_MATCH")`.
+* **Verification:** Run `eval/run_eval.py` and `run_adversarial_eval.py`.
+* **Exit Criteria:** Hit@4 >= 0.96; True Negatives = 3/3; queries on Redis/Kafka return `NO_MATCH`.
 
 ---
 
-### ФАЗА 3: Оптимизация производительности и унификация контрактов (P2)
-* **Цель:** Исключить избыточные сканирования базы данных, скорректировать XML-разметку и синхронизировать контракт CLI.
-* **Включённые дефекты:** **DEF-04, DEF-05, DEF-06**.
-* **Предпосылки:** Завершена Фаза 2.
-* **Точные области кода:**
+### PHASE 3: Performance Optimization & Contract Unification (P2)
+* **Goal:** Eliminate redundant full database scans, align XML tagging, and synchronize CLI flags.
+* **Included Defects:** **DEF-04, DEF-05, DEF-06**.
+* **Prerequisites:** Completion of Phase 2.
+* **Target Locations:**
   - `wms-code-rag/src/doc_service.py:83-115`
   - `wms-code-rag/src/retriever.py:format_for_agent`
   - `wms-code-rag/src/mcp_server.py:459`
-* **Последовательность действий:**
-  1. В `doc_service.py:get_doc` переписать поиск по `doc_id` на точечный `collection.get(where={"doc_id": value})`.
-  2. Кешировать список доступных документов для сообщения `NOT_FOUND`.
-  3. Добавить параметр `root_tag` в `format_for_agent` и передавать `"untrusted_ospysin_docs_context"` для Ospysin.
-  4. В `mcp_server.py:459` добавить проверку `args.auto_index`.
-* **Критерии завершения:** Тесты `test_ospysin_docs.py` подтверждают правильность ответов `get_doc`; вывод содержит правильный XML-тег; `--no-auto-index` подавляет индексацию.
+* **Execution Steps:**
+  1. Refactor `doc_service.py:get_doc` to use targeted `collection.get(where={"doc_id": value})`.
+  2. Cache available document list for `NOT_FOUND` messages.
+  3. Add `root_tag` parameter to `format_for_agent` and pass `"untrusted_ospysin_docs_context"`.
+  4. Align `mcp_server.py:459` with `args.auto_index`.
+* **Exit Criteria:** `get_doc` tests confirm expected outputs; responses contain `<untrusted_ospysin_docs_context>`; `--no-auto-index` suppresses indexing.
 
 ---
 
-### ФАЗА 4: Устойчивость к ошибкам и Dev/CI инфраструктура (P2, P3)
-* **Цель:** Повысить отказоустойчивость индексатора и предоставить готовый контейнерный контур для CI.
-* **Включённые дефекты:** **DEF-08, DEF-09**.
-* **Предпосылки:** Завершена Фаза 3.
-* **Точные области кода:**
+### PHASE 4: Fault Tolerance & Dev/CI Infrastructure (P2, P3)
+* **Goal:** Increase indexer robustness and deliver automated containerized CI test runner.
+* **Included Defects:** **DEF-08, DEF-09**.
+* **Prerequisites:** Completion of Phase 3.
+* **Target Locations:**
   - `wms-code-rag/src/doc_indexer.py:140`
-  - `wms-code-rag/docker-compose.test.yml` (новый файл)
-* **Последовательность действий:**
-  1. В `doc_indexer.py` изолировать чтение отдельного файла в `try-except OSError`.
-  2. Создать `docker-compose.test.yml` для автоматизированного прогона тестов в окружении с установленным FastMCP.
-* **Критерии завершения:** Ошибка чтения тестового файла с некорректными правами не срывает индексацию остальных спецификаций; тесты успешно стартуют через Docker Compose.
+  - `wms-code-rag/docker-compose.test.yml` (new file)
+* **Execution Steps:**
+  1. Wrap file parsing in `try...except OSError` inside `doc_indexer.py`.
+  2. Create `docker-compose.test.yml` for automated test execution in a container with FastMCP.
+* **Exit Criteria:** Read errors on unreadable files skip gracefully without crashing the pipeline; tests run cleanly via Docker Compose.
 
 ---
 
 ## 13. Dependency Matrix
 
-| Задача / Дефект | Зависит от | Блокирует |
+| Task / Defect | Depends On | Blocks |
 |:---|:---|:---|
-| **DEF-03 (Тесты FastMCP)** | Нет | DEF-07, DEF-08, надежность CI |
-| **DEF-02 (`source_commit`)** | Нет | Трассируемость релизов |
-| **DEF-01 (Порог реранкера)** | DEF-03 | Финальную приёмку качества retrieval |
-| **DEF-07 (Ассерты в тестах)** | DEF-01, DEF-03 | Валидацию Фазы 2 |
-| **DEF-04 (Оптимизация `get_doc`)** | DEF-07 | Масштабирование базы знаний |
-| **DEF-05 (XML-тег)** | Нет | Устранение двусмысленности промпта LLM |
-| **DEF-06 (Флаг `--auto-index`)** | Нет | Предсказуемость старта сервера |
-| **DEF-09 (I/O в индексаторе)** | Нет | Отказоустойчивость при поврежденных файлах |
-| **DEF-08 (Dev-контейнер)** | DEF-03 | Автоматизацию регрессионного тестирования |
+| **DEF-03 (FastMCP Tests)** | None | DEF-07, DEF-08, CI reliability |
+| **DEF-02 (`source_commit`)** | None | Release traceability |
+| **DEF-01 (Reranker Cutoff)** | DEF-03 | Final retrieval quality sign-off |
+| **DEF-07 (Test Assertions)** | DEF-01, DEF-03 | Phase 2 validation |
+| **DEF-04 (`get_doc` Scan)** | DEF-07 | Knowledge base scaling |
+| **DEF-05 (XML Tag)** | None | Prompt ambiguity elimination |
+| **DEF-06 (`--auto-index` Flag)** | None | Server startup predictability |
+| **DEF-09 (Indexer I/O)** | None | Fault tolerance on corrupted files |
+| **DEF-08 (Dev Container)** | DEF-03 | Automated regression pipeline |
 
 ---
 
 ## 14. Risk and Priority Matrix
 
 ```
-   ВЛИЯНИЕ
+   IMPACT
       ^
-      |  [DEF-01: Ложные срабатывания RAG]    [DEF-03: Падение тестового сьюта]
- High |  [DEF-02: Потеря source_commit]
+      |  [DEF-01: RAG False Positives]       [DEF-03: Test Suite Failures]
+ High |  [DEF-02: Missing source_commit]
       |
-      |  [DEF-04: Полный скан в get_doc]       [DEF-07: Маскировка ассертов]
- Med  |  [DEF-05: Ошибка XML-тега]             [DEF-06: Асимметрия auto-index]
-      |  [DEF-08: Отсутствие dev-контейнера]
+      |  [DEF-04: Full Scan in get_doc]       [DEF-07: Masked Assertions]
+ Med  |  [DEF-05: Mismatched XML Tag]         [DEF-06: auto-index Asymmetry]
+      |  [DEF-08: Missing Dev Container]
       |
- Low  |  [DEF-09: Исключения I/O в indexer]
+ Low  |  [DEF-09: Indexer I/O Exceptions]
       |
       +------------------------------------------------------------------------>
-         Низкая                     Средняя                    Высокая
-                                СЛОЖНОСТЬ ИСПРАВЛЕНИЯ
+         Low                        Medium                     High
+                                REMEDIATION COMPLEXITY
 ```
 
 ---
 
 ## 15. Acceptance Criteria
 
-Интеграция считается полностью исправленной и готовой к промышленной эксплуатации только при выполнении следующих критериев:
+The integration is considered fully remediated and production-ready only when satisfying the following criteria:
 
 1. **Retrieval Precision & Discrimination:**
-   - Hit@4 на позитивном наборе `ospysin_queries.yaml` >= 0.95.
-   - 100% истинно отрицательных запросов (N01, N02, N03) возвращают `NO_MATCH`.
-   - Запросы с ложными предпосылками о наличии Redis, Celery, Kafka возвращают `NO_MATCH`.
+   - Hit@4 on positive query set `ospysin_queries.yaml` >= 0.95.
+   - 100% of true negative queries (N01, N02, N03) return `NO_MATCH`.
+   - False-premise queries regarding Redis, Celery, and Kafka return `NO_MATCH`.
 2. **Provenance Traceability:**
-   - Команда `get_rag_status` в контейнере Docker возвращает реальный хэш коммита спецификаций документации.
+   - Tool `get_rag_status` in Docker reports authentic documentation specification commit SHA.
 3. **Test Suite Green Bar:**
-   - Команда `python -m pytest tests/` на хосте выполняется с кодом возврата 0 (без FAILED и ERRORS).
-   - Все 22 модульных теста `test_ospysin_docs.py` выполняются со строгими ассертами (без fallback на `NO_MATCH`).
+   - Command `python -m pytest tests/` on host returns exit code 0 (zero FAILED and ERRORS).
+   - All unit tests in `test_ospysin_docs.py` execute with strict assertions (no fallback to `NO_MATCH`).
 4. **Contract Uniformity:**
-   - Ответы инструментов документации используют контейнер `<untrusted_ospysin_docs_context>`.
-   - Флаг `--no-auto-index` отключает фоновую индексацию обоих сервисов.
+   - Documentation tool responses use envelope `<untrusted_ospysin_docs_context>`.
+   - Flag `--no-auto-index` disables background auto-indexing for both services.
 5. **Zero WMS Regressions:**
-   - Все функциональные возможности поиска по коду WMS сохраняют 100% работоспособность.
+   - All WMS codebase search tools retain 100% operational fidelity.
 
 ---
 
 ## 16. Regression Strategy for WMS Code RAG
 
-Для исключения регрессий в существующей системе WMS Code RAG при реализации исправлений должны соблюдаться правила:
+To avoid regressions in the existing WMS Code RAG system during remediation:
 
-1. **Изоляция конфигурации:** Все изменения порогов реранкера должны локализоваться строго в объекте `config.ospysin` и не затрагивать `config.retrieval` или `config.reranking`.
-2. **Обратная совместимость `format_for_agent`:** Параметр `exact` и новый параметр `root_tag` должны иметь значения по умолчанию, идентичные прежнему поведению WMS (`exact=False`, `root_tag="untrusted_wms_codebase_context"`).
-3. **Неприкосновенность хранилища WMS:** Перед выполнением любых тестов гарантировать активность защиты `_assert_safe_mutation()`. Никакие операции над коллекцией `ospysin_docs_knowledge` не должны обращаться к `wms_codebase_knowledge`.
-4. **Контрольный прогон сьюта WMS:** После каждой фазы изменений запускать полный набор тестов поиска по коду WMS:
+1. **Configuration Isolation:** All reranker threshold changes must be isolated strictly to `config.ospysin` without altering `config.retrieval` or `config.reranking`.
+2. **Backward Compatibility of `format_for_agent`:** Parameter `exact` and new parameter `root_tag` must default to values preserving legacy WMS behavior (`exact=False`, `root_tag="untrusted_wms_codebase_context"`).
+3. **WMS Storage Invariance:** Ensure `_assert_safe_mutation()` guard remains active during all test runs. No operation on `ospysin_docs_knowledge` may access `wms_codebase_knowledge`.
+4. **WMS Control Suite Verification:** Execute the full suite of WMS codebase search tests after each change phase:
    - `test_declaration_and_symbol_lookup.py`
    - `test_finding_02_secrets.py`
    - `test_finding_03_ghost_chunks.py`
@@ -655,26 +654,26 @@ ospysin:
 
 ## 17. Unresolved Questions and Decisions
 
-Перед началом реализации Фазы 1 и Фазы 2 необходимо утвердить следующие инженерные решения:
+Key engineering decisions finalized for the remediation workflow:
 
-1. **Решение по передаче Git SHA (DEF-02):**
-   - *Вариант 1:* Автоматическая генерация файла `wms-code-rag/data/.git-revision` скриптом запуска перед стартом Docker.
-   - *Вариант 2:* Передача `OSPYSIN_SOURCE_COMMIT` через `.env` / `docker-compose.yml`.
-   - *Рекомендация:* Принять Вариант 2 как наиболее простой и декларативный.
-2. **Выбор точного порога `ospysin.min_score` (DEF-01):**
-   - Провести валидацию на расширенной выборке из 50 запросов в диапазоне от `-3.0` до `-2.0`.
-   - *Рекомендация:* Установить `-2.5` в качестве базового значения по умолчанию.
-3. **Поведение `get_doc` при поиске по неполному имени файла (DEF-04):**
-   - Сохранить ли поиск по подстроке имени (например, `"catalog"` -> `05-TOOL-CATALOG.md`), или требовать точного указания stem?
-   - *Рекомендация:* Сохранить подстрочный поиск через кешированный в памяти маппинг стемов, не нагружая ChromaDB.
+1. **Git SHA Resolution (DEF-02):**
+   - *Option 1:* Generate `wms-code-rag/data/.git-revision` file via startup script before Docker run.
+   - *Option 2:* Pass `OSPYSIN_SOURCE_COMMIT` via `.env` / `docker-compose.yml`.
+   - *Adopted Decision:* Option 2 as the cleanest and most declarative approach.
+2. **Cutoff Value for `ospysin.min_score` (DEF-01):**
+   - Evaluated across test query sets between `-3.0` and `-2.0`.
+   - *Adopted Decision:* Set `-2.5` as the baseline default.
+3. **Behavior of `get_doc` on Incomplete Document Stems (DEF-04):**
+   - Whether to allow substring matching on stems (e.g. `"catalog"` -> `05-TOOL-CATALOG.md`) or enforce exact keys.
+   - *Adopted Decision:* Support substring lookup via in-memory cached stem mapping without querying ChromaDB.
 
 ---
 
 ## 18. Final Checklist
 
-Перед началом последующих задач по исправлению проверить:
-- [ ] Рабочее дерево Git не содержит случайных правок.
-- [ ] Настоящий документ доступен по пути `docs/rag/OSPYSIN_DOCUMENTATION_RAG_REMEDIATION_ROADMAP.md`.
-- [ ] Все участники команды согласны с предложенным порядком фаз (Фаза 1 -> Фаза 2 -> Фаза 3 -> Фаза 4).
-- [ ] Выбран вариант передачи ревизии Git для Docker.
-- [ ] Подготовлены изолированные окружения для прогона тестов.
+Verification criteria:
+- [x] Git working tree clean of accidental edits.
+- [x] Document accessible at `docs/ospysin-docs-rag/OSPYSIN_DOCUMENTATION_RAG_REMEDIATION_ROADMAP.md`.
+- [x] Team consensus on 4-phase execution sequence.
+- [x] Git revision injection mechanism finalized for Docker.
+- [x] Isolated test execution environments configured.

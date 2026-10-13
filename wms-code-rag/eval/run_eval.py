@@ -74,13 +74,18 @@ def build_baseline(config: AppConfig, tmp: Path, embedder) -> CodeRetriever:
 
 
 def evaluate(retriever: CodeRetriever, queries: List[dict], label: str, min_score: Optional[float] = None) -> dict:
+    import time
     hit1 = hit4 = 0
     rr_sum = 0.0
     positives = [q for q in queries if q["type"] != "negative"]
     negatives = [q for q in queries if q["type"] == "negative"]
     misses = []
+    latencies_ms = []
+
     for q in positives:
+        t0 = time.perf_counter()
         results = retriever.retrieve(query=q["query"], top_n=TOP_N, min_score=min_score)
+        latencies_ms.append((time.perf_counter() - t0) * 1000.0)
         rank = next((i for i, (c, _) in enumerate(results, 1) if is_hit(c, q["expected"])), None)
         if rank == 1:
             hit1 += 1
@@ -93,12 +98,17 @@ def evaluate(retriever: CodeRetriever, queries: List[dict], label: str, min_scor
     neg_ok = 0
     neg_bad = []
     for q in negatives:
+        t0 = time.perf_counter()
         results = retriever.retrieve(query=q["query"], top_n=TOP_N, min_score=min_score)
+        latencies_ms.append((time.perf_counter() - t0) * 1000.0)
         if not results:
             neg_ok += 1
         else:
             neg_bad.append((q["id"], q["query"], f"{results[0][0].file_path}#{leaf_title(results[0][0])}"))
     n = len(positives)
+    avg_lat = sum(latencies_ms) / len(latencies_ms) if latencies_ms else 0.0
+    sorted_lats = sorted(latencies_ms)
+    p95_lat = sorted_lats[int(0.95 * len(sorted_lats))] if sorted_lats else 0.0
     out = {
         "label": label,
         "n": n,
@@ -109,6 +119,8 @@ def evaluate(retriever: CodeRetriever, queries: List[dict], label: str, min_scor
         "neg_n": len(negatives),
         "misses": misses,
         "neg_bad": neg_bad,
+        "avg_latency_ms": avg_lat,
+        "p95_latency_ms": p95_lat,
     }
     return out
 
@@ -116,7 +128,9 @@ def evaluate(retriever: CodeRetriever, queries: List[dict], label: str, min_scor
 def print_report(r: dict) -> None:
     print(f"\n=== {r['label']} ===")
     print(f"positives={r['n']}  Hit@1={r['hit1']:.3f}  Hit@{TOP_N}={r['hit4']:.3f}  MRR={r['mrr']:.3f}")
-    print(f"true negatives returning nothing: {r['neg_ok']}/{r['neg_n']}")
+    neg_pct = (r['neg_ok'] / r['neg_n'] * 100) if r['neg_n'] else 0.0
+    print(f"true negatives returning nothing: {r['neg_ok']}/{r['neg_n']} ({neg_pct:.1f}%)")
+    print(f"latency: mean={r.get('avg_latency_ms', 0):.2f} ms/query, p95={r.get('p95_latency_ms', 0):.2f} ms/query")
     for qid, q, top in r["misses"]:
         print(f"  MISS {qid}: {q!r} -> top: {top}")
     for qid, q, top in r["neg_bad"]:
@@ -124,19 +138,23 @@ def print_report(r: dict) -> None:
 
 
 def run_lookups(service: OspysinDocsService, lookups: List[dict]) -> None:
+    import time
     ok = 0
+    t0 = time.perf_counter()
     for item in lookups:
         out = service.get_doc(item["name"], item.get("section"))
         passed = out.startswith(item["prefix"])
         ok += passed
         if not passed:
             print(f"  LOOKUP FAIL {item['name']!r}/{item.get('section')!r}: got {out[:80]!r}")
-    print(f"\n=== deterministic get_ospysin_doc checks: {ok}/{len(lookups)} passed ===")
+    total_time_ms = (time.perf_counter() - t0) * 1000.0
+    avg_lookup_ms = total_time_ms / len(lookups) if lookups else 0.0
+    print(f"\n=== deterministic get_ospysin_doc checks: {ok}/{len(lookups)} passed (mean {avg_lookup_ms:.2f} ms/lookup) ===")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--mode", choices=["new", "baseline", "both"], default="both")
+    parser.add_argument("--mode", choices=["new", "baseline", "both", "ospysin"], default="both")
     parser.add_argument("--no-rerank", action="store_true", help="Disable cross-encoder reranking")
     args = parser.parse_args()
 
@@ -158,7 +176,7 @@ def main() -> int:
             print("Building baseline index...")
             base = build_baseline(config, tmp, embedder)
             print_report(evaluate(base, queries, f"BASELINE legacy _chunk_markdown ({rerank_label})"))
-        if args.mode in ("new", "both"):
+        if args.mode in ("new", "both", "ospysin"):
             print("Building new index...")
             retriever, indexer = build_new(config, tmp, embedder)
             print(f"  new chunks: {indexer.store.count()}")

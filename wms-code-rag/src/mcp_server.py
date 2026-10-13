@@ -368,16 +368,14 @@ class SessionAutoHealMiddleware:
 
 
 def create_http_app(mcp_server: FastMCP, app_config) -> Any:
-    """Build ASGI application supporting modern MCP Streamable HTTP, health checks, and authentication."""
+    """Build ASGI application supporting both MCP SSE and modern Streamable HTTP transports."""
+    from starlette.applications import Starlette
     from starlette.routing import Route
     from starlette.responses import JSONResponse
 
-    app = mcp_server.streamable_http_app()
-    endpoint = app.routes[0].endpoint
-
-    # Mount on common MCP paths so clients connecting to /sse, /mcp, or root / all work
-    app.routes.append(Route("/sse", endpoint))
-    app.routes.append(Route("/", endpoint))
+    sse_app = mcp_server.sse_app()
+    stream_app = mcp_server.streamable_http_app()
+    stream_endpoint = stream_app.routes[0].endpoint
 
     # Fast, non-blocking health check endpoint for Docker & monitoring
     async def health_check(request):
@@ -387,7 +385,13 @@ def create_http_app(mcp_server: FastMCP, app_config) -> Any:
             "indexed_chunks": indexer.store.count(),
         })
 
-    app.routes.append(Route("/health", health_check, methods=["GET"]))
+    routes = [
+        *sse_app.routes,
+        Route("/mcp", stream_endpoint),
+        Route("/", stream_endpoint),
+        Route("/health", health_check, methods=["GET"]),
+    ]
+    app = Starlette(routes=routes)
 
     try:
         session_mgr = getattr(mcp_server, "session_manager", None)
@@ -397,6 +401,7 @@ def create_http_app(mcp_server: FastMCP, app_config) -> Any:
     session_app = SessionAutoHealMiddleware(app, session_mgr)
     effective_token = app_config.server.auth_token or os.environ.get("MCP_AUTH_TOKEN")
     return AuthMiddleware(session_app, auth_token=effective_token)
+
 
 
 @mcp.tool()
