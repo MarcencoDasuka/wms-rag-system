@@ -59,6 +59,7 @@ class OspysinDocsService:
         self.indexer = indexer
         self.retriever = retriever
         self.store = indexer.store
+        self._cached_catalog: Optional[dict[str, str]] = None
 
     # ------------------------------------------------------------------ search
 
@@ -70,13 +71,21 @@ class OspysinDocsService:
                 "after making sure the docs directory is mounted/configured."
             )
         n = min(max(1, int(top_n)), MAX_SEARCH_TOP_N)
-        results = self.retriever.retrieve(query=query, top_n=n)
+        min_score = getattr(self.indexer.config.ospysin, "min_score", -2.5)
+        results = self.retriever.retrieve(query=query, top_n=n, min_score=min_score)
         if not results:
             return (
                 "NO_MATCH\nNo Ospysin documentation chunk passed the relevance threshold for this query. "
                 "Rephrase, or use 'get_ospysin_doc' for a known document or ADR."
             )
-        return self.retriever.format_for_agent(results) + "\n" + self._index_footer()
+        return (
+            self.retriever.format_for_agent(
+                results,
+                context_tag="untrusted_ospysin_docs_context",
+            )
+            + "\n"
+            + self._index_footer()
+        )
 
     # ------------------------------------------------------------------ deterministic lookup
 
@@ -87,34 +96,59 @@ class OspysinDocsService:
         metas = data.get("metadatas") or []
         return [_chunk_from_row(i, d, m) for i, d, m in zip(ids, docs, metas)]
 
+    def _get_catalog(self) -> dict[str, str]:
+        """Returns mapping of {file_path: doc_id} from metadata (lazy-cached)."""
+        if self._cached_catalog is not None:
+            return self._cached_catalog
+        data = self.store.collection.get(include=["metadatas"])
+        metas = data.get("metadatas") or []
+        catalog: dict[str, str] = {}
+        for m in metas:
+            fp = m.get("file_path")
+            did = m.get("doc_id")
+            if fp and did:
+                catalog[fp] = did
+        self._cached_catalog = catalog
+        return catalog
+
+    def _fetch_chunks_by_filter(self, where: dict) -> List[CodeChunk]:
+        data = self.store.collection.get(where=where, include=["documents", "metadatas"])
+        ids = data.get("ids") or []
+        docs = data.get("documents") or []
+        metas = data.get("metadatas") or []
+        return [_chunk_from_row(i, d, m) for i, d, m in zip(ids, docs, metas)]
+
     @staticmethod
     def _order(c: CodeChunk) -> Tuple[int, int]:
         return int(c.metadata.get("start_line", 0)), int(c.metadata.get("part", 1))
 
     def get_doc(self, name_or_id: str, section: Optional[str] = None) -> str:
-        chunks = self._all_chunks()
-        if not chunks:
+        if self.store.count() == 0:
             return "Ospysin docs index is empty. Run 'reindex_ospysin_docs' (confirm=True)."
 
-        docs: dict[str, dict] = {}
-        for c in chunks:
-            docs.setdefault(c.file_path, {"doc_id": c.metadata.get("doc_id", ""), "chunks": []})["chunks"].append(c)
+        catalog = self._get_catalog()
+        if not catalog:
+            return "Ospysin docs index is empty. Run 'reindex_ospysin_docs' (confirm=True)."
 
         kind, value = normalize_doc_key(name_or_id)
         if kind in ("adr", "num"):
-            matches = [p for p, d in docs.items() if d["doc_id"] == value]
+            chunks = self._fetch_chunks_by_filter({"doc_id": value})
+            if not chunks:
+                avail = ", ".join(sorted(catalog))
+                return f"NOT_FOUND\nname: {_esc(name_or_id)}\navailable_documents: {avail}"
+            path = chunks[0].file_path
+            doc_chunks = sorted(chunks, key=self._order)
         else:
             stem = lambda p: p.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()  # noqa: E731
-            matches = [p for p in docs if stem(p) == value] or [p for p in docs if value and value in stem(p)]
-
-        if not matches:
-            avail = ", ".join(sorted(docs))
-            return f"NOT_FOUND\nname: {_esc(name_or_id)}\navailable_documents: {avail}"
-        if len(matches) > 1:
-            return f"AMBIGUOUS\nname: {_esc(name_or_id)}\ncandidates: {', '.join(sorted(matches))}"
-
-        path = matches[0]
-        doc_chunks = sorted(docs[path]["chunks"], key=self._order)
+            matches = [p for p in catalog if stem(p) == value] or [p for p in catalog if value and value in stem(p)]
+            if not matches:
+                avail = ", ".join(sorted(catalog))
+                return f"NOT_FOUND\nname: {_esc(name_or_id)}\navailable_documents: {avail}"
+            if len(matches) > 1:
+                return f"AMBIGUOUS\nname: {_esc(name_or_id)}\ncandidates: {', '.join(sorted(matches))}"
+            path = matches[0]
+            chunks = self._fetch_chunks_by_filter({"file_path": path})
+            doc_chunks = sorted(chunks, key=self._order)
 
         if section and section.strip():
             needle = section.strip().lower()
@@ -136,7 +170,11 @@ class OspysinDocsService:
             kept.append(c)
             used += len(c.content)
 
-        out = self.retriever.format_for_agent([(c, 1.0) for c in kept], exact=True)
+        out = self.retriever.format_for_agent(
+            [(c, 1.0) for c in kept],
+            exact=True,
+            context_tag="untrusted_ospysin_docs_context",
+        )
         notes = [f"FOUND document: {path} ({len(kept)}/{len(selected)} chunks returned)"]
         if len(kept) < len(selected):
             seen: List[str] = []
@@ -160,6 +198,7 @@ class OspysinDocsService:
             )
         try:
             files, chunks = self.indexer.scan_and_index(clear_first=True)
+            self._cached_catalog = None
         except RuntimeError as e:
             return f"Error: {e}"
         meta = self.indexer.read_index_meta()

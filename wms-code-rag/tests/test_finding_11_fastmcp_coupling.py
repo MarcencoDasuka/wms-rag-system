@@ -1,4 +1,7 @@
 import pytest
+
+pytest.importorskip("mcp")
+
 from src.mcp_server import is_session_active, SessionAutoHealMiddleware
 
 

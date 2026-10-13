@@ -48,3 +48,4 @@ ospysin:
   collection_name: "ospysin_docs_knowledge"
   chunk_max_chars: 1200
   chunk_overlap_chars: 150
+  min_score: -2.5

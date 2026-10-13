@@ -56,6 +56,7 @@ class OspysinDocsConfig(BaseModel):
     # Character budget per chunk body (breadcrumb prefix is added on top).
     chunk_max_chars: int = 1200
     chunk_overlap_chars: int = 150
+    min_score: float = -2.5
 
 
 class AppConfig(BaseModel):
@@ -91,6 +92,11 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
         config.ospysin.docs_dir = env_ospysin
     if env_ospysin_enabled := os.environ.get("OSPYSIN_ENABLED"):
         config.ospysin.enabled = env_ospysin_enabled.lower() in ("true", "1", "yes")
+    if env_ospysin_min_score := os.environ.get("OSPYSIN_MIN_SCORE"):
+        try:
+            config.ospysin.min_score = float(env_ospysin_min_score)
+        except ValueError:
+            pass
     if env_host := os.environ.get("MCP_HOST"):
         config.server.host = env_host
     if env_port := os.environ.get("MCP_PORT"):

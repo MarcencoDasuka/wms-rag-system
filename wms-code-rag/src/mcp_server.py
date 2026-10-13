@@ -446,7 +446,7 @@ def main():
     parser.add_argument("--auto-index", action="store_true", help="Auto-index codebase on startup if empty")
     args = parser.parse_args()
 
-    if args.auto_index or indexer.store.count() == 0:
+    if args.auto_index and indexer.store.count() == 0:
         import threading
         index_thread = threading.Thread(
             target=indexer.scan_and_index,
@@ -456,7 +456,7 @@ def main():
         )
         index_thread.start()
 
-    if ospysin_service is not None and ospysin_service.store.count() == 0:
+    if args.auto_index and ospysin_service is not None and ospysin_service.store.count() == 0:
         import threading
 
         def _initial_ospysin_index() -> None:

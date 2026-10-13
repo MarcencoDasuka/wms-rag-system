@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -26,13 +27,29 @@ GIT_TIMEOUT_SECONDS = 5
 def resolve_git_revision(docs_dir: Path) -> str:
     """Best-effort source revision for ``docs_dir``: ``<sha>`` or ``<sha>-dirty``; ``unknown`` on failure.
 
-    Invoked without a shell and with a hard timeout; a missing git binary or non-repo directory
-    degrades to ``unknown`` instead of failing indexing.
+    Order of resolution:
+    1. Environment variable ``OSPYSIN_SOURCE_COMMIT`` or ``SOURCE_COMMIT`` (e.g. injected in container/CI).
+    2. File ``.git-revision`` in ``docs_dir`` or its parent directory.
+    3. Git CLI against ``docs_dir`` or its parent repo root.
+    4. Fallback to ``unknown`` if git is absent or directory is not a repo.
     """
-    def _run(args: List[str]) -> Optional[str]:
+    env_commit = os.environ.get("OSPYSIN_SOURCE_COMMIT") or os.environ.get("SOURCE_COMMIT")
+    if env_commit and env_commit.strip():
+        return env_commit.strip()
+
+    for rev_file in (docs_dir / ".git-revision", docs_dir.parent / ".git-revision"):
+        try:
+            if rev_file.is_file():
+                content = rev_file.read_text(encoding="utf-8").strip()
+                if content:
+                    return content
+        except OSError:
+            pass
+
+    def _run(target_dir: Path, args: List[str]) -> Optional[str]:
         try:
             res = subprocess.run(
-                ["git", "-C", str(docs_dir), *args],
+                ["git", "-C", str(target_dir), *args],
                 capture_output=True,
                 text=True,
                 timeout=GIT_TIMEOUT_SECONDS,
@@ -42,10 +59,13 @@ def resolve_git_revision(docs_dir: Path) -> str:
         except (OSError, subprocess.SubprocessError):
             return None
 
-    sha = _run(["rev-parse", "HEAD"])
+    sha = _run(docs_dir, ["rev-parse", "HEAD"])
+    if not sha and docs_dir.parent != docs_dir:
+        sha = _run(docs_dir.parent, ["rev-parse", "HEAD"])
     if not sha:
         return "unknown"
-    dirty = _run(["status", "--porcelain", "--", "."])
+
+    dirty = _run(docs_dir, ["status", "--porcelain", "--", "."])
     return f"{sha}-dirty" if dirty else sha
 
 
@@ -139,9 +159,13 @@ class OspysinDocsIndexer:
             all_chunks: List[CodeChunk] = []
             for file_path in files:
                 rel_path = file_path.relative_to(docs_dir).as_posix()
-                for chunk in self.chunker.chunk_file(file_path, rel_path):
-                    chunk.metadata["source_commit"] = revision
-                    all_chunks.append(chunk)
+                try:
+                    for chunk in self.chunker.chunk_file(file_path, rel_path):
+                        chunk.metadata["source_commit"] = revision
+                        all_chunks.append(chunk)
+                except OSError as err:
+                    logger.warning("Failed to read Ospysin doc %s: %s", file_path, err)
+                    continue
 
             if not all_chunks:
                 raise RuntimeError("Chunker produced no chunks; index left unchanged.")

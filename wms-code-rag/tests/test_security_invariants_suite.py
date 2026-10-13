@@ -13,6 +13,10 @@ Covers:
 import sys
 import threading
 from pathlib import Path
+import pytest
+
+pytest.importorskip("mcp")
+
 from src.chunker import CodeAwareChunker, CodeChunk
 from src.config import AppConfig, VectorDBConfig, CodebaseConfig, RerankingConfig
 from src.indexer import CodebaseIndexer, console

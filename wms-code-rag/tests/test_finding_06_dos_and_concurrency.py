@@ -2,6 +2,10 @@
 
 import threading
 from pathlib import Path
+import pytest
+
+pytest.importorskip("mcp")
+
 from src.config import AppConfig, VectorDBConfig
 from src.indexer import CodebaseIndexer
 from src.mcp_server import clamp_top_n, search_wms_code, validate_query

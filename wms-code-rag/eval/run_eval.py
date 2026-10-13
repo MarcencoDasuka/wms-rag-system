@@ -73,14 +73,14 @@ def build_baseline(config: AppConfig, tmp: Path, embedder) -> CodeRetriever:
     return CodeRetriever(config, store=store)
 
 
-def evaluate(retriever: CodeRetriever, queries: List[dict], label: str) -> dict:
+def evaluate(retriever: CodeRetriever, queries: List[dict], label: str, min_score: Optional[float] = None) -> dict:
     hit1 = hit4 = 0
     rr_sum = 0.0
     positives = [q for q in queries if q["type"] != "negative"]
     negatives = [q for q in queries if q["type"] == "negative"]
     misses = []
     for q in positives:
-        results = retriever.retrieve(query=q["query"], top_n=TOP_N)
+        results = retriever.retrieve(query=q["query"], top_n=TOP_N, min_score=min_score)
         rank = next((i for i, (c, _) in enumerate(results, 1) if is_hit(c, q["expected"])), None)
         if rank == 1:
             hit1 += 1
@@ -93,7 +93,7 @@ def evaluate(retriever: CodeRetriever, queries: List[dict], label: str) -> dict:
     neg_ok = 0
     neg_bad = []
     for q in negatives:
-        results = retriever.retrieve(query=q["query"], top_n=TOP_N)
+        results = retriever.retrieve(query=q["query"], top_n=TOP_N, min_score=min_score)
         if not results:
             neg_ok += 1
         else:
@@ -162,7 +162,14 @@ def main() -> int:
             print("Building new index...")
             retriever, indexer = build_new(config, tmp, embedder)
             print(f"  new chunks: {indexer.store.count()}")
-            print_report(evaluate(retriever, queries, f"NEW MarkdownSpecChunker ({rerank_label})"))
+            print_report(
+                evaluate(
+                    retriever,
+                    queries,
+                    f"NEW MarkdownSpecChunker ({rerank_label})",
+                    min_score=config.ospysin.min_score,
+                )
+            )
             run_lookups(OspysinDocsService(indexer, retriever), lookups)
     return 0
 

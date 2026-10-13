@@ -628,6 +628,7 @@ def test_symbol_cache_same_count_replacement_across_instances(tmp_path: Path):
 
 def test_production_mcp_shared_store_identity():
     """Verify architectural invariant: production MCP server wires retriever and indexer to the exact same store."""
+    pytest.importorskip("mcp")
     from src.mcp_server import indexer, retriever
     assert retriever.store is indexer.store, "retriever.store must be identical instance to indexer.store"
 

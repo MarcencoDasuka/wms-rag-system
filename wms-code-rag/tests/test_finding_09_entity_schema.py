@@ -1,5 +1,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock
+import pytest
+
+pytest.importorskip("mcp")
+
 from src.chunker import CodeChunk
 from src.mcp_server import get_entity_and_schema, retriever
 

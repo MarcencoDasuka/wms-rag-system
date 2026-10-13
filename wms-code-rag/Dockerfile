@@ -10,6 +10,7 @@ WORKDIR /app
 # Install minimal system utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (FastMCP, ChromaDB ONNX Engine, Pydantic, Uvicorn)
@@ -38,3 +39,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 ENTRYPOINT ["python", "src/mcp_server.py"]
 CMD ["--transport", "sse", "--host", "0.0.0.0", "--port", "8000", "--auto-index"]
+
+# Test runner stage for CI and containerized integration test verification
+FROM base AS test
+RUN pip install --no-cache-dir "pytest>=8.0.0" "pytest-asyncio>=0.23.0"
+COPY tests/ ./tests/
+ENTRYPOINT ["python", "-m", "pytest"]
+CMD ["tests/", "-v"]

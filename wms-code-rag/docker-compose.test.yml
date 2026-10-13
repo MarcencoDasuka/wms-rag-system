@@ -1,0 +1,19 @@
+services:
+  wms-code-rag-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    container_name: wms-code-rag-test-runner
+    environment:
+      - WMS_CODEBASE_PATH=/workspace/wms
+      - CHROMA_PERSIST_DIR=/tmp/chroma_test
+      - OSPYSIN_DOCS_PATH=/workspace/ospysin-docs
+      - OSPYSIN_ENABLED=true
+      - OSPYSIN_SOURCE_COMMIT=${OSPYSIN_SOURCE_COMMIT:-}
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ../inbound-storage-dispatch:/workspace/wms:ro
+      - ../Ospysin/docs:/workspace/ospysin-docs:ro

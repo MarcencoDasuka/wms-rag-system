@@ -2,6 +2,9 @@
 
 import os
 import pytest
+
+pytest.importorskip("mcp")
+
 from starlette.testclient import TestClient
 from mcp.server.fastmcp import FastMCP
 from src.config import AppConfig, ServerConfig
