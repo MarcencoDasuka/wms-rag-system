@@ -113,7 +113,7 @@ The core WMS backend enforces strict transactional, concurrency, and security in
 | **Bounded Pagination & DoS Prevention** | Server-side clamping (`PaginationUtils`, `@PageableDefault`) + CORS headers | Prevents memory exhaustion on large collections while ensuring client-side tables render up to 500 records smoothly |
 | **Account Lifecycle & Security** | Active flag enforcement + `email_verified` check in `CustomUserDetailsService` | Denies authentication to deactivated or unverified accounts, ensures seed users login cleanly |
 
-For full architectural details, verification matrices, and remediation roadmaps, see the [WMS Defect Verification Catalog](../docs/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md) and [WMS Remediation Roadmap](../docs/WMS_REMEDIATION_ROADMAP.md).
+For full architectural details, verification matrices, and remediation roadmaps, see the [WMS Defect Verification Catalog](../docs/wms/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md) and [WMS Remediation Roadmap](../docs/wms/WMS_REMEDIATION_ROADMAP.md).
 
 ---
 

@@ -3,8 +3,8 @@
 > [!WARNING] ARCHIVED & SUPERSEDED (2026-10-04)
 > **Historical Artifact Only:** This document contains historical hypotheses and claimed remediations (e.g., regarding DEF-01..DEF-05, BOLA, concurrency, and client `userId` data flow) that have been **refuted or proven incomplete** by the independent adversarial verification audit.
 > 
-> * **Active Source of Truth:** [`docs/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](../WMS_ADVERSARIAL_VERIFICATION_REPORT.md)
-> * **Active Remediation Roadmap:** [`docs/WMS_REMEDIATION_ROADMAP.md`](../WMS_REMEDIATION_ROADMAP.md)
+> * **Active Source of Truth:** [`docs/wms/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](../wms/WMS_ADVERSARIAL_VERIFICATION_REPORT.md)
+> * **Active Remediation Roadmap:** [`docs/wms/WMS_REMEDIATION_ROADMAP.md`](../wms/WMS_REMEDIATION_ROADMAP.md)
 
 > **Document Status:** Historical registry of **18** baseline architectural decisions in the WMS core, pre-audit outcomes, and superseded defect claims.  
 > **Basis:** Analysis of the complete Git commit graph (`git log`), adversarial audit findings, and verification on an active PostgreSQL 16 catalog (**245 automated tests:** 215 Java 21 backend + 30 Node.js frontend).

@@ -1,6 +1,8 @@
 # WMS Codebase RAG — Documentation Index
 
-This directory contains the complete technical documentation, architectural guides, adversarial audits, and evaluation reports for the **WMS Codebase RAG** subsystem (`inbound-storage-dispatch`).
+This directory contains the technical documentation, architectural guides, and empirical retrieval evaluation benchmarks for the **WMS Codebase RAG** subsystem (`wms-code-rag`).
+
+For documentation regarding the core WMS application architecture, defect reports, and remediation roadmaps, see [`docs/wms/`](../wms/README.md).
 
 ---
 
@@ -8,32 +10,32 @@ This directory contains the complete technical documentation, architectural guid
 
 | Document | Type | Description |
 | :--- | :---: | :--- |
-| [`WMS_CODE_RAG_POST_FIX_EVALUATION.md`](WMS_CODE_RAG_POST_FIX_EVALUATION.md) | **Benchmark Audit** | Empirical post-fix retrieval quality evaluation report comparing baseline vs post-fix states across 36 frozen benchmark queries and 28 adversarial hard negatives. |
+| [`WMS_CODE_RAG_POST_FIX_EVALUATION.md`](WMS_CODE_RAG_POST_FIX_EVALUATION.md) | **Benchmark Audit** | Empirical post-fix retrieval quality evaluation report comparing baseline vs post-fix states across 36 frozen benchmark queries and 28 adversarial hard negatives (Hit@1 83.3%, Hit@5 100%, MRR 0.894). |
 | [`WMS_CODE_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](WMS_CODE_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) | **Architecture Guide** | Technical architecture reference, AST chunking rules, vector database configuration, and security boundary guarantees. |
-| [`WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](WMS_ADVERSARIAL_VERIFICATION_REPORT.md) | **Adversarial Audit** | Primary source of truth for defect verification across DEF-01 through DEF-26 with concrete empirical evidence and test reproductions. |
-| [`WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md`](WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md) | **Defect Catalog** | Comprehensive inventory and disposition catalog of all verified WMS codebase and RAG defects. |
-| [`WMS_REMEDIATION_ROADMAP.md`](WMS_REMEDIATION_ROADMAP.md) | **Roadmap** | Phased remediation implementation plan organized into four strategic execution waves. |
 
 ---
 
 ## 2. Core Capabilities & Architectural Scope
 
-The WMS Codebase RAG system indexes the full warehouse management codebase:
-- **Backend:** Java 21, Spring Boot 3, Spring Data JPA repositories, `@PreAuthorize` security annotations, Flyway SQL DDL migrations (`V1__...`, `V2__...`).
-- **Frontend:** Vue 3 Composition API (`<script setup>`, `<template>`), Pinia state stores, Vite configs.
-- **Tools Provided:**
-  - `search_wms_code(query, top_n)`
-  - `find_symbol_declaration(symbol_name)`
-  - `get_entity_and_schema(table_or_entity)`
-  - `search_wms_security(topic)`
-  - `get_rag_status()`
-  - `reindex_wms_codebase()`
+The WMS Codebase RAG system indexes the full warehouse management codebase (`inbound-storage-dispatch`):
+- **Indexed Scope:** Java 21 Spring Boot 3 classes, interfaces, records, methods, `@PreAuthorize` security annotations, Vue 3 Composition API components, and Flyway SQL DDL migrations (1,261 total chunks).
+- **Vector Collection:** `wms_codebase_knowledge` in ChromaDB (`data/chroma`).
+- **Security Envelope:** Retrieved code snippets enclosed in `<untrusted_wms_codebase_context>` delimiters.
+- **Reranker Scoring:** Cross-Encoder (`ms-marco-MiniLM-L-6-v2`) with `-7.0` minimum score cutoff.
+- **Agent Tools Provided:**
+  - `search_wms_code(query, top_n)` — Semantic search with cross-encoder reranking.
+  - `find_symbol_declaration(symbol_name)` — Deterministic exact AST symbol declaration verification.
+  - `get_entity_and_schema(table_or_entity)` — Schema DDL and JPA entity lookup.
+  - `search_wms_security(topic)` — Specialized security boundary retrieval.
+  - `get_rag_status()` — Multi-collection health and dimension metrics.
+  - `reindex_wms_codebase()` — Isolated codebase reindexing.
 
 ---
 
 ## 3. Related Documentation
 
-- [Root Documentation Index](../README.md)
+- [Central Documentation Hub](../README.md)
+- [WMS Core Application Documentation](../wms/README.md)
 - [Ospysin Documentation RAG Index](../ospysin-docs-rag/README.md)
-- [Historical Archive](../archive/README.md)
+- [Historical Technical Archive](../archive/README.md)
 - [WMS MCP Server Guide](../../wms-code-rag/README.md)

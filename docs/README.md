@@ -1,29 +1,32 @@
 # Platform Documentation Hub
 
-Welcome to the centralized documentation repository for the **Warehouse Management System (WMS)** and its integrated **Codebase & Documentation RAG MCP Server**.
+Welcome to the centralized documentation repository for the **Warehouse Management System (WMS)** application and its integrated **Codebase & Documentation RAG MCP Server**.
 
 ---
 
 ## 1. Documentation Architecture Overview
 
-The system features two specialized, isolated Retrieval-Augmented Generation (RAG) domains operating through a single FastMCP server interface:
+The repository documentation is partitioned into distinct technical domains:
 
 ```text
 docs/
-├── README.md                                             # [You are here] Central Documentation Hub
+├── README.md                                             # [You are here] Central Platform Documentation Hub
 │
-├── wms-codebase-rag/                                     # Domain 1: WMS Codebase Intelligence
-│   ├── README.md                                         # Subsystem index and navigation
-│   ├── WMS_CODE_RAG_POST_FIX_EVALUATION.md              # Empirical post-fix retrieval evaluation report
-│   ├── WMS_CODE_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md     # Architecture registry, AST rules, and security
-│   ├── WMS_ADVERSARIAL_VERIFICATION_REPORT.md            # Adversarial verification pass (DEF-01..DEF-26)
-│   ├── WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md           # Defect inventory and verification catalog
-│   └── WMS_REMEDIATION_ROADMAP.md                        # Phased remediation implementation plan
+├── wms/                                                  # Domain: WMS Core Application Architecture & Remediation
+│   ├── README.md                                         # WMS application docs index and navigation
+│   ├── WMS_ADVERSARIAL_VERIFICATION_REPORT.md            # Independent adversarial audit (DEF-01..DEF-26)
+│   ├── WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md           # Application defect catalog and disposition
+│   └── WMS_REMEDIATION_ROADMAP.md                        # Phased remediation implementation plan (Waves 1-5)
 │
-├── ospysin-docs-rag/                                     # Domain 2: Ospysin Architecture Specs Intelligence
-│   ├── README.md                                         # Subsystem index and navigation
-│   ├── OSPYSIN_DOCUMENTATION_RAG_POST_FIX_EVALUATION.md  # Post-fix comparative evaluation report
-│   └── OSPYSIN_DOCUMENTATION_RAG_REMEDIATION_ROADMAP.md  # 4-phase remediation roadmap (DEF-01..DEF-09)
+├── wms-codebase-rag/                                     # Subsystem: WMS Codebase RAG Intelligence
+│   ├── README.md                                         # Codebase RAG index and architecture overview
+│   ├── WMS_CODE_RAG_POST_FIX_EVALUATION.md              # Empirical post-fix retrieval benchmark (Hit@1 83.3%, Hit@5 100%)
+│   └── WMS_CODE_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md     # AST chunking rules, vector store, and security boundaries
+│
+├── ospysin-docs-rag/                                     # Subsystem: Ospysin Architecture Specs RAG
+│   ├── README.md                                         # Documentation RAG index and navigation
+│   ├── OSPYSIN_DOCUMENTATION_RAG_POST_FIX_EVALUATION.md  # Post-fix comparative evaluation report (Hit@4 96.4%, MRR 0.964)
+│   └── OSPYSIN_DOCUMENTATION_RAG_REMEDIATION_ROADMAP.md  # Phased remediation roadmap (DEF-01..DEF-09)
 │
 └── archive/                                              # Historical Technical Audits & Superseded Guides
     ├── README.md                                         # Archive index and historical traceability map
@@ -36,7 +39,7 @@ docs/
 
 ---
 
-## 2. Active Domains Comparison
+## 2. Active RAG Subsystems Comparison
 
 | Dimension | WMS Codebase RAG | Ospysin Documentation RAG |
 | :--- | :--- | :--- |
@@ -54,12 +57,15 @@ docs/
 
 ## 3. Quick Reference Links
 
-### System Implementation & MCP Guides
+### WMS Core Application Architecture & Remediation
+- [WMS Application Documentation Hub](wms/README.md)
+- [WMS Adversarial Verification Report](wms/WMS_ADVERSARIAL_VERIFICATION_REPORT.md) — Independent evidence pass (DEF-01..DEF-26).
+- [WMS Remediation Roadmap](wms/WMS_REMEDIATION_ROADMAP.md) — Phased batch execution plan across Waves 1 to 5.
+- [Inbound Storage Dispatch Domain Spec & REST API](../inbound-storage-dispatch/README.md)
+
+### RAG Subsystems & MCP Guides
 - [Root Repository README](../README.md)
 - [WMS Code RAG Server Guide](../wms-code-rag/README.md)
-- [Inbound Storage Dispatch Domain Spec](../inbound-storage-dispatch/README.md)
-
-### Verification & Evaluation Benchmarks
 - [WMS Code RAG Post-Fix Evaluation](wms-codebase-rag/WMS_CODE_RAG_POST_FIX_EVALUATION.md) — 1,261 chunks, Hit@1 83.3%, Hit@5 100%, MRR 0.894.
 - [Ospysin Docs RAG Post-Fix Evaluation](ospysin-docs-rag/OSPYSIN_DOCUMENTATION_RAG_POST_FIX_EVALUATION.md) — 246 chunks, Hit@1 96.4%, Hit@4 96.4%, MRR 0.964.
-- [Historical Archive](archive/README.md) — Historical traceability and initial audit logs.
+- [Historical Technical Archive](archive/README.md) — Traceability and initial audit logs.

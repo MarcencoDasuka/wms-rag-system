@@ -29,7 +29,8 @@ The Ospysin Documentation RAG system indexes the full architectural specificatio
 
 ## 3. Related Documentation
 
-- [Root Documentation Index](../README.md)
+- [Central Documentation Hub](../README.md)
+- [WMS Core Application Documentation](../wms/README.md)
 - [WMS Codebase RAG Index](../wms-codebase-rag/README.md)
 - [Historical Archive](../archive/README.md)
 - [WMS MCP Server Guide](../../wms-code-rag/README.md)

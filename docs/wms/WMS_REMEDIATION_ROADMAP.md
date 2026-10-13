@@ -1,7 +1,7 @@
 # WMS Remediation Roadmap (ISD Subsystem)
 
-**Authoritative Baseline:** [`docs/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](WMS_ADVERSARIAL_VERIFICATION_REPORT.md)  
-**Verification Catalog:** [`docs/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md`](WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md)  
+**Authoritative Baseline:** [`docs/wms/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](WMS_ADVERSARIAL_VERIFICATION_REPORT.md)  
+**Verification Catalog:** [`docs/wms/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md`](WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md)  
 **Status:** In Active Execution  
 **Execution Strategy:** Strict phased remediation across prioritized batches (Zero breaking regressions, test-driven falsification, immutable V1–V36 historical migrations).
 

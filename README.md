@@ -26,8 +26,9 @@ A comprehensive enterprise Warehouse Management System (WMS) featuring an integr
 │
 ├── docs/                               # Central Platform Documentation Hub
 │   ├── README.md                       # Master documentation index and domain comparison matrix
-│   ├── wms-codebase-rag/               # Domain 1: WMS Codebase Intelligence reports & roadmaps
-│   ├── ospysin-docs-rag/               # Domain 2: Ospysin Documentation Intelligence reports & roadmaps
+│   ├── wms/                            # WMS Core Application Architecture & Remediation Roadmaps
+│   ├── wms-codebase-rag/               # WMS Codebase RAG Subsystem (AST chunking & retrieval benchmarks)
+│   ├── ospysin-docs-rag/               # Ospysin Documentation RAG Subsystem (spec retrieval & evaluation)
 │   └── archive/                        # Historical technical audits and superseded benchmarks
 │
 └── .gitignore                          # Build artifacts and temporary file exclusions
@@ -118,16 +119,20 @@ Register the MCP server in `~/.gemini/config/mcp_config.json`:
 The documentation is organized by domain in the [`docs/`](docs/README.md) directory:
 
 * [`docs/README.md`](docs/README.md) — **Master Documentation Hub:** Navigation and domain comparison matrix.
-* **Domain 1 — WMS Codebase RAG:**
+* **WMS Core Application Architecture & Remediation:**
+  * [`docs/wms/README.md`](docs/wms/README.md) — WMS core application documentation hub.
+  * [`docs/wms/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](docs/wms/WMS_ADVERSARIAL_VERIFICATION_REPORT.md) — Adversarial findings verification pass over DEF-01..DEF-26.
+  * [`docs/wms/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md`](docs/wms/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md) — Inventory catalog of all verified WMS application defects.
+  * [`docs/wms/WMS_REMEDIATION_ROADMAP.md`](docs/wms/WMS_REMEDIATION_ROADMAP.md) — Phased implementation roadmap across 5 remediation waves.
+  * [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — Domain specification, entity lifecycle, and REST API documentation for WMS.
+* **WMS Codebase RAG Subsystem:**
+  * [`docs/wms-codebase-rag/README.md`](docs/wms-codebase-rag/README.md) — WMS Codebase RAG documentation hub.
   * [`docs/wms-codebase-rag/WMS_CODE_RAG_POST_FIX_EVALUATION.md`](docs/wms-codebase-rag/WMS_CODE_RAG_POST_FIX_EVALUATION.md) — Post-fix retrieval evaluation report (1,261 chunks, Hit@1 83.3%, Hit@5 100%, MRR 0.894).
   * [`docs/wms-codebase-rag/WMS_CODE_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md`](docs/wms-codebase-rag/WMS_CODE_RAG_FIXES_AND_ARCHITECTURE_GUIDE.md) — Architecture registry, AST parsing, and security boundary.
-  * [`docs/wms-codebase-rag/WMS_ADVERSARIAL_VERIFICATION_REPORT.md`](docs/wms-codebase-rag/WMS_ADVERSARIAL_VERIFICATION_REPORT.md) — Adversarial findings verification pass over DEF-01..DEF-26.
-  * [`docs/wms-codebase-rag/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md`](docs/wms-codebase-rag/WMS_ALL_DEFECTS_VERIFICATION_CATALOG.md) — Inventory catalog of all verified WMS codebase and RAG defects.
-  * [`docs/wms-codebase-rag/WMS_REMEDIATION_ROADMAP.md`](docs/wms-codebase-rag/WMS_REMEDIATION_ROADMAP.md) — Implementation roadmap across 4 remediation waves.
-* **Domain 2 — Ospysin Documentation RAG:**
+  * [`wms-code-rag/README.md`](wms-code-rag/README.md) — Standalone guide for the RAG MCP service.
+* **Ospysin Documentation RAG Subsystem:**
+  * [`docs/ospysin-docs-rag/README.md`](docs/ospysin-docs-rag/README.md) — Ospysin Documentation RAG hub.
   * [`docs/ospysin-docs-rag/OSPYSIN_DOCUMENTATION_RAG_POST_FIX_EVALUATION.md`](docs/ospysin-docs-rag/OSPYSIN_DOCUMENTATION_RAG_POST_FIX_EVALUATION.md) — Post-fix evaluation report (246 chunks, Hit@1 96.4%, Hit@4 96.4%, MRR 0.964).
   * [`docs/ospysin-docs-rag/OSPYSIN_DOCUMENTATION_RAG_REMEDIATION_ROADMAP.md`](docs/ospysin-docs-rag/OSPYSIN_DOCUMENTATION_RAG_REMEDIATION_ROADMAP.md) — Investigation and 4-phase remediation roadmap (DEF-01..DEF-09).
 * **Reference & Historical Archives:**
   * [`docs/archive/README.md`](docs/archive/README.md) — Archive of historical technical audits, pre-audit guides, and initial benchmarks.
-  * [`inbound-storage-dispatch/README.md`](inbound-storage-dispatch/README.md) — Domain specification, entity lifecycle, and REST API documentation for WMS.
-  * [`wms-code-rag/README.md`](wms-code-rag/README.md) — Standalone guide for the RAG MCP service.
