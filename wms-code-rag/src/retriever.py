@@ -13,9 +13,14 @@ from src.vector_store import CodeVectorStore
 class CodeRetriever:
     """Orchestrates query embedding, vector retrieval, and cross-encoder reranking."""
 
-    def __init__(self, config: AppConfig, store: Optional[CodeVectorStore] = None):
+    def __init__(
+        self,
+        config: AppConfig,
+        store: Optional[CodeVectorStore] = None,
+        embedder: Optional[Any] = None,
+    ):
         self.config = config
-        self.embedder = SentenceTransformerEmbedder.get_instance(
+        self.embedder = embedder or SentenceTransformerEmbedder.get_instance(
             model_name=config.embeddings.default_model,
             device=config.embeddings.device,
         )

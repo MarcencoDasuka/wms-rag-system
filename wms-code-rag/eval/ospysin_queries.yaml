@@ -46,6 +46,10 @@ queries:
   - {id: N01, type: negative, query: "Kubernetes helm chart horizontal autoscaling", expected: []}
   - {id: N02, type: negative, query: "GraphQL subscriptions schema stitching", expected: []}
   - {id: N03, type: negative, query: "mobile push notifications for findings", expected: []}
+  - {id: N04, type: negative, query: "Flyway database migration V1__create_orders_table.sql", expected: []}
+  - {id: N05, type: negative, query: "Vue 3 Pinia dispatch modal component and reactive props", expected: []}
+  - {id: N06, type: negative, query: "Spring Boot @PreAuthorize hasRole ADMIN in OrderController", expected: []}
+  - {id: N07, type: negative, query: "Apache Kafka event consumer partitions and dead letter queue", expected: []}
 
 # Deterministic get_ospysin_doc checks: (name_or_id, section) -> expected response prefix
 lookups:
@@ -56,3 +60,5 @@ lookups:
   - {name: "99", section: null, prefix: "NOT_FOUND"}
   - {name: "05", section: "port_scanner", prefix: "SECTION_NOT_FOUND"}
   - {name: "../../etc/passwd", section: null, prefix: "NOT_FOUND"}
+  - {name: "model", section: null, prefix: "AMBIGUOUS"}
+  - {name: "0001", section: null, prefix: "FOUND document: adr/0001-modular-monolith.md"}

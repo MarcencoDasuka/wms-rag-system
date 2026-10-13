@@ -19,12 +19,18 @@ flowchart TD
     subgraph DockerContainer["Docker Container: wms-code-rag-server"]
         MCPServer --> Retriever["CodeRetriever (src/retriever.py)"]
         Retriever --> Embedder["Embedder: all-MiniLM-L6-v2 (src/embedder.py)"]
-        Retriever --> VectorDB[("ChromaDB HNSW Index (data/chroma)")]
+        Retriever --> VectorDB[("ChromaDB: wms_codebase_knowledge (data/chroma)")]
         Retriever --> Reranker["Cross-Encoder: ms-marco-MiniLM (src/reranker.py)"]
         
         Indexer["CodebaseIndexer (src/indexer.py)"] --> Chunker["CodeAwareChunker (src/chunker.py)"]
         Chunker --> Embedder
         Embedder --> VectorDB
+
+        DocService["OspysinDocsService (src/doc_service.py)"] --> DocIndexer["OspysinDocsIndexer (src/doc_indexer.py)"]
+        DocIndexer --> DocChunker["MarkdownSpecChunker (src/doc_chunker.py)"]
+        DocChunker --> Embedder
+        DocIndexer --> DocStore[("ChromaDB: ospysin_docs_knowledge (data/chroma)")]
+        DocService --> Retriever
     end
 
     subgraph Codebase["Target WMS Repository (/workspace/wms)"]
@@ -38,6 +44,14 @@ flowchart TD
         Vue -.-> Indexer
         Config -.-> Indexer
     end
+
+    subgraph OspysinDocs["Ospysin Architecture Docs (/workspace/ospysin-docs)"]
+        Specs["Architecture Specs: 00-VISION to 15-GLOSSARY"]
+        ADRs["Architecture Decision Records: adr/*.md"]
+
+        Specs -.-> DocIndexer
+        ADRs -.-> DocIndexer
+    end
 ```
 
 ---
@@ -46,22 +60,29 @@ flowchart TD
 
 ```text
 wms-code-rag/
-├── Dockerfile                   # Container build based on python:3.11-slim (non-root appuser)
-├── docker-compose.yml           # Service orchestration with read-only WMS codebase volume mount
-├── requirements.txt             # Dependencies: mcp, chromadb, sentence-transformers, torch, pydantic
-├── config.yaml                  # Configuration for paths, embedding models, reranker, and network ports
+├── Dockerfile                   # Container build with multi-stage test target (python:3.11-slim)
+├── docker-compose.yml           # Production orchestration with read-only volume mounts
+├── docker-compose.test.yml      # CI/Dev test container for isolated test runs
+├── requirements.txt             # Core dependencies: mcp, chromadb, sentence-transformers, torch, pydantic
+├── config.yaml                  # Unified configuration for WMS and Ospysin indexes, reranking, and server
 ├── run_docker.bat               # One-click Docker container launcher
 ├── run_local_sse.bat            # Local execution launcher over HTTP/SSE
 ├── run_local_stdio.bat          # Local execution launcher over stdio
+├── eval/                        # Retrieval quality evaluation suite
+│   ├── ospysin_queries.yaml     # Benchmark queries (exact, concept, table, near-miss, negative)
+│   └── run_eval.py              # Automated retrieval evaluation harness
 └── src/
     ├── __init__.py
-    ├── config.py                # Pydantic validation models for settings + env overrides
+    ├── config.py                # Pydantic models for configuration with env overrides
     ├── chunker.py               # Syntax-aware code chunker (Java, SQL, Vue, Markdown)
-    ├── embedder.py              # Text vectorization (SentenceTransformers + thread-safe LRU cache)
-    ├── vector_store.py          # Persistent ChromaDB integration (HNSW index, cosine distance)
-    ├── reranker.py              # Cross-Encoder for candidate reranking (high-precision ranking)
-    ├── indexer.py               # Codebase scanner (file parsing, chunk generation, and persistence)
-    ├── retriever.py             # Orchestrator: Query -> Vector Search -> Filters -> Reranking
+    ├── doc_chunker.py           # Markdown spec chunker preserving headings, tables, fences
+    ├── embedder.py              # Text vectorization (SentenceTransformers + LRU cache)
+    ├── vector_store.py          # Persistent ChromaDB integration with mutation protection guards
+    ├── reranker.py              # Cross-Encoder candidate reranker with calibrated threshold
+    ├── indexer.py               # WMS codebase scanner and indexer
+    ├── doc_indexer.py           # Ospysin docs scanner with git provenance and OSError fault-tolerance
+    ├── doc_service.py           # FastMCP service layer for Ospysin documentation search & lookup
+    ├── retriever.py             # Unified retrieval orchestrator: Query -> Search -> Threshold -> Rerank
     └── mcp_server.py            # FastMCP server with tool registrations for AI agents
 ```
 
@@ -71,10 +92,11 @@ wms-code-rag/
 
 AI agents invoke these tools in the background during coding and inspection tasks:
 
+### WMS Codebase Intelligence
 1. `search_wms_code(query: str, top_n: int = 4)`  
-   Semantic search across Java services, controllers, Vue components, and configurations. Returns exact file path, line numbers, and relevant code chunk.
+   Semantic search across Java services, controllers, Vue components, and configurations. Returns exact file path, line numbers, and relevant code chunk wrapped in `<untrusted_wms_codebase_context>`.
 2. `find_symbol_declaration(symbol_name: str)`  
-   Deterministic verification of exact symbol declarations in indexed code (interfaces, classes, methods, records, inner types). Avoids fuzzy false positives and protects against existence hallucinations.
+   Deterministic verification of exact symbol declarations in indexed code (interfaces, classes, methods, records, inner types).
 3. `get_entity_and_schema(table_or_entity: str)`  
    Retrieves DDL table schemas, Flyway migrations, and relational mappings for a specific database entity.
 4. `search_wms_security(topic: str)`  
@@ -84,18 +106,40 @@ AI agents invoke these tools in the background during coding and inspection task
 6. `reindex_wms_codebase()`  
    Forces full reindexing of the WMS repository after major codebase modifications.
 
+### Ospysin Architecture & Specification Intelligence
+7. `search_ospysin_docs(query: str, top_n: int = 4)`  
+   Semantic search across Ospysin architectural specifications, threat models, API contracts, and ADRs. Wrapped in `<untrusted_ospysin_docs_context>` with calibrated negative-query cutoff (`min_score: -2.5`).
+8. `get_ospysin_doc(name_or_id: str, section: Optional[str] = None)`  
+   Deterministic lookup of a specific numbered specification (e.g. `"5"`, `"05"`, `"tool-catalog"`) or ADR (e.g. `"adr-1"`, `"0003"`). Supports sub-section extraction with budget truncation.
+9. `reindex_ospysin_docs(confirm: bool = False)`  
+   Re-indexes the Ospysin documentation into its isolated collection without modifying or resetting the WMS code index.
+
 ---
 
-## 4. How to Run
+## 4. How to Run & Test
 
 ### Option 1: In Docker (Recommended)
 Double-click `run_docker.bat` or execute:
 ```powershell
 docker compose up -d --build
 ```
-The server starts inside an isolated container on port `8000`. On first launch, it automatically indexes the target WMS repository.
 
-### Option 2: Locally via Python
+### Option 2: Run Full Automated Test Suite (in Docker)
+```powershell
+docker compose -f docker-compose.test.yml run --rm wms-code-rag-test
+```
+
+### Option 3: Run Tests Locally via Pytest
+```powershell
+python -m pytest tests/ -v
+```
+
+### Option 4: Run Retrieval Quality Benchmark
+```powershell
+python -m eval.run_eval --mode both
+```
+
+### Option 5: Locally via Python
 ```powershell
 pip install -r requirements.txt
 python src/mcp_server.py --transport sse --host 127.0.0.1 --port 8000 --auto-index
