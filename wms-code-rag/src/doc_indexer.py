@@ -115,6 +115,7 @@ class OspysinDocsIndexer:
 
     def _collect_files(self, docs_dir: Path) -> List[Path]:
         extensions = {e.lower() for e in self.config.ospysin.extensions}
+        ignore_dirs = {d.lower() for d in getattr(self.config.ospysin, "ignore_dirs", ["snapshots", ".git", ".system_generated"])}
         resolved_root = docs_dir.resolve()
         files: List[Path] = []
         for candidate in sorted(docs_dir.rglob("*")):
@@ -127,7 +128,10 @@ class OspysinDocsIndexer:
                     continue
             except (OSError, ValueError, RuntimeError):
                 continue
-            if any(part.startswith(".") for part in candidate.relative_to(docs_dir).parts):
+            rel_parts = candidate.relative_to(docs_dir).parts
+            if any(part.startswith(".") for part in rel_parts):
+                continue
+            if any(part.lower() in ignore_dirs for part in rel_parts):
                 continue
             files.append(candidate)
         return files

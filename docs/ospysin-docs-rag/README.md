@@ -15,9 +15,15 @@ This directory contains the complete technical documentation, defect investigati
 
 ## 2. Core Capabilities & Architectural Scope
 
-The Ospysin Documentation RAG system indexes the full architectural specification and ADR corpus of the Ospysin security platform:
-- **Specifications Corpus:** 21 markdown files (`00-VISION.md` to `15-GLOSSARY.md`, plus 5 ADRs in `adr/`).
-- **Collection Isolation:** Stored in an isolated ChromaDB collection `ospysin_docs_knowledge` (`data/chroma`).
+The Ospysin Documentation RAG system indexes the full architectural specification, ADRs, audit reports, and remediation plans of the Ospysin security platform:
+- **Specifications & Audit Corpus:** 49 markdown files:
+  - 16 core architectural specifications (`00-VISION.md` to `15-GLOSSARY.md`).
+  - 5 Architecture Decision Records (`adr/0001` through `0005`).
+  - 14 phase audit reports (`audits/phase-03-audit.md` to `phase-16-audit.md`).
+  - 14 phase remediation plans (`remediation/phase-03-remediation.md` to `phase-16-remediation.md`).
+- **Snapshot Exclusion Invariant:** Raw code snapshots (`audits/snapshots/*.md`, containing full file dumps and test logs) are explicitly filtered via `ignore_dirs: ["snapshots"]`, preventing 3,687 chunks of multi-version code dumps from diluting vector retrieval.
+- **Canonical Repository Binding:** Configured to index the primary active repository directly from `Desktop/Ospysin/docs` (`../../Ospysin/docs`).
+- **Collection Isolation:** Stored in an isolated ChromaDB collection `ospysin_docs_knowledge` (`data/chroma`, 460 chunks total).
 - **Context Branding:** Retrieved snippets are structurally isolated under `<untrusted_ospysin_docs_context>`.
 - **Calibrated Gating:** Negative query cutoff configured at `min_score: -2.5` (`config.ospysin.min_score`).
 - **Tools Provided:**

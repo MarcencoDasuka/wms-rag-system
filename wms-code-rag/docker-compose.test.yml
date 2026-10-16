@@ -16,4 +16,4 @@ services:
       - ./tests:/app/tests:ro
       - ./config.yaml:/app/config.yaml:ro
       - ../inbound-storage-dispatch:/workspace/wms:ro
-      - ../Ospysin/docs:/workspace/ospysin-docs:ro
+      - ../../Ospysin/docs:/workspace/ospysin-docs:ro

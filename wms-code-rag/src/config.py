@@ -50,9 +50,10 @@ class OspysinDocsConfig(BaseModel):
     """Isolated documentation index for the Ospysin project (separate Chroma collection)."""
 
     enabled: bool = False
-    docs_dir: str = "../Ospysin/docs"
+    docs_dir: str = "../../Ospysin/docs"
     collection_name: str = "ospysin_docs_knowledge"
     extensions: List[str] = [".md"]
+    ignore_dirs: List[str] = ["snapshots", ".git", ".system_generated"]
     # Character budget per chunk body (breadcrumb prefix is added on top).
     chunk_max_chars: int = 1200
     chunk_overlap_chars: int = 150

@@ -17,7 +17,9 @@ from src.doc_service import OspysinDocsService, normalize_doc_key
 from src.retriever import CodeRetriever
 from src.vector_store import CodeVectorStore
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "Ospysin" / "docs"
+_desktop_docs = Path(__file__).resolve().parents[3] / "Ospysin" / "docs"
+_local_docs = Path(__file__).resolve().parents[2] / "Ospysin" / "docs"
+REAL_DOCS = _desktop_docs if _desktop_docs.is_dir() else _local_docs
 
 
 class FakeEmbedder:
@@ -158,11 +160,14 @@ def test_private_key_block_is_redacted():
     assert any("[REDACTED_PRIVATE_KEY]" in c.content for c in chunks)
 
 
-@pytest.mark.skipif(not REAL_DOCS.is_dir(), reason="Ospysin clone not present at ../Ospysin")
+@pytest.mark.skipif(not REAL_DOCS.is_dir(), reason="Ospysin clone not present at ../../Ospysin")
 def test_real_ospysin_docs_chunk_cleanly():
     chunker = MarkdownSpecChunker()
     ids, total = set(), 0
+    ignore_dirs = {"snapshots", ".git", ".system_generated"}
     for f in sorted(REAL_DOCS.rglob("*.md")):
+        if any(part.lower() in ignore_dirs for part in f.relative_to(REAL_DOCS).parts):
+            continue
         rel = f.relative_to(REAL_DOCS).as_posix()
         for c in chunker.chunk_file(f, rel):
             assert c.id not in ids
@@ -172,6 +177,17 @@ def test_real_ospysin_docs_chunk_cleanly():
     assert total > 100
     tools = chunker.chunk_file(REAL_DOCS / "05-TOOL-CATALOG.md", "05-TOOL-CATALOG.md")
     assert any("dns_lookup" in c.metadata["heading_path"] for c in tools)
+
+
+def test_indexer_ignores_snapshots_directory(env):
+    config, docs, indexer, _ = env
+    (docs / "snapshots").mkdir(parents=True, exist_ok=True)
+    (docs / "snapshots" / "fake-snapshot.md").write_text("# Huge Snapshot\n```code\n123\n```\n", encoding="utf-8")
+    (docs / "01-VALID.md").write_text("# Valid\n\nContent here.\n", encoding="utf-8")
+    files = indexer._collect_files(docs)
+    rel_paths = [f.relative_to(docs).as_posix() for f in files]
+    assert "01-VALID.md" in rel_paths
+    assert "snapshots/fake-snapshot.md" not in rel_paths
 
 
 # ----------------------------------------------------------------------------- indexer

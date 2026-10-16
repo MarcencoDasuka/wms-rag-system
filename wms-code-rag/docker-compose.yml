@@ -23,8 +23,8 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       # Mount WMS codebase as read-only for security and live indexing
       - ../inbound-storage-dispatch:/workspace/wms:ro
-      # Mount Ospysin docs as read-only (clone ../Ospysin next to this project)
-      - ../Ospysin/docs:/workspace/ospysin-docs:ro
+      # Mount Ospysin docs as read-only from Desktop repository
+      - ../../Ospysin/docs:/workspace/ospysin-docs:ro
       # Persistent vector database storage on host
       - ./data/chroma:/app/data/chroma
     healthcheck:

@@ -44,8 +44,12 @@ server:
 
 ospysin:
   enabled: true
-  docs_dir: "../Ospysin/docs"
+  docs_dir: "../../Ospysin/docs"
   collection_name: "ospysin_docs_knowledge"
+  ignore_dirs:
+    - "snapshots"
+    - ".git"
+    - ".system_generated"
   chunk_max_chars: 1200
   chunk_overlap_chars: 150
   min_score: -2.5
