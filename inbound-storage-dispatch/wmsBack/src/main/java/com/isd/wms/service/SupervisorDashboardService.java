@@ -104,13 +104,12 @@ public class SupervisorDashboardService {
             List<Order> orders = orderRepository.findAllByCreatedByUsername(username);
             List<Task> tasks = taskRepository.findAll();
             List<Stock> stocks = stockRepository.findAllByAvailableIsTrue();
-            List<InventoryHistory> history = inventoryHistoryRepository.findAll();
             List<User> operators = userRepository.findAllByIsActiveTrue().stream()
                     .filter(user -> user.getUserRole() == Role.ROLE_OPERATOR)
                     .toList();
 
             List<Stock> lowStockStocks = findLowStockStocks(stocks);
-            List<InventoryHistory> todayHistory = history.stream()
+            List<InventoryHistory> todayHistory = inventoryHistoryRepository.findByTimestampGreaterThanEqual(startOfToday).stream()
                     .filter(item -> isWithin(item.getTimestamp(), startOfToday, startOfTomorrow))
                     .toList();
 
@@ -159,6 +158,12 @@ public class SupervisorDashboardService {
                 .count();
         long inProgressOrders = orders.stream().filter(order ->
             order.getStatus() == OrderStatus.IN_PROGRESS).count();
+        long shortageOrders = orders.stream()
+                .filter(order -> order.getStatus() == OrderStatus.SHORTAGE
+                        || (order.getOrderLines() != null && order.getOrderLines().stream()
+                                .anyMatch(line -> line.getStatus() == com.isd.wms.enums.Status.SHORTAGE
+                                        || (line.getShortageQuantity() != null && line.getShortageQuantity() > 0))))
+                .count();
         long canceledOrdersToday = orders.stream()
                 .filter(order -> order.getStatus() == OrderStatus.CANCELED)
                 .filter(order -> isWithin(order.getUpdatedAt(), startOfToday, startOfTomorrow))
@@ -183,7 +188,7 @@ public class SupervisorDashboardService {
                 ordersToday,
                 completedOrdersToday,
                 inProgressOrders,
-                0,
+                shortageOrders,
                 canceledOrdersToday,
                 activeOperators,
                 operators.size(),

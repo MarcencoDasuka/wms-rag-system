@@ -27,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,7 +61,7 @@ class SupervisorDashboardServiceTest {
                 .thenReturn(List.of(completedOrder, partiallyCompletedOrder));
         when(taskRepository.findAll()).thenReturn(List.of(task));
         when(stockRepository.findAllByAvailableIsTrue()).thenReturn(List.of());
-        when(inventoryHistoryRepository.findAll()).thenReturn(List.of());
+        when(inventoryHistoryRepository.findByTimestampGreaterThanEqual(any())).thenReturn(List.of());
         when(userRepository.findAllByIsActiveTrue()).thenReturn(List.of(operator));
         when(orderRepository.isOrderAssignedToOperator(completedOrder, operator.getId())).thenReturn(true);
         when(orderRepository.isOrderAssignedToOperator(partiallyCompletedOrder, operator.getId())).thenReturn(true);
@@ -74,6 +75,28 @@ class SupervisorDashboardServiceTest {
         assertThat(dashboard.operatorPerformance())
                 .extracting(OperatorPerformanceResponse::operatorName, OperatorPerformanceResponse::completedOrdersToday)
                 .contains(tuple(operator.getUsername(), 2L));
+    }
+
+    @Test
+    void getDashboard_computesRealShortageOrdersCount() {
+        User supervisor = user("supervisor", 100L, Role.ROLE_SUPERVISOR);
+        LocalDateTime now = LocalDateTime.now();
+
+        Order shortageOrder = order(1L, "ORD-SHORT-1", OrderStatus.SHORTAGE, now.minusHours(1), now);
+        Order regularOrder = order(2L, "ORD-NORM-1", OrderStatus.IN_PROGRESS, now.minusHours(2), now);
+
+        when(securityFacade.getCurrentUsername()).thenReturn(supervisor.getUsername());
+        when(orderRepository.findAllByCreatedByUsername(supervisor.getUsername()))
+                .thenReturn(List.of(shortageOrder, regularOrder));
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(stockRepository.findAllByAvailableIsTrue()).thenReturn(List.of());
+        when(inventoryHistoryRepository.findByTimestampGreaterThanEqual(any())).thenReturn(List.of());
+        when(userRepository.findAllByIsActiveTrue()).thenReturn(List.of());
+
+        SupervisorDashboardResponse dashboard = supervisorDashboardService.getDashboard();
+
+        assertThat(dashboard.summary().shortageOrders()).isEqualTo(1L);
+        assertThat(dashboard.summary().inProgressOrders()).isEqualTo(1L);
     }
 
     private User user(String username, Long id, Role role) {

@@ -156,6 +156,33 @@ class AuthControllerTest {
     }
 
     @Test
+    void whenVerifyEmailWithWeakPassword_thenReturn400BadRequest() throws Exception {
+        String payload = "{\"token\":\"raw-secret-token\",\"password\":\"weak\"}";
+
+        mockMvc.perform(post("/api/auth/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload)
+                        .with(csrf()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("Password must be at least 8 characters long")));
+    }
+
+    @Test
+    void whenVerifyEmailWithStrongPassword_thenReturn200() throws Exception {
+        String payload = "{\"token\":\"raw-secret-token\",\"password\":\"Valid123!@#\"}";
+        when(userService.verifyEmail("raw-secret-token", "Valid123!@#")).thenReturn(true);
+
+        mockMvc.perform(post("/api/auth/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload)
+                        .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Account activated successfully! You can now log in."));
+
+        org.mockito.Mockito.verify(userService).verifyEmail("raw-secret-token", "Valid123!@#");
+    }
+
+    @Test
     void constructor_inProductionProfileWithCookieSecureFalse_throwsIllegalStateException() {
         MockEnvironment env = new MockEnvironment();
         env.setActiveProfiles("prod");

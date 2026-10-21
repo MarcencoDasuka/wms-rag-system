@@ -8,6 +8,7 @@ import com.isd.wms.entity.User;
 import com.isd.wms.mapper.UserMapper;
 import com.isd.wms.repository.UserRepository;
 import com.isd.wms.service.validation.SecurityFacade;
+import com.isd.wms.validation.StrongPasswordValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -252,11 +253,18 @@ public class UserService {
     public boolean verifyEmail(String rawToken, String newPassword) {
         String cleanToken = rawToken != null ? rawToken.trim() : "";
 
-        log.info("Attempting to verify email with token: [{}]", cleanToken);
+        if (!StrongPasswordValidator.isStrongPassword(newPassword)) {
+            throw new IllegalArgumentException(
+                "Password must be at least 8 characters long and contain at least one uppercase letter, " +
+                "one lowercase letter, one digit, and one special character (@$!%*?&._#-)."
+            );
+        }
+
+        log.info("Attempting to verify email with token [REDACTED]");
 
         User user = userRepository.findByVerificationToken(cleanToken)
             .orElseThrow(() -> {
-                log.error("Token not found in database: [{}]", cleanToken);
+                log.error("Verification token not found in database (token redacted)");
                 return new RuntimeException("Invalid verification token.");
             });
 

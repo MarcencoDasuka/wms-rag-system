@@ -27,6 +27,20 @@ public interface InventoryHistoryRepository extends JpaRepository<InventoryHisto
     Page<InventoryHistory> findAll(Pageable pageable);
 
     /**
+     * Finds inventory history records created at or after the given start timestamp.
+     * Bounded query to avoid loading unbounded historical tables into memory.
+     *
+     * @param startOfDay the start timestamp
+     * @return list of matching history records
+     */
+    @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
+    List<InventoryHistory> findByTimestampGreaterThanEqual(java.time.LocalDateTime startOfDay);
+
+    @EntityGraph(attributePaths = {"product", "sourceLocation", "destinationLocation", "user"})
+    @org.springframework.data.jpa.repository.Query("SELECT h FROM InventoryHistory h WHERE h.timestamp >= :startOfDay")
+    List<InventoryHistory> findByChangedAtGreaterThanEqual(@org.springframework.data.repository.query.Param("startOfDay") java.time.LocalDateTime startOfDay);
+
+    /**
      * Finds inventory history records that involve a given product and location
      * as either the source or destination.
      *

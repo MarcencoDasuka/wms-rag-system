@@ -4,6 +4,7 @@ import com.isd.wms.entity.User;
 import com.isd.wms.service.AuthService;
 import com.isd.wms.service.UserService;
 import com.isd.wms.service.validation.SecurityFacade;
+import com.isd.wms.validation.StrongPasswordValidator;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -161,16 +162,25 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Password is required"));
         }
 
+        if (!StrongPasswordValidator.isStrongPassword(password)) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                "Password must be at least 8 characters long and contain at least one uppercase letter, " +
+                "one lowercase letter, one digit, and one special character (@$!%*?&._#-)."));
+        }
+
         try {
             boolean isVerified = userService.verifyEmail(token, password);
             if (isVerified) {
-                log.info("Email verified successfully for token: {}", token);
+                log.info("Email verified successfully");
                 return ResponseEntity.ok(Map.of("message", "Account activated successfully! You can now log in."));
             } else {
                 return ResponseEntity.badRequest().body(Map.of(
                     "error", "The verification link has expired. The unverified account has been removed."
                 ));
             }
+        } catch (IllegalArgumentException e) {
+            log.warn("Password validation failed during verification: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (RuntimeException e) {
             log.warn("Email verification failed: {}", e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
