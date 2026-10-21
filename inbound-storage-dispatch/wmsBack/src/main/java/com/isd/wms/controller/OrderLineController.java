@@ -59,7 +59,7 @@ public class OrderLineController {
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPERVISOR', 'DEV')")
-    public ResponseEntity<OrderLineResponse> updateOrderLine(@PathVariable Long id, @Valid @NonNull OrderLineUpdateRequest request) {
+    public ResponseEntity<OrderLineResponse> updateOrderLine(@PathVariable Long id, @Valid @NonNull @RequestBody OrderLineUpdateRequest request) {
         return ResponseEntity.ok(orderLineService.updateOrderLine(id, request));
     }
 

@@ -1,7 +1,9 @@
 package com.isd.wms.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.isd.wms.dto.order_line.OrderLineCreateRequest;
 import com.isd.wms.dto.order_line.OrderLineResponse;
+import com.isd.wms.dto.order_line.OrderLineUpdateRequest;
 import com.isd.wms.enums.Status;
 import com.isd.wms.exception.GlobalExceptionHandler;
 import com.isd.wms.exception.OrderLineNotFoundException;
@@ -83,6 +85,33 @@ class OrderLineControllerTest {
 
         mockMvc.perform(delete(BASE_URL + "/1").with(csrf()))
             .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPERVISOR")
+    void updateOrderLine_withRequestBody_returns200() throws Exception {
+        OrderLineUpdateRequest updateRequest = new OrderLineUpdateRequest(1L, null, 10L, 5, Status.CREATED);
+        OrderLineResponse response = new OrderLineResponse(1L, 1L, null, 10L, "Product", 5, 0, Status.CREATED, null, null);
+        when(orderLineService.updateOrderLine(eq(1L), any(OrderLineUpdateRequest.class))).thenReturn(response);
+
+        String json = """
+            {
+                "orderId": 1,
+                "productId": 10,
+                "requestedQuantity": 5,
+                "status": "CREATED"
+            }
+            """;
+
+        mockMvc.perform(put(BASE_URL + "/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json)
+                .with(csrf()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.orderLineId").value(1L))
+            .andExpect(jsonPath("$.requestedQuantity").value(5));
+
+        verify(orderLineService).updateOrderLine(eq(1L), any(OrderLineUpdateRequest.class));
     }
 
     @Configuration

@@ -76,8 +76,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, "Data integrity violation: the operation conflicts with current database constraints.", Map.of());
     }
 
-    @ExceptionHandler(InvalidRequestException.class)
-    public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidRequestException exception) {
+    @ExceptionHandler({
+        InvalidRequestException.class,
+        IllegalArgumentException.class,
+        IllegalStateException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleInvalidRequest(RuntimeException exception) {
         return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
     }
 
