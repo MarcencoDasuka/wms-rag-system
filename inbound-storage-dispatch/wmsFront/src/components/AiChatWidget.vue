@@ -17,6 +17,57 @@
           >
             <div v-if="msg.role === 'ai'" class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
             <div v-else>{{ msg.content }}</div>
+
+            <!-- Confirmation Card for operations requiring confirmation -->
+            <div
+              v-if="msg.role === 'ai' && getMessageOpId(msg)"
+              class="mt-3 p-3 rounded-lg border border-amber-500/40 bg-gray-900/90 flex flex-col gap-2 confirmation-card"
+            >
+              <div class="flex items-center justify-between gap-2 text-xs">
+                <span class="font-medium text-amber-400 flex items-center gap-1.5">
+                  <i class="pi pi-exclamation-triangle"></i>
+                  Action Confirmation
+                </span>
+                <span class="font-mono text-gray-300 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 op-id-badge">
+                  {{ getMessageOpId(msg) }}
+                </span>
+              </div>
+
+              <!-- Pending controls: confirm / reject -->
+              <div v-if="!isResolved(getMessageOpId(msg))" class="flex items-center gap-2 mt-1 confirmation-controls">
+                <Button
+                  label="Confirm"
+                  icon="pi pi-check"
+                  size="small"
+                  severity="success"
+                  class="confirm-btn text-xs py-1 px-3"
+                  :loading="processingOpId === getMessageOpId(msg)"
+                  :disabled="processingOpId !== null"
+                  @click="handleConfirm(getMessageOpId(msg))"
+                />
+                <Button
+                  label="Reject"
+                  icon="pi pi-times"
+                  size="small"
+                  severity="danger"
+                  outlined
+                  class="reject-btn text-xs py-1 px-3"
+                  :loading="processingOpId === getMessageOpId(msg)"
+                  :disabled="processingOpId !== null"
+                  @click="handleReject(getMessageOpId(msg))"
+                />
+              </div>
+
+              <!-- Resolved status -->
+              <div
+                v-else
+                class="text-xs mt-1 flex items-center gap-1.5 font-medium resolved-status"
+                :class="resolvedOperations[getMessageOpId(msg)] === 'CONFIRMED' ? 'text-green-400' : 'text-gray-400'"
+              >
+                <i :class="resolvedOperations[getMessageOpId(msg)] === 'CONFIRMED' ? 'pi pi-check-circle' : 'pi pi-ban'"></i>
+                <span>{{ resolvedOperations[getMessageOpId(msg)] === 'CONFIRMED' ? 'Confirmed' : 'Rejected' }}</span>
+              </div>
+            </div>
           </div>
           <div v-if="loading" class="text-gray-400 self-start p-3 text-sm italic flex items-center gap-2">
             <i class="pi pi-spin pi-spinner"></i> Analyzing warehouse data...
@@ -37,9 +88,9 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { chatApi } from '@/api/chatApi';
+import { aiChatApi, extractOperationId, isSafeInternalRoute, normalizePendingConfirmation } from '@/api/aiChatApi';
 import { useToast } from 'primevue/usetoast';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -57,11 +108,23 @@ const inputMsg = ref('');
 const loading = ref(false);
 const chatBox = ref(null);
 
+const pendingConfirmations = ref([]);
+const processingOpId = ref(null);
+const resolvedOperations = ref({});
+
 marked.setOptions({ breaks: true, gfm: true });
+
+const renderer = {
+  link({ href, title, text }) {
+    const titleAttr = title ? ` title="${title}"` : '';
+    return `<a href="${href}" class="chat-link"${titleAttr}>${text}</a>`;
+  }
+};
+marked.use({ renderer });
 
 const renderMarkdown = (text) => {
   if (!text) return '';
-  return DOMPurify.sanitize(marked.parse(text), { ADD_ATTR: ['target'] });
+  return DOMPurify.sanitize(marked.parse(text), { ADD_ATTR: ['target', 'class'] });
 };
 
 const scrollToBottom = async () => {
@@ -71,23 +134,69 @@ const scrollToBottom = async () => {
   }
 };
 
-const handleChatInteraction = async (event) => {
-  const linkTarget = event.target.closest('a');
-  if (linkTarget) {
-    let href = linkTarget.getAttribute('href');
-    if (href) {
-      event.preventDefault();
-      event.stopPropagation();
+const getMessageOpId = (msg) => {
+  if (!msg) return null;
+  if (msg.isFollowUp || msg.suppressConfirmation) return null;
+  if (msg.operationId) return msg.operationId;
+  return extractOperationId(msg.content);
+};
 
-      if (href.startsWith('https://supervisor')) {
-        href = href.replace('https://supervisor', '/supervisor');
-      } else if (href.startsWith('http://supervisor')) {
-        href = href.replace('http://supervisor', '/supervisor');
+const isResolved = (opId) => {
+  if (!opId) return false;
+  return Boolean(resolvedOperations.value[opId]);
+};
+
+const loadPendingConfirmations = async () => {
+  try {
+    const res = await aiChatApi.getPendingConfirmations();
+    const list = Array.isArray(res.data) ? res.data : [];
+    for (const rawItem of list) {
+      const norm = normalizePendingConfirmation(rawItem);
+      if (!norm) continue;
+      const { operationId } = norm;
+      if (operationId && !resolvedOperations.value[operationId]) {
+        if (!pendingConfirmations.value.includes(operationId)) {
+          pendingConfirmations.value.push(operationId);
+        }
+        const alreadyInChat = messages.value.some((m) => getMessageOpId(m) === operationId);
+        if (!alreadyInChat) {
+          const actionStr = norm.actionType ? `**${norm.actionType}**` : 'operation';
+          const targetStr = norm.targetId ? ` on target **${norm.targetId}**` : '';
+          const detailsStr = norm.details ? ` (${norm.details})` : '';
+          messages.value.push({
+            role: 'ai',
+            content: `Pending confirmation required for ${actionStr}${targetStr}${detailsStr}. Operation ID: \`${operationId}\``,
+            operationId
+          });
+        }
       }
-
-      router.push(href);
-      return;
     }
+  } catch {
+    // Session may be unauthenticated or user is not supervisor
+  }
+};
+
+watch(isOpen, (newVal) => {
+  if (newVal) {
+    loadPendingConfirmations();
+  }
+});
+
+onMounted(() => {
+  loadPendingConfirmations();
+});
+
+const handleChatInteraction = async (event) => {
+  const linkTarget = event.target.closest('a, .chat-link');
+  if (linkTarget) {
+    const href = linkTarget.getAttribute('href');
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (href && isSafeInternalRoute(href)) {
+      router.push(href);
+    }
+    return;
   }
 
   if (event.target && event.target.tagName === 'CODE') {
@@ -115,6 +224,86 @@ const handleChatInteraction = async (event) => {
   }
 };
 
+const handleConfirm = async (opId) => {
+  if (!opId || processingOpId.value || isResolved(opId)) return;
+  processingOpId.value = opId;
+  try {
+    const res = await aiChatApi.confirmOperation(opId);
+    resolvedOperations.value[opId] = 'CONFIRMED';
+    pendingConfirmations.value = pendingConfirmations.value.filter((id) => id !== opId);
+    const replyMsg = res.data?.message || `Operation ${opId} confirmed successfully.`;
+    messages.value.push({
+      role: 'ai',
+      content: replyMsg,
+      isFollowUp: true,
+      suppressConfirmation: true
+    });
+    toast.add({
+      severity: 'success',
+      summary: 'Confirmed',
+      detail: replyMsg,
+      life: 4000
+    });
+  } catch (err) {
+    const errorMsg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Failed to confirm operation.';
+    messages.value.push({
+      role: 'ai',
+      content: `**Error:** ${errorMsg}`,
+      isFollowUp: true,
+      suppressConfirmation: true
+    });
+    toast.add({
+      severity: 'error',
+      summary: 'Confirmation Failed',
+      detail: errorMsg,
+      life: 5000
+    });
+  } finally {
+    processingOpId.value = null;
+    await scrollToBottom();
+  }
+};
+
+const handleReject = async (opId) => {
+  if (!opId || processingOpId.value || isResolved(opId)) return;
+  processingOpId.value = opId;
+  try {
+    const res = await aiChatApi.rejectOperation(opId);
+    resolvedOperations.value[opId] = 'REJECTED';
+    pendingConfirmations.value = pendingConfirmations.value.filter((id) => id !== opId);
+    const replyMsg = res.data?.message || `Operation ${opId} was rejected.`;
+    messages.value.push({
+      role: 'ai',
+      content: replyMsg,
+      isFollowUp: true,
+      suppressConfirmation: true
+    });
+    toast.add({
+      severity: 'info',
+      summary: 'Rejected',
+      detail: replyMsg,
+      life: 4000
+    });
+  } catch (err) {
+    const errorMsg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Failed to reject operation.';
+    messages.value.push({
+      role: 'ai',
+      content: `**Error:** ${errorMsg}`,
+      isFollowUp: true,
+      suppressConfirmation: true
+    });
+    toast.add({
+      severity: 'error',
+      summary: 'Rejection Failed',
+      detail: errorMsg,
+      life: 5000
+    });
+  } finally {
+    processingOpId.value = null;
+    await scrollToBottom();
+  }
+};
+
 const sendMessage = async () => {
   if (!inputMsg.value.trim() || loading.value) return;
 
@@ -125,8 +314,19 @@ const sendMessage = async () => {
   await scrollToBottom();
 
   try {
-    const res = await chatApi.sendMessage(userText);
-    messages.value.push({ role: 'ai', content: res.data.reply });
+    const res = await aiChatApi.sendChatMessage(userText);
+    const reply = res.data?.reply || res.data?.message || '';
+    const opId = extractOperationId(reply);
+    if (opId && !resolvedOperations.value[opId]) {
+      if (!pendingConfirmations.value.includes(opId)) {
+        pendingConfirmations.value.push(opId);
+      }
+    }
+    messages.value.push({
+      role: 'ai',
+      content: reply,
+      operationId: opId || undefined
+    });
   } catch (e) {
     messages.value.push({ role: 'ai', content: '**Error:** Connection to AI core failed.' });
   } finally {
@@ -137,6 +337,7 @@ const sendMessage = async () => {
 </script>
 
 <style scoped>
+:deep(.markdown-body a.chat-link),
 :deep(.markdown-body a) {
   color: #3b82f6;
   text-decoration: underline;

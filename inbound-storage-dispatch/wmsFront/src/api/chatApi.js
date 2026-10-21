@@ -1,5 +1,4 @@
-import apiClient from './index';
+import { aiChatApi } from './aiChatApi.js'
 
-export const chatApi = {
-  sendMessage: (message) => apiClient.post('/v1/chat', { message })
-};
+export const chatApi = aiChatApi
+export default aiChatApi
