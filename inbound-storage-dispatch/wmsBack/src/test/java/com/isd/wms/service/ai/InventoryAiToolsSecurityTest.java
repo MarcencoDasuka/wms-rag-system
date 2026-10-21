@@ -77,7 +77,6 @@ class InventoryAiToolsSecurityTest {
         p.setName("Juice");
         p.setBarcode("JUC-01");
         when(productRepository.findByBarcode("JUC-01")).thenReturn(Optional.of(p));
-        when(stockRepository.findAllByAvailableIsTrue()).thenReturn(List.of());
 
         String result = inventoryAiTools.checkStockByBarcode("JUC-01");
 
@@ -119,58 +118,27 @@ class InventoryAiToolsSecurityTest {
 
         when(productRepository.findByBarcode("BOX-01")).thenReturn(Optional.of(p));
         when(locationRepository.findAll()).thenReturn(List.of(loc));
-        when(stockRepository.findAllByAvailableIsTrue()).thenReturn(List.of(stock));
+        when(stockRepository.findByProductIdAndLocationIdAndAvailableIsTrue(1L, 2L)).thenReturn(Optional.of(stock));
 
-        String targetId = "BOX-01@LOC-01";
-        when(securityBoundary.requireConfirmation(eq("ADJUST_INVENTORY_STOCK"), eq(targetId), any(), isNull()))
-            .thenReturn("CONFIRMATION REQUIRED: ADJUST_INVENTORY_STOCK on target 'BOX-01@LOC-01'. To confirm, call with confirmationToken='CONFIRM-INV-1'.");
+        when(securityBoundary.initiatePendingOperation(eq("ADJUST_INVENTORY_STOCK"), any(), eq(100L), any(), eq(15), eq("DAMAGED")))
+            .thenReturn("PENDING HUMAN CONFIRMATION: ADJUST_INVENTORY_STOCK on target 'BOX-01@LOC-01'. Operation ID: CONFIRM-INV-1");
 
         String response = inventoryMutatingAiTools.adjustInventoryStock(
             "BOX-01", "LOC-01", 15, "DAMAGED", "Water leak", null
         );
 
-        assertThat(response).contains("CONFIRMATION REQUIRED");
+        assertThat(response).contains("PENDING HUMAN CONFIRMATION");
         assertThat(response).contains("CONFIRM-INV-1");
         verify(inventoryAdjustmentService, never()).adjustStock(any(), any());
     }
 
     @Test
-    @DisplayName("adjustInventoryStock executes adjustment and audits when valid confirmation token is provided")
+    @DisplayName("adjustInventoryStock throws AccessDeniedException when confirmation token is passed directly to AI tool")
     void adjustInventoryStock_whenAuthorizedWithToken_executesAdjustment() {
-        Product p = new Product();
-        p.setId(1L);
-        p.setName("Box");
-        p.setBarcode("BOX-01");
-        Location loc = new Location();
-        loc.setId(2L);
-        loc.setBarcode("LOC-01");
-
-        Stock stock = new Stock();
-        stock.setId(100L);
-        stock.setProduct(p);
-        stock.setLocation(loc);
-        stock.setQuantity(20);
-
-        User user = new User();
-        user.setId(5L);
-
-        when(productRepository.findByBarcode("BOX-01")).thenReturn(Optional.of(p));
-        when(locationRepository.findAll()).thenReturn(List.of(loc));
-        when(stockRepository.findAllByAvailableIsTrue()).thenReturn(List.of(stock));
-        when(securityFacade.getCurrentUsername()).thenReturn("supervisor_dan");
-        when(userRepository.findByUsername("supervisor_dan")).thenReturn(Optional.of(user));
-
-        String targetId = "BOX-01@LOC-01";
-        // Valid token returns null from requireConfirmation
-        when(securityBoundary.requireConfirmation(eq("ADJUST_INVENTORY_STOCK"), eq(targetId), any(), eq("CONFIRM-VALID-TOKEN")))
-            .thenReturn(null);
-
-        String response = inventoryMutatingAiTools.adjustInventoryStock(
+        assertThatThrownBy(() -> inventoryMutatingAiTools.adjustInventoryStock(
             "BOX-01", "LOC-01", 15, "DAMAGED", "Water leak", "CONFIRM-VALID-TOKEN"
-        );
-
-        assertThat(response).contains("Success! Stock adjusted to 15. Reason: DAMAGED.");
-        verify(inventoryAdjustmentService).adjustStock(eq(100L), any(InventoryAdjustmentRequest.class));
-        verify(securityBoundary).auditMutation(eq("adjustInventoryStock"), eq(targetId), any());
+        ))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+            .hasMessageContaining("Autonomous AI tool confirmation is disabled");
     }
 }

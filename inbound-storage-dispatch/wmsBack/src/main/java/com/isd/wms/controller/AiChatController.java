@@ -5,6 +5,7 @@ import com.isd.wms.dto.ai.AiChatResponse;
 import com.isd.wms.service.ai.ChatbotService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +17,7 @@ import com.isd.wms.entity.Order;
 import com.isd.wms.repository.OrderRepository;
 import com.isd.wms.service.OrderService;
 import com.isd.wms.service.ai.AiToolSecurityBoundary;
+import com.isd.wms.service.ai.InventoryMutatingAiTools;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,13 +37,35 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/v1/chat")
-@RequiredArgsConstructor
 public class AiChatController {
 
     private final ChatbotService chatbotService;
     private final AiToolSecurityBoundary securityBoundary;
     private final OrderService orderService;
     private final OrderRepository orderRepository;
+    private final InventoryMutatingAiTools inventoryMutatingAiTools;
+
+    @Autowired
+    public AiChatController(
+            ChatbotService chatbotService,
+            AiToolSecurityBoundary securityBoundary,
+            OrderService orderService,
+            OrderRepository orderRepository,
+            InventoryMutatingAiTools inventoryMutatingAiTools) {
+        this.chatbotService = chatbotService;
+        this.securityBoundary = securityBoundary;
+        this.orderService = orderService;
+        this.orderRepository = orderRepository;
+        this.inventoryMutatingAiTools = inventoryMutatingAiTools;
+    }
+
+    public AiChatController(
+            ChatbotService chatbotService,
+            AiToolSecurityBoundary securityBoundary,
+            OrderService orderService,
+            OrderRepository orderRepository) {
+        this(chatbotService, securityBoundary, orderService, orderRepository, null);
+    }
 
     /**
      * Submits a message to the AI chatbot and returns its reply.
@@ -89,14 +113,26 @@ public class AiChatController {
                 "targetId", pending.targetId(),
                 "message", "Order " + pending.targetId() + " successfully deleted by authorized human supervisor."
             ));
+        } else if ("ADJUST_INVENTORY_STOCK".equalsIgnoreCase(pending.actionType())) {
+            Long stockId = pending.targetEntityId();
+            if (stockId == null) {
+                throw new IllegalStateException("Stock entity ID is required for ADJUST_INVENTORY_STOCK confirmation");
+            }
+            if (inventoryMutatingAiTools != null) {
+                inventoryMutatingAiTools.executeConfirmedAdjustment(stockId, pending.newQuantity(), pending.reason());
+            }
+            securityBoundary.auditMutation("confirmAdjustStock", pending.targetId(),
+                "Human confirmed stock adjustment to " + pending.newQuantity() + " (reason: " + pending.reason() + ")");
+
+            return ResponseEntity.ok(Map.of(
+                "status", "SUCCESS",
+                "actionType", pending.actionType(),
+                "targetId", pending.targetId(),
+                "message", "Stock " + pending.targetId() + " successfully adjusted to " + pending.newQuantity() + " by authorized human supervisor."
+            ));
         }
 
-        return ResponseEntity.ok(Map.of(
-            "status", "CONFIRMED",
-            "actionType", pending.actionType(),
-            "targetId", pending.targetId(),
-            "message", "Operation " + operationId + " confirmed."
-        ));
+        throw new IllegalStateException("Unknown or unsupported action type for confirmation: " + pending.actionType());
     }
 
     /**

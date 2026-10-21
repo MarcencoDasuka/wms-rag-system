@@ -109,13 +109,17 @@ class AiToolObjectLevelAuthorizationTest {
 
         // Phase 1: Request confirmation
         String prompt = orderMutatingAiTools.deleteOrder("ORD-001", null);
-        assertThat(prompt).contains("CONFIRMATION REQUIRED: DELETE_ORDER on target 'ORD-001'");
+        assertThat(prompt).contains("PENDING HUMAN CONFIRMATION: Action 'DELETE_ORDER' on target 'ORD-001'");
 
-        String token = prompt.substring(prompt.indexOf("confirmationToken='") + 19, prompt.lastIndexOf("'"));
+        int idStart = prompt.indexOf("Operation ID: '") + "Operation ID: '".length();
+        int idEnd = prompt.indexOf("'", idStart);
+        String opId = prompt.substring(idStart, idEnd);
 
-        // Phase 2: Execute with token
-        String result = orderMutatingAiTools.deleteOrder("ORD-001", token);
-        assertThat(result).contains("Success! Order ORD-001 has been deleted.");
+        // Phase 2: Out-of-band human confirmation consumes operation and executes deletion
+        AiToolSecurityBoundary.PendingConfirmation confirmed = securityBoundary.confirmOperationByHuman(opId);
+        assertThat(confirmed.targetId()).isEqualTo("ORD-001");
+        assertThat(confirmed.targetEntityId()).isEqualTo(10L);
+        orderService.deleteOrderById(confirmed.targetEntityId());
         verify(orderService).deleteOrderById(10L);
     }
 
@@ -261,13 +265,17 @@ class AiToolObjectLevelAuthorizationTest {
 
         // DEV requests confirmation
         String prompt = orderMutatingAiTools.deleteOrder("ORD-ANY", null);
-        assertThat(prompt).contains("CONFIRMATION REQUIRED: DELETE_ORDER");
+        assertThat(prompt).contains("PENDING HUMAN CONFIRMATION: Action 'DELETE_ORDER'");
 
-        String token = prompt.substring(prompt.indexOf("confirmationToken='") + 19, prompt.lastIndexOf("'"));
+        int idStart = prompt.indexOf("Operation ID: '") + "Operation ID: '".length();
+        int idEnd = prompt.indexOf("'", idStart);
+        String opId = prompt.substring(idStart, idEnd);
 
-        // DEV executes confirmed deletion
-        String result = orderMutatingAiTools.deleteOrder("ORD-ANY", token);
-        assertThat(result).contains("Success! Order ORD-ANY has been deleted.");
+        // DEV confirms out-of-band and executes confirmed deletion
+        AiToolSecurityBoundary.PendingConfirmation confirmed = securityBoundary.confirmOperationByHuman(opId);
+        assertThat(confirmed.targetId()).isEqualTo("ORD-ANY");
+        assertThat(confirmed.targetEntityId()).isEqualTo(55L);
+        orderService.deleteOrderById(confirmed.targetEntityId());
         verify(orderService).deleteOrderById(55L);
     }
 
@@ -308,18 +316,25 @@ class AiToolObjectLevelAuthorizationTest {
 
         // Phase 1: Without token -> returns prompt
         String prompt = orderMutatingAiTools.deleteOrder("ORD-001", null);
-        assertThat(prompt).contains("CONFIRMATION REQUIRED");
+        assertThat(prompt).contains("PENDING HUMAN CONFIRMATION");
 
-        String token = prompt.substring(prompt.indexOf("confirmationToken='") + 19, prompt.lastIndexOf("'"));
+        int idStart = prompt.indexOf("Operation ID: '") + "Operation ID: '".length();
+        int idEnd = prompt.indexOf("'", idStart);
+        String opId = prompt.substring(idStart, idEnd);
 
-        // Phase 2: With valid token -> executes
-        String result = orderMutatingAiTools.deleteOrder("ORD-001", token);
-        assertThat(result).contains("Success! Order ORD-001 has been deleted.");
-
-        // Phase 3: Replay with same token -> rejected
-        assertThatThrownBy(() -> orderMutatingAiTools.deleteOrder("ORD-001", token))
+        // Autonomous AI confirmation attempt directly via tool is blocked
+        assertThatThrownBy(() -> orderMutatingAiTools.deleteOrder("ORD-001", opId))
             .isInstanceOf(AccessDeniedException.class)
-            .hasMessageContaining("Invalid or expired confirmation token");
+            .hasMessageContaining("Autonomous AI tool confirmation is disabled");
+
+        // Phase 2: Out-of-band human confirmation succeeds once
+        AiToolSecurityBoundary.PendingConfirmation confirmed = securityBoundary.confirmOperationByHuman(opId);
+        assertThat(confirmed.targetId()).isEqualTo("ORD-001");
+
+        // Phase 3: Replay with same operation ID -> rejected
+        assertThatThrownBy(() -> securityBoundary.confirmOperationByHuman(opId))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessageContaining("Invalid or expired operation ID");
     }
 
     // =========================================================================

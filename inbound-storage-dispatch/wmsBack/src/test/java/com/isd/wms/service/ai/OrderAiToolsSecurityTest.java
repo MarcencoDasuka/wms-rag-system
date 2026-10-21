@@ -101,32 +101,24 @@ class OrderAiToolsSecurityTest {
     @DisplayName("deleteOrder requires confirmation token when caller is authorized but token is not supplied")
     void deleteOrder_whenAuthorizedWithoutToken_returnsConfirmationPrompt() {
         Order order = new Order("ORD-001", null);
+        order.setId(42L);
         when(orderRepository.findByLogicIdIgnoreCase("ORD-001")).thenReturn(Optional.of(order));
-        when(securityBoundary.requireConfirmation(eq("DELETE_ORDER"), eq("ORD-001"), any(), isNull()))
-            .thenReturn("CONFIRMATION REQUIRED: DELETE_ORDER on target 'ORD-001'. To confirm, call with confirmationToken='CONFIRM-TEST'.");
+        when(securityBoundary.initiatePendingOperation(eq("DELETE_ORDER"), eq("ORD-001"), eq(42L), any()))
+            .thenReturn("PENDING HUMAN CONFIRMATION: DELETE_ORDER on target ORD-001. Operation ID: CONFIRM-TEST. To approve or reject this operation, use the trusted management endpoints.");
 
-        String response = orderMutatingAiTools.deleteOrder("ORD-001", null);
+        String response = orderMutatingAiTools.deleteOrder("ORD-001");
 
-        assertThat(response).contains("CONFIRMATION REQUIRED");
-        assertThat(response).contains("confirmationToken='CONFIRM-TEST'");
+        assertThat(response).contains("PENDING HUMAN CONFIRMATION");
+        assertThat(response).contains("CONFIRM-TEST");
         verify(orderService, never()).deleteOrderById(any());
     }
 
     @Test
-    @DisplayName("deleteOrder executes deletion and releases stock when valid confirmation token is provided")
+    @DisplayName("deleteOrder throws AccessDeniedException when confirmation token is passed directly to AI tool")
     void deleteOrder_whenAuthorizedWithValidToken_executesDeletion() {
-        Order order = new Order("ORD-001", null);
-        order.setId(42L);
-        when(orderRepository.findByLogicIdIgnoreCase("ORD-001")).thenReturn(Optional.of(order));
-        // Valid token returns null from requireConfirmation
-        when(securityBoundary.requireConfirmation(eq("DELETE_ORDER"), eq("ORD-001"), any(), eq("CONFIRM-VALID")))
-            .thenReturn(null);
-
-        String response = orderMutatingAiTools.deleteOrder("ORD-001", "CONFIRM-VALID");
-
-        assertThat(response).contains("Success! Order ORD-001 has been deleted.");
-        verify(orderService).deleteOrderById(42L);
-        verify(securityBoundary).auditMutation(eq("deleteOrder"), eq("ORD-001"), any());
+        assertThatThrownBy(() -> orderMutatingAiTools.deleteOrder("ORD-001", "CONFIRM-VALID"))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+            .hasMessageContaining("Autonomous AI tool confirmation is disabled");
     }
 
     @Test
@@ -175,7 +167,7 @@ class OrderAiToolsSecurityTest {
         doThrow(new AccessDeniedException("Access denied: Order belongs to another supervisor"))
             .when(securityBoundary).enforceOrderAccess(order);
 
-        assertThatThrownBy(() -> orderMutatingAiTools.deleteOrder("ORD-001", "CONFIRM-123"))
+        assertThatThrownBy(() -> orderMutatingAiTools.deleteOrder("ORD-001"))
             .isInstanceOf(AccessDeniedException.class)
             .hasMessageContaining("belongs to another supervisor");
 

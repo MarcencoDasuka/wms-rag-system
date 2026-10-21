@@ -98,8 +98,43 @@ public class InventoryMutatingAiTools {
             "ADJUST_INVENTORY_STOCK",
             targetId,
             stock.getId(),
-            details
+            details,
+            newQuantity,
+            reason
         );
+    }
+
+    /**
+     * Executes a human-confirmed inventory adjustment.
+     * Mutates the stock quantity in the database and records the adjustment audit trail.
+     *
+     * @param stockId     database ID of the stock
+     * @param newQuantity verified new physical quantity
+     * @param reasonStr   reason for adjustment
+     */
+    public void executeConfirmedAdjustment(Long stockId, Integer newQuantity, String reasonStr) {
+        InventoryAdjustmentReason reason;
+        try {
+            reason = (reasonStr != null) ? InventoryAdjustmentReason.valueOf(reasonStr.toUpperCase().trim()) : InventoryAdjustmentReason.INVENTORY_MISMATCH;
+        } catch (Exception e) {
+            reason = InventoryAdjustmentReason.INVENTORY_MISMATCH;
+        }
+
+        User currentUser = null;
+        try {
+            currentUser = userRepository.findByUsername(securityFacade.getCurrentUsername()).orElse(null);
+        } catch (Exception ignored) {}
+        Long userId = currentUser != null ? currentUser.getId() : null;
+
+        InventoryAdjustmentRequest req = new InventoryAdjustmentRequest(
+            newQuantity,
+            userId,
+            reason,
+            "Confirmed by supervisor via Human-in-the-Loop AI Chat confirmation",
+            null,
+            null
+        );
+        inventoryAdjustmentService.adjustStock(stockId, req);
     }
 
     public String adjustInventoryStock(String productBarcode, String locationBarcode, Integer newQuantity, String reason, String comment, String confirmationToken) {

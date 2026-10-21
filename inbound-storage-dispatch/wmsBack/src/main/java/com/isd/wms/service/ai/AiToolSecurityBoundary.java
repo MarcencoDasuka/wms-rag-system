@@ -35,6 +35,7 @@ import java.util.function.Supplier;
 public class AiToolSecurityBoundary {
 
     private static final Logger AUDIT_LOG = LoggerFactory.getLogger("AI_TOOL_AUDIT");
+    private static final long PENDING_TTL_MINUTES = 15;
 
     public record PendingConfirmation(
         String token,
@@ -43,10 +44,16 @@ public class AiToolSecurityBoundary {
         String targetId,
         Long targetEntityId,
         String details,
-        Instant expiresAt
+        Instant expiresAt,
+        Integer newQuantity,
+        String reason
     ) {
         public PendingConfirmation(String token, String username, String actionType, String targetId, String details, Instant expiresAt) {
-            this(token, username, actionType, targetId, null, details, expiresAt);
+            this(token, username, actionType, targetId, null, details, expiresAt, null, null);
+        }
+
+        public PendingConfirmation(String token, String username, String actionType, String targetId, Long targetEntityId, String details, Instant expiresAt) {
+            this(token, username, actionType, targetId, targetEntityId, details, expiresAt, null, null);
         }
 
         public boolean isExpired() {
@@ -204,6 +211,22 @@ public class AiToolSecurityBoundary {
      * @return confirmation prompt string explaining that human supervisor confirmation is required
      */
     public String initiatePendingOperation(String actionType, String targetId, Long targetEntityId, String details) {
+        return initiatePendingOperation(actionType, targetId, targetEntityId, details, null, null);
+    }
+
+    /**
+     * Initiates a pending operation requiring out-of-band human confirmation with structured action parameters.
+     * The model is given a descriptive message with the operation ID, but CANNOT confirm it autonomously.
+     *
+     * @param actionType     name of the action (e.g. DELETE_ORDER, ADJUST_INVENTORY_STOCK)
+     * @param targetId       business identifier of the target (e.g. order logicId, barcode@location)
+     * @param targetEntityId internal database ID of the target entity (optional)
+     * @param details        human-readable description of the pending change
+     * @param newQuantity    target new quantity for stock adjustment (optional)
+     * @param reason         reason string for stock adjustment (optional)
+     * @return confirmation prompt string explaining that human supervisor confirmation is required
+     */
+    public String initiatePendingOperation(String actionType, String targetId, Long targetEntityId, String details, Integer newQuantity, String reason) {
         enforceSupervisorOrDev(actionType);
         String username = securityFacade.getCurrentUsername();
         cleanExpiredConfirmations();
@@ -216,7 +239,9 @@ public class AiToolSecurityBoundary {
             targetId,
             targetEntityId,
             details,
-            Instant.now().plus(5, ChronoUnit.MINUTES)
+            Instant.now().plus(PENDING_TTL_MINUTES, ChronoUnit.MINUTES),
+            newQuantity,
+            reason
         );
         pendingConfirmations.put(operationId, pending);
         AUDIT_LOG.info("PENDING_OPERATION_CREATED: Operation [{}] initiated by user [{}] action [{}] target [{}] ({})",

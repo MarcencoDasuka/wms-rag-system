@@ -103,7 +103,7 @@ class AiToolSecurityBoundaryTest {
     }
 
     @Test
-    @DisplayName("requireConfirmation generates pending token and returns prompt when token is omitted")
+    @DisplayName("requireConfirmation creates pending confirmation with 15-minute TTL and returns human confirmation prompt")
     void requireConfirmation_whenNoToken_createsPendingConfirmationAndReturnsPrompt() {
         authenticateAs("supervisor_dan", "ROLE_SUPERVISOR");
         when(securityFacade.getCurrentUsername()).thenReturn("supervisor_dan");
@@ -115,15 +115,27 @@ class AiToolSecurityBoundaryTest {
             null
         );
 
-        assertThat(prompt).contains("CONFIRMATION REQUIRED: DELETE_ORDER on target 'ORD-1234'");
-        assertThat(prompt).contains("confirmationToken='CONFIRM-");
+        assertThat(prompt).contains("PENDING HUMAN CONFIRMATION: Action 'DELETE_ORDER' on target 'ORD-1234'");
+        assertThat(prompt).contains("Operation ID: 'OP-");
+
+        List<AiToolSecurityBoundary.PendingConfirmation> pending = securityBoundary.getPendingOperations();
+        assertThat(pending).hasSize(1);
+        AiToolSecurityBoundary.PendingConfirmation op = pending.get(0);
+        assertThat(op.actionType()).isEqualTo("DELETE_ORDER");
+        assertThat(op.targetId()).isEqualTo("ORD-1234");
+        assertThat(op.username()).isEqualTo("supervisor_dan");
+
+        // Verify 15-minute TTL
+        java.time.Instant now = java.time.Instant.now();
+        assertThat(op.expiresAt())
+            .isAfter(now.plus(14, java.time.temporal.ChronoUnit.MINUTES))
+            .isBefore(now.plus(16, java.time.temporal.ChronoUnit.MINUTES));
     }
 
     @Test
-    @DisplayName("requireConfirmation rejects invalid or fabricated confirmation token")
-    void requireConfirmation_whenInvalidToken_throwsAccessDeniedException() {
+    @DisplayName("requireConfirmation strictly blocks autonomous confirmation when token is attempted in tool call")
+    void requireConfirmation_whenAutonomousTokenAttempted_throwsAccessDeniedException() {
         authenticateAs("supervisor_dan", "ROLE_SUPERVISOR");
-        when(securityFacade.getCurrentUsername()).thenReturn("supervisor_dan");
 
         assertThatThrownBy(() -> securityBoundary.requireConfirmation(
             "DELETE_ORDER",
@@ -131,70 +143,59 @@ class AiToolSecurityBoundaryTest {
             "Delete order ORD-1234",
             "CONFIRM-FAKE1234"
         )).isInstanceOf(AccessDeniedException.class)
-          .hasMessageContaining("Invalid or expired confirmation token: CONFIRM-FAKE1234");
+          .hasMessageContaining("Autonomous AI tool confirmation is disabled");
     }
 
     @Test
-    @DisplayName("requireConfirmation allows execution with valid token and consumes it (single-use)")
-    void requireConfirmation_whenValidToken_consumesTokenAndAllowsExecution() {
+    @DisplayName("confirmOperationByHuman consumes pending operation and prevents replay")
+    void confirmOperationByHuman_whenValid_consumesOperationAndPreventsReplay() {
         authenticateAs("supervisor_dan", "ROLE_SUPERVISOR");
         when(securityFacade.getCurrentUsername()).thenReturn("supervisor_dan");
 
-        // Phase 1: Request confirmation
-        String prompt = securityBoundary.requireConfirmation(
+        String prompt = securityBoundary.initiatePendingOperation(
             "DELETE_ORDER",
             "ORD-1234",
-            "Delete order ORD-1234",
-            null
+            101L,
+            "Delete order ORD-1234"
         );
 
-        // Extract token
-        int tokenStart = prompt.indexOf("confirmationToken='") + "confirmationToken='".length();
-        int tokenEnd = prompt.indexOf("'", tokenStart);
-        String token = prompt.substring(tokenStart, tokenEnd);
-        assertThat(token).startsWith("CONFIRM-");
+        int idStart = prompt.indexOf("Operation ID: '") + "Operation ID: '".length();
+        int idEnd = prompt.indexOf("'", idStart);
+        String operationId = prompt.substring(idStart, idEnd);
 
-        // Phase 2: Provide token -> returns null indicating confirmed
-        String result = securityBoundary.requireConfirmation(
-            "DELETE_ORDER",
-            "ORD-1234",
-            "Delete order ORD-1234",
-            token
-        );
-        assertThat(result).isNull();
+        // Human confirms operation
+        AiToolSecurityBoundary.PendingConfirmation confirmed = securityBoundary.confirmOperationByHuman(operationId);
+        assertThat(confirmed).isNotNull();
+        assertThat(confirmed.targetId()).isEqualTo("ORD-1234");
+        assertThat(confirmed.targetEntityId()).isEqualTo(101L);
 
-        // Phase 3: Attempting replay with the same token MUST be rejected
-        assertThatThrownBy(() -> securityBoundary.requireConfirmation(
-            "DELETE_ORDER",
-            "ORD-1234",
-            "Delete order ORD-1234",
-            token
-        )).isInstanceOf(AccessDeniedException.class)
-          .hasMessageContaining("Invalid or expired confirmation token");
+        // Replay must be rejected
+        assertThatThrownBy(() -> securityBoundary.confirmOperationByHuman(operationId))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessageContaining("Invalid or expired operation ID");
     }
 
     @Test
-    @DisplayName("requireConfirmation rejects token when target ID does not match")
-    void requireConfirmation_whenTargetMismatch_throwsAccessDeniedException() {
+    @DisplayName("confirmOperationByHuman rejects confirmation from another supervisor unless DEV")
+    void confirmOperationByHuman_whenDifferentSupervisor_throwsAccessDeniedException() {
         authenticateAs("supervisor_dan", "ROLE_SUPERVISOR");
         when(securityFacade.getCurrentUsername()).thenReturn("supervisor_dan");
 
-        String prompt = securityBoundary.requireConfirmation(
+        String prompt = securityBoundary.initiatePendingOperation(
             "DELETE_ORDER",
             "ORD-1234",
-            "Delete order ORD-1234",
-            null
+            101L,
+            "Delete order ORD-1234"
         );
-        String token = prompt.substring(prompt.indexOf("CONFIRM-"), prompt.indexOf("'."));
+        String operationId = prompt.substring(prompt.indexOf("OP-"), prompt.indexOf("'. For"));
 
-        // Attempt using token on a different order target
-        assertThatThrownBy(() -> securityBoundary.requireConfirmation(
-            "DELETE_ORDER",
-            "ORD-DIFFERENT",
-            "Delete order ORD-DIFFERENT",
-            token
-        )).isInstanceOf(AccessDeniedException.class)
-          .hasMessageContaining("Confirmation token does not match the requested action, user, or target.");
+        // Switch to different supervisor
+        authenticateAs("supervisor_mallory", "ROLE_SUPERVISOR");
+        when(securityFacade.getCurrentUsername()).thenReturn("supervisor_mallory");
+
+        assertThatThrownBy(() -> securityBoundary.confirmOperationByHuman(operationId))
+            .isInstanceOf(AccessDeniedException.class)
+            .hasMessageContaining("You are not authorized to confirm operation initiated by supervisor_dan");
     }
 
     @Test
