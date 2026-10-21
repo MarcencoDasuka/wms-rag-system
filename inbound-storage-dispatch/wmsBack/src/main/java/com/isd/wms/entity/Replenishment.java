@@ -71,6 +71,23 @@ public class Replenishment extends BaseTimestampEntity{
     @Column(name = "created_by", length = 50)
     private String createdBy;
 
+    @Transient
+    private User supervisor;
+
+    public User getSupervisor() {
+        if (supervisor != null) {
+            return supervisor;
+        }
+        if (task != null && task.getSupervisor() != null) {
+            return task.getSupervisor();
+        }
+        return null;
+    }
+
+    public void setSupervisor(User supervisor) {
+        this.supervisor = supervisor;
+    }
+
     @PrePersist
     public void ensureLogicId() {
         if (this.logicId == null || this.logicId.isBlank()) {

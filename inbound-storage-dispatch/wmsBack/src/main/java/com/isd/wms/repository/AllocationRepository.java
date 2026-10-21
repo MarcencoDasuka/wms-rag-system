@@ -270,7 +270,9 @@ public interface AllocationRepository extends JpaRepository<Allocation, Long> {
             ) AS deliveredQuantity,
             a.status AS status,
             a.sourceLocationScanned AS sourceLocationScanned,
-            a.productScanned AS productScanned
+            a.productScanned AS productScanned,
+            u.id AS supervisorId,
+            u.username AS supervisorUsername
         FROM Allocation a
         JOIN Task t ON a.task = t
         LEFT JOIN User u ON u = t.supervisor

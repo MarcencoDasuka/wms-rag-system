@@ -22,6 +22,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
+@WithMockUser(username = "admin", roles = {"DEV"})
 class NPlusOneQueryPerformanceIntegrationTest {
 
     @Autowired
@@ -60,7 +61,6 @@ class NPlusOneQueryPerformanceIntegrationTest {
 
     @Test
     @Transactional(readOnly = true)
-    @WithMockUser(username = "admin", roles = {"SUPERVISOR"})
     @DisplayName("D-5: Measure queries for searchOrders")
     void measureOrderSearchQueries() {
         statistics.clear();
@@ -73,7 +73,6 @@ class NPlusOneQueryPerformanceIntegrationTest {
 
     @Test
     @Transactional(readOnly = true)
-    @WithMockUser(username = "admin", roles = {"SUPERVISOR"})
     @DisplayName("D-5: Measure queries for getAllExtendedOrders")
     void measureExtendedOrderQueries() {
         statistics.clear();

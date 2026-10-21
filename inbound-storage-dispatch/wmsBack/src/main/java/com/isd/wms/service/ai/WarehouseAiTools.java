@@ -10,14 +10,17 @@ import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.UserRepository;
 import com.isd.wms.service.OrderService;
 import com.isd.wms.service.ReplenishmentService;
-import lombok.RequiredArgsConstructor;
+import com.isd.wms.service.validation.SecurityFacade;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -36,7 +39,6 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service("warehouseAiTools")
-@RequiredArgsConstructor
 public class WarehouseAiTools {
 
     private final LocationRepository locationRepository;
@@ -46,6 +48,38 @@ public class WarehouseAiTools {
     private final OrderService orderService;
     private final ReplenishmentService replenishmentService;
     private final AiToolSecurityBoundary securityBoundary;
+    private final SecurityFacade securityFacade;
+
+    @Autowired
+    public WarehouseAiTools(
+            LocationRepository locationRepository,
+            UserRepository userRepository,
+            OrderRepository orderRepository,
+            ReplenishmentRepository replenishmentRepository,
+            OrderService orderService,
+            ReplenishmentService replenishmentService,
+            AiToolSecurityBoundary securityBoundary,
+            SecurityFacade securityFacade) {
+        this.locationRepository = locationRepository;
+        this.userRepository = userRepository;
+        this.orderRepository = orderRepository;
+        this.replenishmentRepository = replenishmentRepository;
+        this.orderService = orderService;
+        this.replenishmentService = replenishmentService;
+        this.securityBoundary = securityBoundary;
+        this.securityFacade = securityFacade;
+    }
+
+    public WarehouseAiTools(
+            LocationRepository locationRepository,
+            UserRepository userRepository,
+            OrderRepository orderRepository,
+            ReplenishmentRepository replenishmentRepository,
+            OrderService orderService,
+            ReplenishmentService replenishmentService,
+            AiToolSecurityBoundary securityBoundary) {
+        this(locationRepository, userRepository, orderRepository, replenishmentRepository, orderService, replenishmentService, securityBoundary, null);
+    }
 
     /**
      * Lists all physical locations (shelves) in the warehouse with their zones.
@@ -88,6 +122,38 @@ public class WarehouseAiTools {
         List<Order> unassignedOrders = orderRepository.findAll().stream().filter(o -> o.getStatus() == OrderStatus.CREATED).toList();
         List<Replenishment> unassignedReplenishments = replenishmentRepository.findAll().stream().filter(r -> r.getStatus() == Status.CREATED).toList();
 
+        if (securityFacade != null && !securityFacade.hasRole(Role.ROLE_DEV)) {
+            Long currentUserId = null;
+            try {
+                currentUserId = securityFacade.getCurrentUserId();
+            } catch (Exception ignored) {}
+            String currentUsername = securityFacade.getCurrentUsername();
+            final Long finalUserId = currentUserId;
+
+            unassignedOrders = unassignedOrders.stream()
+                .filter(o -> {
+                    boolean isSupervisorById = finalUserId != null && o.getSupervisor() != null && Objects.equals(o.getSupervisor().getId(), finalUserId);
+                    boolean isCreator = currentUsername != null && o.getCreatedBy() != null && o.getCreatedBy().equalsIgnoreCase(currentUsername);
+                    boolean isUnowned = (o.getCreatedBy() == null || "system".equalsIgnoreCase(o.getCreatedBy()))
+                        && o.getSupervisor() == null;
+                    return isSupervisorById || isCreator || isUnowned;
+                })
+                .toList();
+
+            unassignedReplenishments = unassignedReplenishments.stream()
+                .filter(r -> {
+                    String taskSupervisor = r.getTask().map(Task::getSupervisor).map(User::getUsername).orElse(null);
+                    boolean isSupervisorById = finalUserId != null && r.getSupervisor() != null && Objects.equals(r.getSupervisor().getId(), finalUserId);
+                    boolean isCreator = currentUsername != null && r.getCreatedBy() != null && r.getCreatedBy().equalsIgnoreCase(currentUsername);
+                    boolean isTaskSupervisor = currentUsername != null && taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
+                    boolean isUnowned = (r.getCreatedBy() == null || "system".equalsIgnoreCase(r.getCreatedBy()))
+                        && r.getSupervisor() == null
+                        && taskSupervisor == null;
+                    return isSupervisorById || isCreator || isTaskSupervisor || isUnowned;
+                })
+                .toList();
+        }
+
         if (unassignedOrders.isEmpty() && unassignedReplenishments.isEmpty()) {
             return "All tasks are already assigned. Workload is balanced.";
         }
@@ -101,14 +167,52 @@ public class WarehouseAiTools {
     }
 
     private Map<User, Long> calculateInitialWorkload(List<User> operators) {
-        List<Task> activeTasks = replenishmentRepository.findAll().stream()
+        List<Task> activeReplTasks = replenishmentRepository.findAll().stream()
+            .filter(r -> r.getStatus() == Status.ASSIGNED || r.getStatus() == Status.IN_PROGRESS)
             .map(Replenishment::getTask)
             .filter(Optional::isPresent)
             .map(Optional::get)
             .toList();
 
-        return operators.stream().collect(Collectors.toMap(op -> op, op -> activeTasks.stream()
-            .filter(t -> t.getOperator().isPresent() && t.getOperator().get().equals(op)).count()));
+        List<Order> activeOrders = orderRepository.findAll().stream()
+            .filter(o -> o.getStatus() == OrderStatus.ASSIGNED || o.getStatus() == OrderStatus.IN_PROGRESS)
+            .toList();
+
+        Map<Long, Long> orderOperatorMap = new HashMap<>();
+        List<Long> orderIds = activeOrders.stream().map(Order::getId).filter(Objects::nonNull).toList();
+        if (!orderIds.isEmpty()) {
+            for (var proj : orderRepository.findOperatorIdsByOrderIds(orderIds)) {
+                if (proj.getOrderId() != null && proj.getOperatorId() != null) {
+                    orderOperatorMap.putIfAbsent(proj.getOrderId(), proj.getOperatorId());
+                }
+            }
+        }
+
+        Map<User, Long> loadMap = new HashMap<>();
+        for (User op : operators) {
+            long replCount = activeReplTasks.stream()
+                .filter(t -> t.getOperator().isPresent() && (Objects.equals(t.getOperator().get().getId(), op.getId()) || t.getOperator().get().equals(op)))
+                .count();
+
+            long orderCount = activeOrders.stream()
+                .filter(o -> {
+                    Long assignedOpId = orderOperatorMap.get(o.getId());
+                    if (assignedOpId != null && assignedOpId.equals(op.getId())) {
+                        return true;
+                    }
+                    if (o.getOrderLines() != null) {
+                        return o.getOrderLines().stream()
+                            .map(OrderLine::getTask)
+                            .flatMap(Optional::stream)
+                            .anyMatch(t -> t.getOperator().isPresent() && (Objects.equals(t.getOperator().get().getId(), op.getId()) || t.getOperator().get().equals(op)));
+                    }
+                    return false;
+                })
+                .count();
+
+            loadMap.put(op, replCount + orderCount);
+        }
+        return loadMap;
     }
 
     private int[] executeDistribution(List<User> operators, Map<User, Long> loadMap, List<Order> orders, List<Replenishment> replenishments) {

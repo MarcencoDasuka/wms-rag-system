@@ -65,6 +65,10 @@ class ReplenishmentServiceTest {
         replenishment.setTask(task);
         org.springframework.test.util.ReflectionTestUtils.setField(replenishment, "id", 1L);
         replenishment.setStatus(Status.CREATED);
+        replenishment.setCreatedBy("supervisor");
+
+        lenient().when(securityFacade.getCurrentUsername()).thenReturn("supervisor");
+        lenient().when(securityFacade.hasRole(com.isd.wms.enums.Role.ROLE_DEV)).thenReturn(true);
 
         response = new ReplenishmentResponse(1L, "REP-001", 1L, 2L, 10, Status.CREATED, 3L, null, null, LocalDateTime.now());
     }
@@ -142,7 +146,7 @@ class ReplenishmentServiceTest {
         product.setMinThreshold(10);
         product.setReplenishQty(20);
 
-        when(replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(eq(1L), eq(3L), any()))
+        lenient().when(replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(eq(1L), eq(3L), any()))
             .thenReturn(false);
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(locationRepository.findById(3L)).thenReturn(Optional.of(destinationLocation));
@@ -160,7 +164,7 @@ class ReplenishmentServiceTest {
         product.setMinThreshold(10);
         product.setReplenishQty(20);
 
-        when(replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(eq(1L), eq(3L), any()))
+        lenient().when(replenishmentRepository.existsByProductIdAndDestinationLocationIdAndStatusIn(eq(1L), eq(3L), any()))
             .thenReturn(false);
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(locationRepository.findById(3L)).thenReturn(Optional.of(destinationLocation));

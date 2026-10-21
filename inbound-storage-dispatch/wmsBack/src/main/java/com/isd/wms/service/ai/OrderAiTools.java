@@ -3,14 +3,17 @@ package com.isd.wms.service.ai;
 import com.isd.wms.dto.order.shortage.ShortageOrderResponse;
 import com.isd.wms.entity.*;
 import com.isd.wms.enums.OrderStatus;
+import com.isd.wms.enums.Role;
 import com.isd.wms.repository.OrderRepository;
 import com.isd.wms.service.OrderService;
-import lombok.RequiredArgsConstructor;
+import com.isd.wms.service.validation.SecurityFacade;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * AI tools for read-only order queries and shortage analysis.
@@ -19,7 +22,6 @@ import java.util.List;
  */
 @Slf4j
 @Service("orderAiTools")
-@RequiredArgsConstructor
 public class OrderAiTools {
 
     public record AiOrderItem(String productBarcode, Integer quantity) {
@@ -28,13 +30,48 @@ public class OrderAiTools {
     private final OrderService orderService;
     private final OrderRepository orderRepository;
     private final OrderMutatingAiTools orderMutatingAiTools;
+    private final SecurityFacade securityFacade;
+
+    @Autowired
+    public OrderAiTools(
+            OrderService orderService,
+            OrderRepository orderRepository,
+            OrderMutatingAiTools orderMutatingAiTools,
+            SecurityFacade securityFacade) {
+        this.orderService = orderService;
+        this.orderRepository = orderRepository;
+        this.orderMutatingAiTools = orderMutatingAiTools;
+        this.securityFacade = securityFacade;
+    }
+
+    public OrderAiTools(
+            OrderService orderService,
+            OrderRepository orderRepository,
+            OrderMutatingAiTools orderMutatingAiTools) {
+        this(orderService, orderRepository, orderMutatingAiTools, null);
+    }
 
     @Tool(description = "Returns a summary of all active customer orders. Use this when the user asks about current orders, tasks in orders, or unassigned orders.")
     public String getActiveOrdersInfo() {
         log.info("AI invoked getActiveOrdersInfo tool");
 
-        List<Order> activeOrders = orderRepository.findAll().stream()
+        List<Order> allOrders = (securityFacade != null && !securityFacade.hasRole(Role.ROLE_DEV))
+            ? orderRepository.findAllAccessibleBySupervisor(securityFacade.getCurrentUsername())
+            : orderRepository.findAll();
+
+        Long currentUserId = null;
+        try {
+            currentUserId = (securityFacade != null) ? securityFacade.getCurrentUserId() : null;
+        } catch (Exception ignored) {}
+        boolean isDev = (securityFacade == null) || securityFacade.hasRole(Role.ROLE_DEV);
+        String currentUsername = (securityFacade != null) ? securityFacade.getCurrentUsername() : null;
+
+        final Long finalUserId = currentUserId;
+        List<Order> activeOrders = allOrders.stream()
             .filter(o -> o.getStatus() != OrderStatus.COMPLETED && o.getStatus() != OrderStatus.CANCELED)
+            .filter(o -> isDev || (finalUserId != null && o.getSupervisor() != null && Objects.equals(o.getSupervisor().getId(), finalUserId))
+                          || (currentUsername != null && o.getCreatedBy() != null && o.getCreatedBy().equalsIgnoreCase(currentUsername))
+                          || (o.getSupervisor() == null && (o.getCreatedBy() == null || "system".equalsIgnoreCase(o.getCreatedBy()))))
             .toList();
 
         if (activeOrders.isEmpty()) {

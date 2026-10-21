@@ -241,6 +241,6 @@ class OrderLinePickingConcurrencyIntegrationTest {
 
         // 4. Verify order status has progressed
         Order finalOrder = orderRepository.findById(orderId).orElseThrow();
-        assertThat(finalOrder.getStatus()).isIn(OrderStatus.IN_PROGRESS, OrderStatus.PARTIALLY_COMPLETED, OrderStatus.COMPLETED);
+        assertThat(finalOrder.getStatus()).isIn(OrderStatus.IN_PROGRESS, OrderStatus.PICKED, OrderStatus.PARTIALLY_COMPLETED, OrderStatus.COMPLETED);
     }
 }

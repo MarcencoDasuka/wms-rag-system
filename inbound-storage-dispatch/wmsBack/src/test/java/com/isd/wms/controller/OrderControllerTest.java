@@ -26,6 +26,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -66,7 +71,7 @@ class OrderControllerTest {
     @WithMockUser(roles = "SUPERVISOR")
     void getOrders_asSupervisor_returns200AndList() throws Exception {
         OrderResponse response = new OrderResponse(1L, "LOGIC-001", 1L, OrderStatus.CREATED, null, null);
-        when(orderService.getAllOrders()).thenReturn(List.of(response));
+        when(orderService.getAllOrders(any(Pageable.class))).thenReturn(new PageImpl<>(List.of(response)));
 
         mockMvc.perform(get(BASE_URL).contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -77,7 +82,7 @@ class OrderControllerTest {
     @Test
     @WithMockUser(roles = "DEV")
     void getOrders_asDevRole_returns200() throws Exception {
-        when(orderService.getAllOrders()).thenReturn(List.of());
+        when(orderService.getAllOrders(any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
 
         mockMvc.perform(get(BASE_URL).contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
@@ -120,7 +125,7 @@ class OrderControllerTest {
     @Test
     @WithMockUser(roles = "SUPERVISOR")
     void getExtendedOrders_returns200AndList() throws Exception {
-        when(orderService.getAllExtendedOrders()).thenReturn(List.of());
+        when(orderService.getAllExtendedOrders(any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
 
         mockMvc.perform(get(BASE_URL + "/extended").contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
@@ -155,7 +160,7 @@ class OrderControllerTest {
     @WithMockUser(roles = "SUPERVISOR")
     void createOrder_validRequest_returns201() throws Exception {
         ExtendedOrderCreateRequest request = new ExtendedOrderCreateRequest(
-                new OrderCreateRequest("LOGIC-001", 1L), new ArrayList<OrderLineCreateRequest>()
+                new OrderCreateRequest("LOGIC-001", 1L), List.of(new OrderLineCreateRequest(1L, 1L, 5))
         );
         OrderResponse response = new OrderResponse(1L, "LOGIC-001", 1L, OrderStatus.CREATED, null, null);
         when(orderService.addExtendedOrder(any(ExtendedOrderCreateRequest.class))).thenReturn(response);
@@ -209,7 +214,7 @@ class OrderControllerTest {
     @WithMockUser(roles = "SUPERVISOR")
     void searchOrders_withParams_returns200AndList() throws Exception {
         OrderResponse response = new OrderResponse(1L, "LOGIC-001", 1L, OrderStatus.CREATED, null, null);
-        when(orderService.searchOrders(any(OrderSearchRequest.class))).thenReturn(List.of(response));
+        when(orderService.searchOrders(any(OrderSearchRequest.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(response)));
 
         mockMvc.perform(get(BASE_URL + "/filter")
                         .param("status", "CREATED")
@@ -222,7 +227,7 @@ class OrderControllerTest {
     @Test
     @WithMockUser(roles = "SUPERVISOR")
     void searchOrders_noMatch_returns200AndEmptyList() throws Exception {
-        when(orderService.searchOrders(any(OrderSearchRequest.class))).thenReturn(List.of());
+        when(orderService.searchOrders(any(OrderSearchRequest.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
 
         mockMvc.perform(get(BASE_URL + "/filter")
                         .param("logicId", "NONEXISTENT")
@@ -241,7 +246,12 @@ class OrderControllerTest {
     @EnableWebMvc
     @EnableWebSecurity
     @EnableMethodSecurity
-    static class TestConfig {
+    static class TestConfig implements WebMvcConfigurer {
+
+        @Override
+        public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+            resolvers.add(new PageableHandlerMethodArgumentResolver());
+        }
 
         @Bean
         public GlobalExceptionHandler globalExceptionHandler() {

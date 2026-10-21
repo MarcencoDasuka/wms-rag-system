@@ -45,6 +45,11 @@ class OrderServiceTest {
     @InjectMocks
     private OrderService orderService;
 
+    @BeforeEach
+    void setUp() {
+        lenient().when(securityFacade.hasRole(com.isd.wms.enums.Role.ROLE_DEV)).thenReturn(true);
+    }
+
     private Order orderWithId(Long id, String logicId) {
         Order order = new Order(logicId);
         org.springframework.test.util.ReflectionTestUtils.setField(order, "id", id);

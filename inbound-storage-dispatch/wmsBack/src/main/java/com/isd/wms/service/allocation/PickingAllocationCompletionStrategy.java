@@ -1,6 +1,7 @@
 package com.isd.wms.service.allocation;
 
 import com.isd.wms.dto.allocation.AllocationCompletionResult;
+import com.isd.wms.entity.Allocation;
 import com.isd.wms.entity.Order;
 import com.isd.wms.entity.OrderLine;
 import com.isd.wms.entity.Task;
@@ -41,6 +42,21 @@ public class PickingAllocationCompletionStrategy implements AllocationCompletion
     private final OrderLineRepository orderLineRepository;
     private final OrderRepository orderRepository;
     private final AllocationRepository allocationRepository;
+
+    @Override
+    public void handle(Allocation allocation) {
+        int pickedQuantity = allocation.getPickedQuantity()
+            .orElseGet(() -> Optional.ofNullable(allocation.getQuantity()).orElse(0));
+        int requiredQuantity = Optional.ofNullable(allocation.getQuantity()).orElse(0);
+        if (pickedQuantity <= 0) {
+            allocation.setStatus(Status.CANCELED);
+        } else if (pickedQuantity < requiredQuantity) {
+            allocation.setStatus(Status.PARTIALLY_COMPLETED);
+        } else {
+            allocation.setStatus(Status.COMPLETED);
+        }
+        allocationRepository.save(allocation);
+    }
 
     @Override
     public boolean updateStatus(Task task) {

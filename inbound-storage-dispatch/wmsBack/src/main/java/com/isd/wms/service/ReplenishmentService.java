@@ -366,14 +366,21 @@ public class ReplenishmentService {
         );
         if (securityFacade.hasRole(Role.ROLE_SUPERVISOR) && !securityFacade.hasRole(Role.ROLE_DEV)) {
             String currentUsername = securityFacade.getCurrentUsername();
+            Long currentUserId = null;
+            try {
+                currentUserId = securityFacade.getCurrentUserId();
+            } catch (Exception ignored) {}
+            final Long finalUserId = currentUserId;
             tasks = tasks.stream()
                 .filter(r -> {
-                    boolean isSystem = r.getCreatedBy() == null || "system".equalsIgnoreCase(r.getCreatedBy());
-                    boolean isCreator = r.getCreatedBy() != null && r.getCreatedBy().equalsIgnoreCase(currentUsername);
+                    boolean isCreator = currentUsername != null && r.getCreatedBy() != null && r.getCreatedBy().equalsIgnoreCase(currentUsername);
                     String taskSupervisor = r.getTask().map(Task::getSupervisor).map(User::getUsername).orElse(null);
-                    boolean isTaskSupervisor = taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
-                    boolean isUnassigned = r.getStatus() == Status.CREATED || r.getTask().isEmpty() || taskSupervisor == null;
-                    return isSystem || isCreator || isTaskSupervisor || isUnassigned;
+                    boolean isTaskSupervisor = currentUsername != null && taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
+                    boolean isSupervisorById = finalUserId != null && r.getSupervisor() != null && Objects.equals(r.getSupervisor().getId(), finalUserId);
+                    boolean isUnowned = (r.getCreatedBy() == null || "system".equalsIgnoreCase(r.getCreatedBy()))
+                        && taskSupervisor == null
+                        && r.getSupervisor() == null;
+                    return isCreator || isTaskSupervisor || isSupervisorById || isUnowned;
                 })
                 .toList();
         }

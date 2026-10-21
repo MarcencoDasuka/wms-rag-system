@@ -146,7 +146,7 @@ class LocationProductExclusivityConcurrencyIntegrationTest {
 
             Replenishment replA = new Replenishment(prodA, 10, destLoc);
             replA.setTask(taskA);
-            replA.setStatus(Status.IN_PROGRESS);
+            replA.setStatus(Status.PARTIALLY_COMPLETED);
             replA.setLogicId("RPLA-" + suffix.toUpperCase());
             replA = replenishmentRepository.save(replA);
             replenishmentIds.add(replA.getId());
@@ -167,7 +167,7 @@ class LocationProductExclusivityConcurrencyIntegrationTest {
 
             Replenishment replB = new Replenishment(prodB, 10, destLoc);
             replB.setTask(taskB);
-            replB.setStatus(Status.IN_PROGRESS);
+            replB.setStatus(Status.PARTIALLY_COMPLETED);
             replB.setLogicId("RPLB-" + suffix.toUpperCase());
             replB = replenishmentRepository.save(replB);
             replenishmentIds.add(replB.getId());

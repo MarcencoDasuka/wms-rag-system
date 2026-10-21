@@ -75,6 +75,17 @@ public class Order extends BaseTimestampEntity {
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderLine> orderLines = new ArrayList<>();
 
+    @Transient
+    private User supervisor;
+
+    public User getSupervisor() {
+        return supervisor;
+    }
+
+    public void setSupervisor(User supervisor) {
+        this.supervisor = supervisor;
+    }
+
     public Order(String logicId, Location destinationLocation) {
         this.logicId = logicId;
         this.destinationLocation = destinationLocation;

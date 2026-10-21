@@ -104,12 +104,30 @@ public class OrderService {
         if (securityFacade.hasRole(Role.ROLE_DEV)) {
             return;
         }
-        String currentUsername = securityFacade.getCurrentUsername();
-        boolean isCreator = order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(currentUsername);
-        List<String> supervisors = orderRepository.findSupervisorUsernamesByOrder(order);
-        boolean isTaskSupervisor = supervisors.stream().anyMatch(s -> s.equalsIgnoreCase(currentUsername));
+        String currentUsername = null;
+        try {
+            currentUsername = securityFacade.getCurrentUsername();
+        } catch (Exception ignored) {}
+        Long currentUserId = null;
+        try {
+            currentUserId = securityFacade.getCurrentUserId();
+        } catch (Exception ignored) {}
 
-        if (!isCreator && !isTaskSupervisor) {
+        final String finalUsername = currentUsername;
+        boolean isCreator = order.getCreatedBy() != null && finalUsername != null && order.getCreatedBy().equalsIgnoreCase(finalUsername);
+        boolean isSupervisor = currentUserId != null && order.getSupervisor() != null && Objects.equals(order.getSupervisor().getId(), currentUserId);
+        List<String> supervisors = Optional.ofNullable(orderRepository.findSupervisorUsernamesByOrder(order)).orElse(List.of());
+        boolean isTaskSupervisor = finalUsername != null && supervisors.stream().anyMatch(s -> s.equalsIgnoreCase(finalUsername));
+
+        if (order.getStatus() == OrderStatus.CREATED
+            && (order.getCreatedBy() == null || "system".equalsIgnoreCase(order.getCreatedBy()))
+            && order.getSupervisor() == null
+            && supervisors.isEmpty()
+            && securityFacade.hasRole(Role.ROLE_SUPERVISOR)) {
+            return;
+        }
+
+        if (!isCreator && !isSupervisor && !isTaskSupervisor) {
             log.warn("Access denied to order {} (createdBy: {}, taskSupervisors: {}) for user {}",
                 order.getId(), order.getCreatedBy(), supervisors, currentUsername);
             throw new AccessDeniedException(
@@ -352,6 +370,14 @@ public class OrderService {
         return extendedOrderMapper.toResponse(order, operatorId);
     }
 
+    public List<OrderResponse> searchOrders(OrderFilterRequest filter) {
+        return searchOrders(filter.toSearchRequest());
+    }
+
+    public Page<OrderResponse> searchOrders(OrderFilterRequest filter, Pageable pageable) {
+        return searchOrders(filter.toSearchRequest(), pageable);
+    }
+
     public List<OrderResponse> searchOrders(OrderSearchRequest request) {
         List<Order> orders = orderRepository.filter(
                 request.logicId(),
@@ -360,6 +386,7 @@ public class OrderService {
                 request.createdAt(),
                 request.updatedAt()
             );
+        orders = filterOrdersForSupervisor(orders);
         if (orders.isEmpty()) {
             return Collections.emptyList();
         }
@@ -372,25 +399,61 @@ public class OrderService {
     }
 
     public Page<OrderResponse> searchOrders(OrderSearchRequest request, Pageable pageable) {
-        Page<Order> orderPage = orderRepository.filter(
+        List<Order> orders = orderRepository.filter(
                 request.logicId(),
                 request.destinationLocationId(),
                 request.status(),
                 request.createdAt(),
-                request.updatedAt(),
-                pageable
+                request.updatedAt()
             );
-        if (orderPage.isEmpty()) {
+        orders = filterOrdersForSupervisor(orders);
+        if (orders.isEmpty()) {
             return Page.empty(pageable);
         }
-        List<Order> orders = orderPage.getContent();
-        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        int total = orders.size();
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), total);
+        List<Order> pageOrders = (start <= total) ? orders.subList(start, end) : Collections.emptyList();
+
+        List<Long> orderIds = pageOrders.stream().map(Order::getId).toList();
         Map<Long, Long> operatorIdMap = resolveOrderOperatorIds(orderIds);
         Map<Long, String> tuBarcodeMap = resolveOrderTuBarcodes(orderIds);
-        List<OrderResponse> responses = orders.stream()
+        List<OrderResponse> responses = pageOrders.stream()
             .map(order -> orderMapper.toResponse(order, operatorIdMap.get(order.getId()), tuBarcodeMap.get(order.getId())))
             .toList();
-        return new PageImpl<>(responses, pageable, orderPage.getTotalElements());
+        return new PageImpl<>(responses, pageable, total);
+    }
+
+    private List<Order> filterOrdersForSupervisor(List<Order> orders) {
+        if (securityFacade.hasRole(Role.ROLE_DEV)) {
+            return orders;
+        }
+        Long currentUserId = null;
+        String currentUsername = null;
+        try {
+            currentUserId = securityFacade.getCurrentUserId();
+        } catch (Exception ignored) {}
+        try {
+            currentUsername = securityFacade.getCurrentUsername();
+        } catch (Exception ignored) {}
+        if (currentUsername == null && currentUserId == null) {
+            return orders;
+        }
+        final Long finalUserId = currentUserId;
+        final String finalUsername = currentUsername;
+        final Set<Long> accessibleOrderIds = (finalUsername != null)
+            ? Optional.ofNullable(orderRepository.findAllAccessibleBySupervisor(finalUsername))
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(Order::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet())
+            : Collections.emptySet();
+        return orders.stream()
+            .filter(order -> (finalUserId != null && order.getSupervisor() != null && Objects.equals(order.getSupervisor().getId(), finalUserId))
+                || (finalUsername != null && order.getCreatedBy() != null && order.getCreatedBy().equalsIgnoreCase(finalUsername))
+                || (finalUsername != null && order.getId() != null && accessibleOrderIds.contains(order.getId())))
+            .toList();
     }
 
     public List<ExtendedOrderResponse> getAllExtendedOrders() {

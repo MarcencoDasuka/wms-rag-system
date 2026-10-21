@@ -64,6 +64,22 @@ public class Allocation extends BaseTimestampEntity{
     @Column(name = "picked_quantity")
     private Integer pickedQuantity;
 
+    @Transient
+    private Order order;
+
+    /**
+     * Returns the associated order, if any.
+     *
+     * @return the Order associated with this allocation's task, or null if replenishment
+     */
+    public Order getOrder() {
+        return order;
+    }
+
+    public void setOrder(Order order) {
+        this.order = order;
+    }
+
     /**
      * Returns the picked quantity as an {@link Optional}.
      * If no pick was performed (e.g., allocation is still pending), the Optional is empty.

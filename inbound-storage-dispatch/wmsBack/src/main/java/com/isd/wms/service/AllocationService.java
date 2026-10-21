@@ -3,6 +3,7 @@ package com.isd.wms.service;
 import com.isd.wms.dto.allocation.AllocationOperatorResponse;
 import com.isd.wms.dto.allocation.ShortAllocationResponse;
 import com.isd.wms.entity.*;
+import com.isd.wms.enums.Role;
 import com.isd.wms.enums.Status;
 import com.isd.wms.enums.TaskType;
 import com.isd.wms.exception.AllocationsNotFoundException;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Service for querying and summarising allocation data.
@@ -40,11 +42,33 @@ public class AllocationService {
 
     /**
      * Returns all allocations in the system projected for the supervisor view.
+     * Non-DEV supervisors are restricted to viewing only allocations for orders or replenishments they supervise.
      *
      * @return a list of {@link AllocationSupervisorProjection} objects
      */
     public List<AllocationSupervisorProjection> getAllAllocations() {
-        return allocationRepository.getAllAllocations();
+        List<AllocationSupervisorProjection> allocations = allocationRepository.getAllAllocations();
+        if (securityFacade.hasRole(Role.ROLE_DEV)) {
+            return allocations;
+        }
+        Long currentUserId = null;
+        String currentUsername = null;
+        try {
+            currentUserId = securityFacade.getCurrentUserId();
+        } catch (Exception ignored) {}
+        try {
+            currentUsername = securityFacade.getCurrentUsername();
+        } catch (Exception ignored) {}
+        if (currentUserId == null && currentUsername == null) {
+            return allocations;
+        }
+        final Long finalUserId = currentUserId;
+        final String finalUsername = currentUsername;
+        return allocations.stream()
+            .filter(allocation -> (finalUserId != null && Objects.equals(allocation.getSupervisorId(), finalUserId))
+                || (finalUsername != null && allocation.getSupervisorUsername() != null && allocation.getSupervisorUsername().equalsIgnoreCase(finalUsername))
+                || (finalUserId != null && allocation.getOrder() != null && allocation.getOrder().getSupervisor() != null && Objects.equals(allocation.getOrder().getSupervisor().getId(), finalUserId)))
+            .toList();
     }
 
     /**

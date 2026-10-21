@@ -6,6 +6,7 @@ import com.isd.wms.entity.Product;
 import com.isd.wms.entity.Replenishment;
 import com.isd.wms.entity.Task;
 import com.isd.wms.entity.User;
+import com.isd.wms.enums.Role;
 import com.isd.wms.enums.Status;
 import com.isd.wms.enums.Zone;
 import com.isd.wms.repository.LocationRepository;
@@ -13,17 +14,18 @@ import com.isd.wms.repository.ProductRepository;
 import com.isd.wms.repository.ReplenishmentRepository;
 import com.isd.wms.repository.UserRepository;
 import com.isd.wms.service.ReplenishmentService;
-import lombok.RequiredArgsConstructor;
+import com.isd.wms.service.validation.SecurityFacade;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service("replenishmentAiTools")
-@RequiredArgsConstructor
 public class ReplenishmentAiTools {
 
     private final ReplenishmentService replenishmentService;
@@ -32,6 +34,35 @@ public class ReplenishmentAiTools {
     private final LocationRepository locationRepository;
     private final UserRepository userRepository;
     private final AiToolSecurityBoundary securityBoundary;
+    private final SecurityFacade securityFacade;
+
+    @Autowired
+    public ReplenishmentAiTools(
+            ReplenishmentService replenishmentService,
+            ReplenishmentRepository replenishmentRepository,
+            ProductRepository productRepository,
+            LocationRepository locationRepository,
+            UserRepository userRepository,
+            AiToolSecurityBoundary securityBoundary,
+            SecurityFacade securityFacade) {
+        this.replenishmentService = replenishmentService;
+        this.replenishmentRepository = replenishmentRepository;
+        this.productRepository = productRepository;
+        this.locationRepository = locationRepository;
+        this.userRepository = userRepository;
+        this.securityBoundary = securityBoundary;
+        this.securityFacade = securityFacade;
+    }
+
+    public ReplenishmentAiTools(
+            ReplenishmentService replenishmentService,
+            ReplenishmentRepository replenishmentRepository,
+            ProductRepository productRepository,
+            LocationRepository locationRepository,
+            UserRepository userRepository,
+            AiToolSecurityBoundary securityBoundary) {
+        this(replenishmentService, replenishmentRepository, productRepository, locationRepository, userRepository, securityBoundary, null);
+    }
 
     @Tool(description = "Creates a new Replenishment Task to move existing stock from a REPL zone to a PICK zone. Requires SUPERVISOR or DEV role.")
     public String createReplenishmentTask(
@@ -104,9 +135,31 @@ public class ReplenishmentAiTools {
     @Tool(description = "Returns a summary of all currently active (CREATED, ASSIGNED, IN_PROGRESS) replenishment tasks.")
     public String getActiveReplenishmentsInfo() {
         log.info("AI invoked getActiveReplenishmentsInfo tool");
-        List<Replenishment> activeTasks = replenishmentRepository.findByStatus(Status.IN_PROGRESS);
+        List<Replenishment> activeTasks = new java.util.ArrayList<>(replenishmentRepository.findByStatus(Status.IN_PROGRESS));
         activeTasks.addAll(replenishmentRepository.findByStatus(Status.ASSIGNED));
         activeTasks.addAll(replenishmentRepository.findByStatus(Status.CREATED));
+
+        if (securityFacade != null && !securityFacade.hasRole(Role.ROLE_DEV)) {
+            Long currentUserId = null;
+            try {
+                currentUserId = securityFacade.getCurrentUserId();
+            } catch (Exception ignored) {}
+            String currentUsername = securityFacade.getCurrentUsername();
+            final Long finalUserId = currentUserId;
+
+            activeTasks = activeTasks.stream()
+                .filter(r -> {
+                    String taskSupervisor = r.getTask().map(Task::getSupervisor).map(User::getUsername).orElse(null);
+                    boolean isSupervisorById = finalUserId != null && r.getSupervisor() != null && Objects.equals(r.getSupervisor().getId(), finalUserId);
+                    boolean isCreator = currentUsername != null && r.getCreatedBy() != null && r.getCreatedBy().equalsIgnoreCase(currentUsername);
+                    boolean isTaskSupervisor = currentUsername != null && taskSupervisor != null && taskSupervisor.equalsIgnoreCase(currentUsername);
+                    boolean isUnowned = (r.getCreatedBy() == null || "system".equalsIgnoreCase(r.getCreatedBy()))
+                        && r.getSupervisor() == null
+                        && taskSupervisor == null;
+                    return isSupervisorById || isCreator || isTaskSupervisor || isUnowned;
+                })
+                .toList();
+        }
 
         return activeTasks.isEmpty() ? "There are currently no active replenishment tasks." : formatActiveTasks(activeTasks);
     }
@@ -136,8 +189,12 @@ public class ReplenishmentAiTools {
                 .map(User::getUsername)
                 .orElse("Unassigned");
 
+            String prodName = r.getProduct() != null ? r.getProduct().getName() : "N/A";
+            int reqQty = r.getRequestedQuantity() != null ? r.getRequestedQuantity() : 0;
+            String statusName = r.getStatus() != null ? r.getStatus().name() : "N/A";
+
             sb.append(String.format("| %s | %s | %d | %s | %s | %s |\n",
-                r.getLogicId(), r.getProduct().getName(), r.getRequestedQuantity(), dest, operator, r.getStatus().name()));
+                r.getLogicId(), prodName, reqQty, dest, operator, statusName));
         });
 
         return sb.toString();

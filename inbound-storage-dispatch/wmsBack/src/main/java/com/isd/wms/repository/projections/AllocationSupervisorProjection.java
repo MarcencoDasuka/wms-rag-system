@@ -1,5 +1,7 @@
 package com.isd.wms.repository.projections;
 
+import com.isd.wms.entity.Order;
+import com.isd.wms.entity.User;
 import com.isd.wms.enums.Status;
 import com.isd.wms.enums.TaskType;
 
@@ -16,4 +18,22 @@ public interface AllocationSupervisorProjection {
     Status getStatus();
     Boolean getSourceLocationScanned();
     Boolean getProductScanned();
+
+    Long getSupervisorId();
+    String getSupervisorUsername();
+
+    default Order getOrder() {
+        if (getOrderId() == null) {
+            return null;
+        }
+        Order o = new Order();
+        o.setId(getOrderId());
+        if (getSupervisorId() != null) {
+            User u = new User();
+            u.setId(getSupervisorId());
+            u.setUsername(getSupervisorUsername());
+            o.setSupervisor(u);
+        }
+        return o;
+    }
 }

@@ -27,7 +27,7 @@ import java.util.Optional;
 public interface ReplenishmentRepository extends JpaRepository<Replenishment, Long> {
 
     @Override
-    @EntityGraph(attributePaths = {"destinationLocation", "product", "task", "task.operator"})
+    @EntityGraph(attributePaths = {"destinationLocation", "product", "product.category", "task", "task.operator"})
     List<Replenishment> findAll();
 
     /**

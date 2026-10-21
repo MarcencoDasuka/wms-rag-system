@@ -45,6 +45,15 @@ public class SecurityFacade {
     }
 
     /**
+     * Returns the user ID of the currently authenticated user.
+     *
+     * @return the user ID
+     */
+    public Long getCurrentUserId() {
+        return getCurrentUser().getId();
+    }
+
+    /**
      * Returns the full {@link User} entity of the currently authenticated user.
      *
      * @return the User object
