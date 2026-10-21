@@ -59,3 +59,13 @@ ehthumbs.db
 # External docs clone indexed by wms-code-rag (own git repo)
 # ==========================================
 Ospysin/
+
+# ==========================================
+# Local Utility Scripts & LLM Snapshots
+# ==========================================
+scripts/
+snapshots/
+docs/audits/snapshots/
+*.snapshot.md
+handoff-*.md
+
