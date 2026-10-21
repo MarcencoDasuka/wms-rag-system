@@ -1,6 +1,5 @@
 <template>
   <div class="p-6">
-    <Toast />
     <ConfirmDialog />
 
     <AppDataTable
@@ -119,7 +118,6 @@ import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
 import InputNumber from 'primevue/inputnumber'
-import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 
 

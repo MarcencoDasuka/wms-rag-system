@@ -1,7 +1,5 @@
 <template>
   <div class="card p-4">
-    <Toast position="top-right" />
-
     <Form @submit="onSubmit" class="flex flex-col gap-6">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="field">
@@ -94,7 +92,6 @@ import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
-import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useRouter } from 'vue-router'
 import { orderApi } from '@/api/orderApi.js'
