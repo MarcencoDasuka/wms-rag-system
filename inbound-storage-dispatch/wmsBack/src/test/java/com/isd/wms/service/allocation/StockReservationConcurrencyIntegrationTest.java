@@ -84,6 +84,15 @@ class StockReservationConcurrencyIntegrationTest {
     void tearDown() {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
+                // 1. Delete dependent inventory_history rows
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE product_id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE source_location_id = ? OR destination_location_id = ?", id, id);
+                }
+
+                // 2. Unlink transport_units and clean orders/allocations/tasks
                 orderIds.forEach(orderId -> {
                     jdbcTemplate.update("UPDATE transport_units SET order_id = NULL WHERE order_id = ?", orderId);
                     List<Long> taskIds = jdbcTemplate.queryForList(
@@ -97,14 +106,33 @@ class StockReservationConcurrencyIntegrationTest {
                     jdbcTemplate.update("DELETE FROM order_lines WHERE order_id = ?", orderId);
                     jdbcTemplate.update("DELETE FROM orders WHERE id = ?", orderId);
                 });
+
+                // 3. Delete any allocations referencing test locations or products
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE location_id = ?)", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE product_id = ?)", id);
+                }
+
+                // 4. Delete stocks
                 stockIds.forEach(id -> jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id));
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE location_id = ?", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE product_id = ?", id);
+                }
+
+                // 5. Delete products, locations, categories
                 productIds.forEach(id -> jdbcTemplate.update("DELETE FROM products WHERE id = ?", id));
                 locationIds.forEach(id -> jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id));
                 categoryIds.forEach(id -> jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id));
                 return null;
             });
         } catch (Exception e) {
-            System.err.println("Teardown failed: " + e.getMessage());
+            System.err.println("Teardown failed in StockReservationConcurrencyIntegrationTest: " + e.getMessage());
+            throw new IllegalStateException("Test teardown failed", e);
         }
     }
 

@@ -89,20 +89,72 @@ class OrderLinePickingConcurrencyIntegrationTest {
     @AfterEach
     void tearDown() {
         try {
-            TransactionTemplate tx = new TransactionTemplate(transactionManager);
-            tx.execute(status -> {
-                allocationIds.forEach(id -> jdbcTemplate.update("DELETE FROM allocations WHERE id = ?", id));
-                orderLineIds.forEach(id -> jdbcTemplate.update("DELETE FROM order_lines WHERE id = ?", id));
-                stockIds.forEach(id -> jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id));
-                orderIds.forEach(id -> jdbcTemplate.update("DELETE FROM orders WHERE id = ?", id));
-                taskIds.forEach(id -> jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", id));
-                locationIds.forEach(id -> jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id));
-                productIds.forEach(id -> jdbcTemplate.update("DELETE FROM products WHERE id = ?", id));
-                categoryIds.forEach(id -> jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id));
+            new TransactionTemplate(transactionManager).execute(status -> {
+                // 1. Delete dependent inventory_history rows
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE product_id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE source_location_id = ? OR destination_location_id = ?", id, id);
+                }
+
+                // 2. Unlink transport_units
+                for (Long id : orderIds) {
+                    jdbcTemplate.update("UPDATE transport_units SET order_id = NULL WHERE order_id = ?", id);
+                }
+
+                // 3. Delete allocations
+                for (Long id : allocationIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE id = ?", id);
+                }
+                for (Long id : taskIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE task_id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE location_id = ?)", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE product_id = ?)", id);
+                }
+
+                // 4. Delete order lines, orders, tasks
+                for (Long id : orderLineIds) {
+                    jdbcTemplate.update("DELETE FROM order_lines WHERE id = ?", id);
+                }
+                for (Long id : orderIds) {
+                    jdbcTemplate.update("DELETE FROM order_lines WHERE order_id = ?", id);
+                    jdbcTemplate.update("DELETE FROM orders WHERE id = ?", id);
+                }
+                for (Long id : taskIds) {
+                    jdbcTemplate.update("DELETE FROM tasks WHERE id = ?", id);
+                }
+
+                // 5. Delete stocks
+                for (Long id : stockIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE location_id = ?", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE product_id = ?", id);
+                }
+
+                // 6. Delete locations, products, categories
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM products WHERE id = ?", id);
+                }
+                for (Long id : categoryIds) {
+                    jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id);
+                }
                 return null;
             });
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("Teardown failed in OrderLinePickingConcurrencyIntegrationTest: " + e.getMessage());
+            throw new IllegalStateException("Test teardown failed", e);
         }
     }
 

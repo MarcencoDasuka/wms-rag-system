@@ -117,16 +117,53 @@ class StockLocationMappingIntegrityIntegrationTest {
     void tearDown() {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
+                // 1. Delete dependent inventory_history rows
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE product_id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE source_location_id = ? OR destination_location_id = ?", id, id);
+                }
+
+                // 2. Unlink transport units
+                orderIds.forEach(id -> jdbcTemplate.update("UPDATE transport_units SET order_id = NULL WHERE order_id = ?", id));
+                replenishmentIds.forEach(id -> jdbcTemplate.update("UPDATE transport_units SET replenishment_id = NULL WHERE replenishment_id = ?", id));
+
+                // 3. Delete allocations tied to test stocks/locations/products
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE location_id = ?)", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE product_id = ?)", id);
+                }
+
+                // 4. Delete order lines, orders, replenishments
+                for (Long id : orderIds) {
+                    jdbcTemplate.update("DELETE FROM order_lines WHERE order_id = ?", id);
+                    jdbcTemplate.update("DELETE FROM orders WHERE id = ?", id);
+                }
+                for (Long id : replenishmentIds) {
+                    jdbcTemplate.update("DELETE FROM replenishments WHERE id = ?", id);
+                }
+
+                // 5. Delete stocks
                 stockIds.forEach(id -> jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id));
-                orderIds.forEach(id -> jdbcTemplate.update("DELETE FROM orders WHERE id = ?", id));
-                replenishmentIds.forEach(id -> jdbcTemplate.update("DELETE FROM replenishments WHERE id = ?", id));
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE location_id = ?", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE product_id = ?", id);
+                }
+
+                // 6. Delete products, locations, categories
                 productIds.forEach(id -> jdbcTemplate.update("DELETE FROM products WHERE id = ?", id));
                 locationIds.forEach(id -> jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id));
                 categoryIds.forEach(id -> jdbcTemplate.update("DELETE FROM categories WHERE id = ?", id));
                 return null;
             });
         } catch (Exception e) {
-            System.err.println("Teardown failed: " + e.getMessage());
+            System.err.println("Teardown failed in StockLocationMappingIntegrityIntegrationTest: " + e.getMessage());
+            throw new IllegalStateException("Test teardown failed", e);
         }
     }
 

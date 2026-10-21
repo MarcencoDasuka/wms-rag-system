@@ -78,9 +78,34 @@ class StockLockOrderingConcurrencyIntegrationTest {
     void tearDown() {
         try {
             new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                // 1. Delete dependent inventory_history rows
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE product_id = ?", id);
+                }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM inventory_history WHERE source_location_id = ? OR destination_location_id = ?", id, id);
+                }
+
+                // 2. Delete allocations referencing test locations or products
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE location_id = ?)", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM allocations WHERE stock_id IN (SELECT id FROM stocks WHERE product_id = ?)", id);
+                }
+
+                // 3. Delete stocks
                 for (Long id : stockIds) {
                     jdbcTemplate.update("DELETE FROM stocks WHERE id = ?", id);
                 }
+                for (Long id : locationIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE location_id = ?", id);
+                }
+                for (Long id : productIds) {
+                    jdbcTemplate.update("DELETE FROM stocks WHERE product_id = ?", id);
+                }
+
+                // 4. Delete locations, products, categories
                 for (Long id : locationIds) {
                     jdbcTemplate.update("DELETE FROM locations WHERE id = ?", id);
                 }
@@ -92,7 +117,8 @@ class StockLockOrderingConcurrencyIntegrationTest {
                 }
             });
         } catch (Exception e) {
-            System.err.println("Teardown failed: " + e.getMessage());
+            System.err.println("Teardown failed in StockLockOrderingConcurrencyIntegrationTest: " + e.getMessage());
+            throw new IllegalStateException("Test teardown failed", e);
         }
     }
 
